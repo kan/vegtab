@@ -240,6 +240,22 @@ export function getCoffeeTargets(board: (Cell | null)[][], targetColor: number):
 }
 
 /** コーヒーカップのタップ/連鎖時: 上隣から時計回りで最初の付箋の色を取得 */
+/** 誘爆時の虫めがね: 上から時計回りで最初に見つかる隣接セル1マスを返す */
+function getMagnifyingGlassAutoTarget(board: (Cell | null)[][], pos: Position): Position[] {
+  const directions = [
+    [-1, 0], [-1, 1], [0, 1], [1, 1],
+    [1, 0], [1, -1], [0, -1], [-1, -1],
+  ];
+  for (const [dr, dc] of directions) {
+    const p = { row: pos.row + dr, col: pos.col + dc };
+    if (isValidPosition(p)) {
+      const cell = board[p.row][p.col];
+      if (cell) return [p];
+    }
+  }
+  return [];
+}
+
 export function findCoffeeTargetColor(board: (Cell | null)[][], pos: Position): number | null {
   // 上隣から時計回り: 上, 右上, 右, 右下, 下, 左下, 左, 左上
   const directions = [
@@ -268,7 +284,9 @@ export function getItemTargets(
 ): Position[] {
   switch (item) {
     case 'magnifying_glass':
-      return targetCells ?? [];
+      // User-selected targets for direct activation; auto-pick 1 adjacent cell for detonation
+      if (targetCells) return targetCells;
+      return getMagnifyingGlassAutoTarget(board, pos);
     case 'scissors':
       return getScissorsTargets(pos);
     case 'cutter':

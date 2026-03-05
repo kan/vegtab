@@ -277,19 +277,15 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
   boardWithoutMag[magPos.row][magPos.col] = null;
   visualBoard.value = boardWithoutMag;
 
-  // Show check marks on target cells (only non-item targets)
+  // Show magnifying glass overlay on target cells (only non-item targets)
   const nonItemTargets = targetCells.filter(t => {
     const cell = boardWithoutMag[t.row]?.[t.col];
     return cell && !cell.item;
   });
-  for (const t of nonItemTargets) matchedCells.add(pk(t.row, t.col));
-  await wait(MATCH_SHOW_DURATION);
-
-  // Clear animation
-  for (const t of nonItemTargets) clearingCells.add(pk(t.row, t.col));
-  await wait(CLEAR_DURATION);
-  matchedCells.clear();
-  clearingCells.clear();
+  await animateRadial(magPos, nonItemTargets, 'magnifying_glass');
+  for (const t of nonItemTargets) vbRemove(t);
+  itemClearingCells.clear();
+  cellItemOverlay.clear();
 
   // Switch to board after clear
   visualBoard.value = plan.boardAfterClear;
@@ -298,7 +294,7 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
   for (const effect of plan.itemEffects) {
     vbRemove(effect.itemPos);
     switch (effect.itemType) {
-      case 'magnifying_glass': await animateClip(effect.itemPos, effect.targets); break;
+      case 'magnifying_glass': await animateRadial(effect.itemPos, effect.targets, 'magnifying_glass'); break;
       case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
       case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
       case 'clip': await animateClip(effect.itemPos, effect.targets); break;
@@ -349,14 +345,11 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
   visualBoard.value = boardWithoutItems;
 
   if (plan.synthEffect === 'mag+mag') {
-    // mag+mag: show check marks on 3 selected cells, then clear
-    const nonItemTargets = plan.effectTargets;
-    for (const t of nonItemTargets) matchedCells.add(pk(t.row, t.col));
-    await wait(MATCH_SHOW_DURATION);
-    for (const t of nonItemTargets) clearingCells.add(pk(t.row, t.col));
-    await wait(CLEAR_DURATION);
-    matchedCells.clear();
-    clearingCells.clear();
+    // mag+mag: show magnifying glass overlay on 3 selected cells, then clear
+    await animateRadial(pos1, plan.effectTargets, 'magnifying_glass');
+    for (const t of plan.effectTargets) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
   } else if (plan.synthEffect === 'mag+scissors') {
     await animateScissors(targetCells[0], plan.effectTargets);
     for (const t of plan.effectTargets) vbRemove(t);
@@ -380,7 +373,7 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
   for (const effect of plan.itemEffects) {
     vbRemove(effect.itemPos);
     switch (effect.itemType) {
-      case 'magnifying_glass': await animateClip(effect.itemPos, effect.targets); break;
+      case 'magnifying_glass': await animateRadial(effect.itemPos, effect.targets, 'magnifying_glass'); break;
       case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
       case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
       case 'clip': await animateClip(effect.itemPos, effect.targets); break;
@@ -534,7 +527,7 @@ async function animateItemEffects(plan: ItemAnimPlan) {
     vbRemove(effect.itemPos);
 
     switch (effect.itemType) {
-      case 'magnifying_glass': await animateClip(effect.itemPos, effect.targets); break;
+      case 'magnifying_glass': await animateRadial(effect.itemPos, effect.targets, 'magnifying_glass'); break;
       case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
       case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
       case 'clip': await animateClip(effect.itemPos, effect.targets); break;
@@ -576,9 +569,7 @@ async function animateCutter(pos: Position, targets: Position[]) {
   await wait(ITEM_CLEAR_DURATION + 100);
 }
 
-async function animateClip(pos: Position, targets: Position[]) {
-  const cs = cellSize.value;
-
+async function animateRadial(pos: Position, targets: Position[], icon: string) {
   // Sort by distance from center (radial expansion)
   const sorted = [...targets].sort((a, b) => {
     const da = Math.abs(a.row - pos.row) + Math.abs(a.col - pos.col);
@@ -586,7 +577,7 @@ async function animateClip(pos: Position, targets: Position[]) {
     return da - db;
   });
 
-  // Show clip overlay on targets in waves
+  // Show overlay on targets in waves
   let prevDist = -1;
   for (const t of sorted) {
     const dist = Math.abs(t.row - pos.row) + Math.abs(t.col - pos.col);
@@ -594,11 +585,15 @@ async function animateClip(pos: Position, targets: Position[]) {
       await wait(40);
       prevDist = dist;
     }
-    cellItemOverlay.set(pk(t.row, t.col), 'clip');
+    cellItemOverlay.set(pk(t.row, t.col), icon);
     itemClearingCells.add(pk(t.row, t.col));
   }
 
   await wait(ITEM_CLEAR_DURATION + 100);
+}
+
+async function animateClip(pos: Position, targets: Position[]) {
+  await animateRadial(pos, targets, 'clip');
 }
 
 async function animateCoffee(pos: Position, targets: Position[]) {

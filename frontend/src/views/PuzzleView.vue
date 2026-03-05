@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { usePuzzleStore } from '@/stores/puzzle';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
-import type { GameMode } from '@tomado/engine';
 
 const isDev = import.meta.env.DEV;
 
@@ -12,30 +11,25 @@ const store = usePuzzleStore();
 const route = useRoute();
 const debugPanel = ref<InstanceType<typeof DebugPanel> | null>(null);
 const puzzleBoard = ref<InstanceType<typeof PuzzleBoard> | null>(null);
-const showModeSelect = ref(false);
-const pendingSeed = ref<number | undefined>(undefined);
 
 onMounted(() => {
   const seedParam = route.params.seed;
   const seed = seedParam ? Number(seedParam) : undefined;
   if (!store.gameState || (seed !== undefined && seed !== store.seed)) {
-    pendingSeed.value = seed;
-    showModeSelect.value = true;
+    store.startGame(seed);
   }
 });
 
-function selectMode(mode: GameMode) {
-  showModeSelect.value = false;
-  store.startGame(pendingSeed.value, mode);
-}
-
 function restart() {
-  store.startGame(store.seed, store.mode);
+  store.startGame(store.seed);
 }
 
 function newGame() {
-  pendingSeed.value = undefined;
-  showModeSelect.value = true;
+  store.startGame();
+}
+
+function continueAsFree() {
+  store.continueAsFree();
 }
 </script>
 
@@ -53,6 +47,7 @@ function newGame() {
           </template>
           <template v-else>
             MOVE: {{ store.moveCount }}
+            <span v-if="store.limitedScore !== null" class="limited-score-ref">(LIMITED: {{ store.limitedScore }} pts)</span>
           </template>
         </div>
         <div class="header-right">
@@ -67,24 +62,22 @@ function newGame() {
       <PuzzleBoard ref="puzzleBoard" :debug-panel="debugPanel" />
     </div>
 
-    <div v-if="showModeSelect" class="game-over-overlay">
+    <!-- LIMITED mode: moves exhausted → show score + continue option -->
+    <div v-if="store.isMoveLimitReached" class="game-over-overlay">
       <div class="game-over-card">
-        <h2>SELECT MODE</h2>
-        <p class="mode-desc">Choose your game mode</p>
-        <div class="game-over-actions mode-actions">
-          <button class="btn" @click="selectMode('limited')">
-            <span class="mode-btn-title">LIMITED</span>
-            <span class="mode-btn-sub">30 moves</span>
-          </button>
-          <button class="btn btn-secondary" @click="selectMode('free')">
-            <span class="mode-btn-title">FREE</span>
-            <span class="mode-btn-sub">No limit</span>
-          </button>
+        <h2>TIME'S UP!</h2>
+        <p class="final-score">{{ store.score }} pts</p>
+        <p class="move-info">{{ store.moveLimit }} moves completed</p>
+        <div class="game-over-actions actions-col">
+          <button class="btn" @click="restart">RETRY</button>
+          <button class="btn btn-continue" @click="continueAsFree">CONTINUE (FREE)</button>
+          <button class="btn btn-secondary btn-small" @click="newGame">NEW GAME</button>
         </div>
       </div>
     </div>
 
-    <div v-if="store.isGameOver && !showModeSelect" class="game-over-overlay">
+    <!-- TRUE game over (stuck in free mode, or stuck before move limit) -->
+    <div v-else-if="store.isGameOver" class="game-over-overlay">
       <div class="game-over-card">
         <h2>GAME OVER</h2>
         <p class="final-score">{{ store.score }} pts</p>
@@ -98,6 +91,7 @@ function newGame() {
     <footer class="puzzle-footer">
       <button class="btn btn-small" @click="restart">RETRY</button>
       <button class="btn btn-small btn-secondary" @click="newGame">NEW</button>
+      <button v-if="isDev" class="btn btn-small btn-debug" @click="debugPanel?.show()">DEBUG</button>
     </footer>
 
     <DebugPanel v-if="isDev" ref="debugPanel" />
@@ -135,6 +129,11 @@ function newGame() {
 .move-label {
   font-size: 13px;
   color: #666;
+}
+.limited-score-ref {
+  font-size: 11px;
+  color: #999;
+  margin-left: 4px;
 }
 .header-right {
   display: flex;
@@ -188,28 +187,20 @@ function newGame() {
 .btn-secondary {
   background: #7f8c8d;
 }
+.btn-continue {
+  background: #27ae60;
+}
 .btn-small {
   padding: 6px 16px;
   font-size: 12px;
 }
-.mode-desc {
-  color: #666;
+.btn-debug {
+  background: #2c3e50;
+}
+.move-info {
+  color: #888;
+  font-size: 13px;
   margin-bottom: 16px;
-  font-size: 14px;
-}
-.mode-actions {
-  flex-direction: column;
-  gap: 10px;
-}
-.mode-btn-title {
-  display: block;
-  font-size: 16px;
-}
-.mode-btn-sub {
-  display: block;
-  font-size: 11px;
-  opacity: 0.8;
-  margin-top: 2px;
 }
 .game-over-overlay {
   position: absolute;
@@ -236,11 +227,15 @@ function newGame() {
   font-size: 36px;
   font-weight: 700;
   color: #333;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
 }
 .game-over-actions {
   display: flex;
   gap: 12px;
   justify-content: center;
+}
+.actions-col {
+  flex-direction: column;
+  gap: 10px;
 }
 </style>

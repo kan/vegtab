@@ -164,10 +164,10 @@ describe('Game Over', () => {
 });
 
 describe('Game Mode', () => {
-  it('デフォルトは手数制限モード(30手)', () => {
+  it('デフォルトは手数制限モード(15手)', () => {
     const state = initializeGame(42);
     expect(state.mode).toBe('limited');
-    expect(state.moveLimit).toBe(30);
+    expect(state.moveLimit).toBe(15);
   });
 
   it('フリーモードでは手数制限なし', () => {

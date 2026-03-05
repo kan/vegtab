@@ -17,7 +17,7 @@ import {
 import { calculateStepScore, getFullClearBonus, calculateRemainingItemBonus } from './score.js';
 import { isGameOver } from './gameOver.js';
 
-const DEFAULT_MOVE_LIMIT = 30;
+const DEFAULT_MOVE_LIMIT = 15;
 
 /** 方向から隣接位置を計算 */
 function getAdjacentPos(pos: Position, dir: Direction): Position {

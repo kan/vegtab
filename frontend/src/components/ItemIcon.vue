@@ -28,18 +28,20 @@ defineProps<{ item: string; size: number }>();
     <path d="M20 28 L18 16 L22 16 Z" fill="#e06b6b" stroke="#c85a5a" stroke-width="0.8"/>
   </svg>
 
-  <!-- カッター: 刃が横向き (右向き) -->
+  <!-- カッター: はさみを90度回転（横向き） -->
   <svg v-else-if="item === 'cutter'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
-    <!-- ボディ -->
-    <rect x="3" y="11" width="20" height="10" rx="2" fill="#f0c040" stroke="#d4a830" stroke-width="0.8"/>
-    <!-- グリップ溝 -->
-    <line x1="8" y1="13" x2="8" y2="19" stroke="#d4a830" stroke-width="0.7"/>
-    <line x1="11" y1="13" x2="11" y2="19" stroke="#d4a830" stroke-width="0.7"/>
-    <line x1="14" y1="13" x2="14" y2="19" stroke="#d4a830" stroke-width="0.7"/>
-    <!-- 刃 (横向き、右へ突き出す) -->
-    <polygon points="23,13 30,15.5 23,18" fill="#ccc" stroke="#aaa" stroke-width="0.6"/>
-    <!-- スライダー -->
-    <rect x="18" y="12" width="5" height="8" rx="1" fill="#e8b020" stroke="#c89818" stroke-width="0.5"/>
+    <g transform="rotate(-90 16 16)">
+      <!-- 左の持ち手 -->
+      <ellipse cx="11" cy="8" rx="3.5" ry="4" fill="none" stroke="#888" stroke-width="1.6" stroke-linecap="round"/>
+      <!-- 右の持ち手 -->
+      <ellipse cx="21" cy="8" rx="3.5" ry="4" fill="none" stroke="#888" stroke-width="1.6" stroke-linecap="round"/>
+      <!-- 結合部 (ネジ) -->
+      <circle cx="16" cy="15.5" r="2" fill="#999" stroke="#777" stroke-width="0.6"/>
+      <!-- 左の刃 (下向き) -->
+      <path d="M12 28 L10 16 L14 16 Z" fill="#e06b6b" stroke="#c85a5a" stroke-width="0.8"/>
+      <!-- 右の刃 (下向き) -->
+      <path d="M20 28 L18 16 L22 16 Z" fill="#e06b6b" stroke="#c85a5a" stroke-width="0.8"/>
+    </g>
   </svg>
 
   <!-- クリップ: ゼムクリップ風 -->

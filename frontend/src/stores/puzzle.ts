@@ -308,7 +308,20 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     gameState.value.previousState !== undefined
   );
 
+  /** Score recorded when limited mode moves ran out (before continuing as free) */
+  const limitedScore = ref<number | null>(null);
+
+  /** Whether the game ended due to move limit (not stuck) */
+  const isMoveLimitReached = computed(() => {
+    if (!gameState.value) return false;
+    return gameState.value.isGameOver
+      && gameState.value.mode === 'limited'
+      && gameState.value.moveLimit !== undefined
+      && gameState.value.moveCount >= gameState.value.moveLimit;
+  });
+
   function startGame(newSeed?: number, gameMode: GameMode = 'limited', gameMoveLimit?: number) {
+    limitedScore.value = null;
     seed.value = newSeed ?? Math.floor(Math.random() * 0x7FFFFFFF);
     gameState.value = initializeGame(seed.value, gameMode, gameMoveLimit);
   }
@@ -831,6 +844,17 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     gameState.value = state;
   }
 
+  function continueAsFree() {
+    if (!gameState.value || !isMoveLimitReached.value) return;
+    limitedScore.value = gameState.value.score;
+    gameState.value = {
+      ...gameState.value,
+      mode: 'free',
+      moveLimit: undefined,
+      isGameOver: false,
+    };
+  }
+
   function placeItem(pos: Position, item: ItemType) {
     if (!gameState.value) return;
     const cell = gameState.value.board[pos.row]?.[pos.col];
@@ -842,7 +866,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     gameState, seed,
     board, score, moveCount, isGameOver, canUndo,
     mode, moveLimit, remainingMoves,
-    startGame, swap, tap, undo,
+    limitedScore, isMoveLimitReached,
+    startGame, swap, tap, undo, continueAsFree,
     activateMagnifyingGlass, applyMagnifyingSynthesis,
     computeMagGlassPlan, computeMagSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,

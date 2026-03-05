@@ -1,222 +1,93 @@
 <script setup lang="ts">
-import { ref, watchEffect } from 'vue';
+import { ref } from 'vue';
 import { usePuzzleStore } from '@/stores/puzzle';
 import type { ItemType } from '@tomado/engine';
 import ItemIcon from './ItemIcon.vue';
 
 const store = usePuzzleStore();
 
-type PlaceMode =
-  | { type: 'single'; item: ItemType }
-  | { type: 'pair'; items: [ItemType, ItemType] };
-
-const collapsed = ref(true);
-const pendingPlace = ref<PlaceMode | null>(null);
-const placedFirst = ref<{ row: number; col: number } | null>(null);
+const visible = ref(false);
+const pendingItem = ref<ItemType | null>(null);
 
 const items: ItemType[] = ['magnifying_glass', 'scissors', 'cutter', 'clip', 'coffee'];
 
-const pairs: { label: string; items: [ItemType, ItemType] }[] = [
-  { label: 'Mag+Mag', items: ['magnifying_glass', 'magnifying_glass'] },
-  { label: 'Mag+Sci', items: ['magnifying_glass', 'scissors'] },
-  { label: 'Mag+Cut', items: ['magnifying_glass', 'cutter'] },
-  { label: 'Mag+Clip', items: ['magnifying_glass', 'clip'] },
-  { label: 'Mag+Cof', items: ['magnifying_glass', 'coffee'] },
-  { label: 'Line+Line', items: ['scissors', 'scissors'] },
-  { label: 'Sci+Clip', items: ['scissors', 'clip'] },
-  { label: 'Cut+Clip', items: ['cutter', 'clip'] },
-  { label: 'Clip+Clip', items: ['clip', 'clip'] },
-  { label: 'Cof+Sci', items: ['coffee', 'scissors'] },
-  { label: 'Cof+Cut', items: ['coffee', 'cutter'] },
-  { label: 'Cof+Clip', items: ['coffee', 'clip'] },
-  { label: 'Cof+Cof', items: ['coffee', 'coffee'] },
-];
-
-function toggle() {
-  collapsed.value = !collapsed.value;
+function show() {
+  visible.value = true;
 }
 
-function selectSingle(item: ItemType) {
-  placedFirst.value = null;
-  pendingPlace.value = { type: 'single', item };
+function hide() {
+  visible.value = false;
+  pendingItem.value = null;
 }
 
-function selectPair(pair: [ItemType, ItemType]) {
-  placedFirst.value = null;
-  pendingPlace.value = { type: 'pair', items: pair };
+function selectItem(item: ItemType) {
+  pendingItem.value = item;
+  visible.value = false;
 }
 
 function cancel() {
-  pendingPlace.value = null;
-  placedFirst.value = null;
+  pendingItem.value = null;
 }
 
 defineExpose({
-  /** Called by PuzzleBoard when a cell is tapped while debug place is active */
+  show,
   handleCellTap(row: number, col: number): boolean {
-    if (!pendingPlace.value) return false;
-
-    if (pendingPlace.value.type === 'single') {
-      store.placeItem({ row, col }, pendingPlace.value.item);
-      pendingPlace.value = null;
-      return true;
-    }
-
-    // Pair mode
-    if (!placedFirst.value) {
-      store.placeItem({ row, col }, pendingPlace.value.items[0]);
-      placedFirst.value = { row, col };
-      return true;
-    }
-
-    // Place second item adjacent to first
-    const dr = Math.abs(row - placedFirst.value.row);
-    const dc = Math.abs(col - placedFirst.value.col);
-    if ((dr === 1 && dc === 0) || (dr === 0 && dc === 1)) {
-      store.placeItem({ row, col }, pendingPlace.value.items[1]);
-      pendingPlace.value = null;
-      placedFirst.value = null;
-      return true;
-    }
-    // Not adjacent — restart: place first here instead
-    store.placeItem({ row, col }, pendingPlace.value.items[0]);
-    placedFirst.value = { row, col };
+    if (!pendingItem.value) return false;
+    store.placeItem({ row, col }, pendingItem.value);
+    pendingItem.value = null;
     return true;
   },
   get isPlacing() {
-    return pendingPlace.value !== null;
+    return pendingItem.value !== null;
   },
 });
 </script>
 
 <template>
-  <div class="debug-panel">
-    <div class="debug-header" @click="toggle">
-      <span class="debug-title">DEBUG</span>
-      <span class="debug-toggle">{{ collapsed ? '&#x25B6;' : '&#x25BC;' }}</span>
-    </div>
+  <!-- Place status bar (shown on puzzle screen when placing) -->
+  <div v-if="pendingItem" class="place-bar">
+    <span class="place-label">Tap a cell to place</span>
+    <ItemIcon :item="pendingItem" :size="18" />
+    <button class="cancel-btn" @click="cancel">Cancel</button>
+  </div>
 
-    <div v-if="!collapsed && pendingPlace" class="place-status">
-      <template v-if="pendingPlace.type === 'single'">
-        Tap a cell to place
-      </template>
-      <template v-else>
-        <template v-if="!placedFirst">Tap cell for 1st item</template>
-        <template v-else>Tap adjacent cell for 2nd</template>
-      </template>
-      <button class="cancel-btn" @click="cancel">Cancel</button>
-    </div>
-
-    <div v-else-if="!collapsed" class="debug-sections">
-      <div class="section">
-        <div class="section-label">Single</div>
-        <div class="btn-row">
+  <!-- Modal overlay -->
+  <Teleport to="body">
+    <div v-if="visible" class="debug-overlay" @click.self="hide">
+      <div class="debug-modal">
+        <div class="debug-header">
+          <span class="debug-title">DEBUG: Place Item</span>
+          <button class="close-btn" @click="hide">&times;</button>
+        </div>
+        <div class="item-grid">
           <button
             v-for="item in items"
             :key="item"
-            class="debug-btn"
-            @click="selectSingle(item)"
+            class="item-btn"
+            @click="selectItem(item)"
           >
-            <ItemIcon :item="item" :size="20" />
-          </button>
-        </div>
-      </div>
-      <div class="section">
-        <div class="section-label">Pair</div>
-        <div class="btn-row pair-row">
-          <button
-            v-for="pair in pairs"
-            :key="pair.label"
-            class="debug-btn pair-btn"
-            @click="selectPair(pair.items)"
-          >
-            <span class="pair-icons">
-              <ItemIcon :item="pair.items[0]" :size="14" />
-              <span class="pair-plus">+</span>
-              <ItemIcon :item="pair.items[1]" :size="14" />
-            </span>
+            <ItemIcon :item="item" :size="28" />
           </button>
         </div>
       </div>
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <style scoped>
-.debug-panel {
+.place-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
   background: #1a1a2e;
-  border-radius: 8px;
-  padding: 8px 10px;
-  color: #ccc;
-  font-size: 11px;
+  border-radius: 6px;
+  margin-top: 8px;
 }
-.debug-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  user-select: none;
-}
-.debug-title {
-  font-size: 10px;
-  font-weight: 700;
-  color: #f0c040;
-  letter-spacing: 1px;
-}
-.debug-toggle {
-  font-size: 10px;
-  color: #888;
-}
-.debug-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.section-label {
-  font-size: 9px;
-  color: #888;
-  text-transform: uppercase;
-  margin-bottom: 3px;
-}
-.btn-row {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.debug-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 10px;
-  border: 1px solid #333;
-  border-radius: 4px;
-  background: #2a2a3e;
-  cursor: pointer;
-  color: #ccc;
-  font-size: 10px;
-}
-.debug-btn:active {
-  background: #3a3a5e;
-}
-.pair-btn {
-  padding: 4px 8px;
-}
-.pair-icons {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.pair-plus {
-  font-size: 10px;
-  color: #666;
-}
-.place-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.place-label {
   font-size: 12px;
   color: #f0c040;
-  padding: 4px 0;
+  flex: 1;
 }
 .cancel-btn {
   border: 1px solid #666;
@@ -226,5 +97,61 @@ defineExpose({
   padding: 3px 10px;
   font-size: 10px;
   cursor: pointer;
+}
+.debug-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.debug-modal {
+  background: #1a1a2e;
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 260px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.debug-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0c040;
+  letter-spacing: 0.5px;
+}
+.close-btn {
+  border: none;
+  background: none;
+  color: #888;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.item-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.item-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #2a2a3e;
+  cursor: pointer;
+}
+.item-btn:active {
+  background: #3a3a5e;
 }
 </style>
