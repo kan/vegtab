@@ -2,10 +2,12 @@ import { Cell, ItemType, Match, Position, BOARD_SIZE } from './types.js';
 import { isValidPosition } from './board.js';
 
 /**
- * マッチパターンからアイテム生成を判定
+ * 個別マッチパターンからアイテム生成を判定（直線マッチのみ）
  * 優先順: コーヒーカップ > クリップ > カッター = はさみ
+ * 2×2は別途 determineItemFromMatches で処理
  */
 export function determineItem(match: Match): ItemType | null {
+  if (match.shape === '2x2') return null; // 2×2は個別判定しない
   const positions = match.positions;
   const len = positions.length;
 
@@ -94,16 +96,21 @@ function mergeConnectedMatches(matches: Match[]): { positions: Position[]; color
  * 複数のマッチから最も優先度の高いアイテムを1つ決定
  * swapPositions: ユーザーのスワイプに関わる2つの位置 [origin, target]
  *   - originを優先し、originがマッチに含まれなければtargetを使う
+ *
+ * 2×2マッチと直線マッチの重複ルール:
+ *   - 2×2と3直線の重複 → 虫めがね成立
+ *   - 2×2と4直線以上 or L/T字5マス以上の重複 → 上位アイテム優先、虫めがね消滅
  */
 export function determineItemFromMatches(
   matches: Match[],
   swapPositions?: [Position, Position]
 ): { item: ItemType; pos: Position } | null {
   const priority: Record<ItemType, number> = {
-    coffee: 4,
-    clip: 3,
-    cutter: 2,
-    scissors: 2,
+    coffee: 5,
+    clip: 4,
+    cutter: 3,
+    scissors: 3,
+    magnifying_glass: 1,
   };
 
   // 全マッチの位置をセットにまとめる
@@ -140,9 +147,10 @@ export function determineItemFromMatches(
   }
 
   // 2. 連結グループからクリップ判定 (5+マス非直線)
-  //    coffeeが既に見つかっている場合はスキップ（優先度が上）
+  //    2×2マッチは除外して直線マッチのみでグループ化する
   if (!best || best.priority < priority.clip) {
-    const groups = mergeConnectedMatches(matches);
+    const straightMatches = matches.filter(m => m.shape !== '2x2');
+    const groups = mergeConnectedMatches(straightMatches);
     for (const group of groups) {
       if (group.positions.length >= 5) {
         const isH = group.positions.every(p => p.row === group.positions[0].row);
@@ -155,6 +163,20 @@ export function determineItemFromMatches(
           }
         }
       }
+    }
+  }
+
+  // 3. 2×2マッチから虫めがね判定
+  const has2x2 = matches.some(m => m.shape === '2x2');
+  if (has2x2) {
+    // 2×2が上位アイテム(4直線以上 or L/T字5+)と重複していなければ虫めがね成立
+    // best が scissors/cutter 以上 (priority >= 3) なら上位優先で虫めがね消滅
+    // best が null または priority < 3 なら虫めがね成立
+    // ただし「3直線のみ」との重複なら虫めがね成立 → 3直線はアイテム生成なし(determineItem returns null for len<4)
+    if (!best || best.priority < priority.scissors) {
+      const match2x2 = matches.find(m => m.shape === '2x2')!;
+      const pos = swapPos ?? getCenterPosition(match2x2.positions);
+      best = { item: 'magnifying_glass', pos, priority: priority.magnifying_glass };
     }
   }
 
@@ -241,9 +263,12 @@ export function getItemTargets(
   board: (Cell | null)[][],
   pos: Position,
   item: ItemType,
-  targetColor?: number
+  targetColor?: number,
+  targetCells?: Position[],
 ): Position[] {
   switch (item) {
+    case 'magnifying_glass':
+      return targetCells ?? [];
     case 'scissors':
       return getScissorsTargets(pos);
     case 'cutter':
@@ -263,9 +288,18 @@ export function getSynthesisEffect(
   item1: ItemType,
   item2: ItemType
 ): { type: 'synthesis'; effect: string } | null {
-  const pair = [item1, item2].sort().join('+');
-
   const lineItems = new Set(['cutter', 'scissors']);
+
+  // 虫めがね + 虫めがね
+  if (item1 === 'magnifying_glass' && item2 === 'magnifying_glass') {
+    return { type: 'synthesis', effect: 'mag+mag' };
+  }
+
+  // 虫めがね + 他
+  if (item1 === 'magnifying_glass' || item2 === 'magnifying_glass') {
+    const other = item1 === 'magnifying_glass' ? item2 : item1;
+    return { type: 'synthesis', effect: `mag+${other}` };
+  }
 
   // コーヒー + コーヒー
   if (item1 === 'coffee' && item2 === 'coffee') {
@@ -302,7 +336,8 @@ export function getSynthesisTargets(
   board: (Cell | null)[][],
   pos: Position,
   effect: string,
-  targetColor?: number
+  targetColor?: number,
+  targetCells?: Position[],
 ): Position[] {
   switch (effect) {
     case 'line+line': {
@@ -355,8 +390,8 @@ export function getSynthesisTargets(
       return result;
     }
     case 'clip+clip': {
-      // 周囲4マス消去
-      return getClipTargets(pos, 4);
+      // 周囲3マス消去
+      return getClipTargets(pos, 3);
     }
     case 'coffee+scissors': {
       // 対象色タイルから縦一列消去 → 対象位置は後でactivateで処理
@@ -370,6 +405,29 @@ export function getSynthesisTargets(
     }
     case 'coffee+coffee': {
       return []; // 特殊処理: 全消し
+    }
+    case 'mag+mag': {
+      // ユーザーが選んだ3マス
+      return targetCells ?? [];
+    }
+    case 'mag+scissors': {
+      // ユーザーが選んだ1マスから縦一列
+      if (!targetCells || targetCells.length === 0) return [];
+      return getScissorsTargets(targetCells[0]);
+    }
+    case 'mag+cutter': {
+      // ユーザーが選んだ1マスから横一列
+      if (!targetCells || targetCells.length === 0) return [];
+      return getCutterTargets(targetCells[0]);
+    }
+    case 'mag+clip': {
+      // ユーザーが選んだ1マスから周囲2マス
+      if (!targetCells || targetCells.length === 0) return [];
+      return getClipTargets(targetCells[0], 2);
+    }
+    case 'mag+coffee': {
+      // コーヒーの隣接色で全消し → 特殊処理で対応
+      return [];
     }
     default:
       return [];

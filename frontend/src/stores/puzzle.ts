@@ -1,13 +1,14 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
-  initializeGame, processAction, undoAction, cloneGameState,
+  initializeGame, processAction, processMagnifyingSynthesis, undoAction, cloneGameState,
   cloneBoard, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
-  calculateStepScore, determineItemFromMatches, isGameOver as checkGameOver,
+  calculateStepScore, calculateRemainingItemBonus,
+  determineItemFromMatches, isGameOver as checkGameOver,
   isValidPosition, getItemTargets, findCoffeeTargetColor,
   getSynthesisEffect, getSynthesisTargets,
   getCoffeeTargets, getScissorsTargets, getCutterTargets, getClipTargets,
-  type GameState, type Action, type Position, type Direction,
+  type GameState, type GameMode, type Action, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match,
   BOARD_SIZE,
 } from '@tomado/engine';
@@ -62,6 +63,35 @@ export interface SynthesisAnimPlan {
   boardAfterSwap: (Cell | null)[][];
   boardBeforeActivation: (Cell | null)[][];
   effects: SynthesisEffectStep[];
+  dropMoves: { col: number; fromRow: number; toRow: number }[];
+  newTilesPerCol: Map<number, number>;
+  boardAfterDrop: (Cell | null)[][];
+  regularChains: ChainAnimData[];
+  finalState: GameState;
+}
+
+export interface MagGlassAnimPlan {
+  magPos: Position;
+  targetCells: Position[];
+  boardAfterClear: (Cell | null)[][];
+  itemEffects: ItemEffectStep[];
+  dropMoves: { col: number; fromRow: number; toRow: number }[];
+  newTilesPerCol: Map<number, number>;
+  boardAfterDrop: (Cell | null)[][];
+  regularChains: ChainAnimData[];
+  finalState: GameState;
+}
+
+export interface MagSynthesisAnimPlan {
+  pos1: Position;
+  pos2: Position;
+  synthEffect: string;
+  /** The effect position (user-selected cell for mag+scissors/cutter/clip, or multiple for mag+mag) */
+  targetCells: Position[];
+  /** Targets cleared by the synthesis effect */
+  effectTargets: Position[];
+  itemEffects: ItemEffectStep[];
+  boardAfterClear: (Cell | null)[][];
   dropMoves: { col: number; fromRow: number; toRow: number }[];
   newTilesPerCol: Map<number, number>;
   boardAfterDrop: (Cell | null)[][];
@@ -159,6 +189,8 @@ function buildItemPlan(
   itemType: ItemType,
   targetColor: number | undefined,
   prevState: GameState,
+  gameMode: GameMode = 'limited',
+  gameMoveLimit?: number,
 ): ItemAnimPlan {
   const boardBefore = cloneBoard(board);
   const effects = computeItemEffects(board, itemPos, itemType, targetColor);
@@ -204,15 +236,23 @@ function buildItemPlan(
     effects,
     dropMoves, newTilesPerCol, boardAfterDrop,
     regularChains,
-    finalState: {
-      board: cloneBoard(board),
-      score: totalScore,
-      rngState: rng,
-      moveCount: moveCount + 1,
-      undoUsed,
-      isGameOver: checkGameOver(board),
-      previousState: prevState,
-    },
+    finalState: (() => {
+      const newMoveCount = moveCount + 1;
+      const gameOver = checkGameOver(board, gameMode, newMoveCount, gameMoveLimit);
+      let finalScore = totalScore;
+      if (gameOver && gameMode === 'limited') finalScore += calculateRemainingItemBonus(board);
+      return {
+        board: cloneBoard(board),
+        score: finalScore,
+        rngState: rng,
+        moveCount: newMoveCount,
+        undoUsed,
+        isGameOver: gameOver,
+        mode: gameMode,
+        moveLimit: gameMoveLimit,
+        previousState: prevState,
+      };
+    })(),
   };
 }
 
@@ -256,15 +296,21 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const score = computed(() => gameState.value?.score ?? 0);
   const moveCount = computed(() => gameState.value?.moveCount ?? 0);
   const isGameOver = computed(() => gameState.value?.isGameOver ?? false);
+  const mode = computed(() => gameState.value?.mode ?? 'limited');
+  const moveLimit = computed(() => gameState.value?.moveLimit);
+  const remainingMoves = computed(() => {
+    if (!gameState.value || gameState.value.mode !== 'limited' || !gameState.value.moveLimit) return undefined;
+    return gameState.value.moveLimit - gameState.value.moveCount;
+  });
   const canUndo = computed(() =>
     gameState.value !== null &&
     !gameState.value.undoUsed &&
     gameState.value.previousState !== undefined
   );
 
-  function startGame(newSeed?: number) {
+  function startGame(newSeed?: number, gameMode: GameMode = 'limited', gameMoveLimit?: number) {
     seed.value = newSeed ?? Math.floor(Math.random() * 0x7FFFFFFF);
-    gameState.value = initializeGame(seed.value);
+    gameState.value = initializeGame(seed.value, gameMode, gameMoveLimit);
   }
 
   function swap(pos: Position, dir: Direction) {
@@ -277,6 +323,188 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     if (!gameState.value) return;
     const newState = processAction(gameState.value, { type: 'tap', pos });
     if (newState !== gameState.value) gameState.value = newState;
+  }
+
+  function activateMagnifyingGlass(pos: Position, targetCells: Position[]) {
+    if (!gameState.value) return;
+    const newState = processAction(gameState.value, {
+      type: 'magnifying_glass', pos, targetCells,
+    });
+    if (newState !== gameState.value) gameState.value = newState;
+  }
+
+  function applyMagnifyingSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
+    if (!gameState.value) return;
+    const newState = processMagnifyingSynthesis(gameState.value, pos1, pos2, targetCells);
+    if (newState !== gameState.value) gameState.value = newState;
+  }
+
+  function computeMagGlassPlan(magPos: Position, targetCells: Position[]): MagGlassAnimPlan | null {
+    if (!gameState.value) return null;
+    const state = gameState.value;
+    const cell = state.board[magPos.row]?.[magPos.col];
+    if (!cell?.item || cell.item !== 'magnifying_glass') return null;
+
+    const board = cloneBoard(state.board);
+    // Remove the magnifying glass itself
+    board[magPos.row][magPos.col] = null;
+
+    let totalScore = state.score;
+    let rng = state.rngState;
+    const itemEffects: ItemEffectStep[] = [];
+
+    // Process each target cell
+    for (const target of targetCells) {
+      const tc = board[target.row]?.[target.col];
+      if (!tc) continue;
+      if (tc.item) {
+        // Item detonation: use computeItemEffects
+        const effects = computeItemEffects(board, target, tc.item);
+        for (const e of effects) {
+          totalScore += 10 * e.targets.length;
+          itemEffects.push(e);
+        }
+      } else {
+        board[target.row][target.col] = null;
+        totalScore += 10;
+      }
+    }
+
+    const boardAfterClear = cloneBoard(board);
+
+    const { moves: dropMoves, newTilesPerCol } = computeDropMoves(board);
+    applyGravity(board);
+    rng = fillEmptyCells(board, rng);
+    const boardAfterDrop = cloneBoard(board);
+
+    const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
+      computeChainSteps(board, rng, totalScore, 2);
+
+    const newMoveCount = state.moveCount + 1;
+    const gameOver = checkGameOver(board, state.mode, newMoveCount, state.moveLimit);
+    let score = finalScore;
+    if (gameOver && state.mode === 'limited') score += calculateRemainingItemBonus(board);
+
+    return {
+      magPos,
+      targetCells,
+      boardAfterClear,
+      itemEffects,
+      dropMoves, newTilesPerCol, boardAfterDrop,
+      regularChains,
+      finalState: {
+        board: cloneBoard(board),
+        score,
+        rngState: finalRng,
+        moveCount: newMoveCount,
+        undoUsed: state.undoUsed,
+        isGameOver: gameOver,
+        mode: state.mode,
+        moveLimit: state.moveLimit,
+        previousState: cloneGameState(state),
+      },
+    };
+  }
+
+  function computeMagSynthesisPlan(
+    pos1: Position, pos2: Position, targetCells: Position[],
+  ): MagSynthesisAnimPlan | null {
+    if (!gameState.value) return null;
+    const state = gameState.value;
+    const cell1 = state.board[pos1.row]?.[pos1.col];
+    const cell2 = state.board[pos2.row]?.[pos2.col];
+    if (!cell1?.item || !cell2?.item) return null;
+
+    const synthesis = getSynthesisEffect(cell1.item, cell2.item);
+    if (!synthesis) return null;
+    const effect = synthesis.effect;
+
+    const board = cloneBoard(state.board);
+    board[pos1.row][pos1.col] = null;
+    board[pos2.row][pos2.col] = null;
+
+    let totalScore = state.score;
+    let rng = state.rngState;
+    const itemEffects: ItemEffectStep[] = [];
+    const effectTargets: Position[] = [];
+
+    if (effect === 'mag+mag') {
+      // Clear 3 user-selected cells
+      for (const target of targetCells) {
+        const tc = board[target.row]?.[target.col];
+        if (!tc) continue;
+        if (tc.item) {
+          const effects = computeItemEffects(board, target, tc.item);
+          for (const e of effects) {
+            totalScore += 10 * e.targets.length;
+            itemEffects.push(e);
+          }
+        } else {
+          board[target.row][target.col] = null;
+          effectTargets.push(target);
+          totalScore += 10;
+        }
+      }
+    } else {
+      // mag+scissors/cutter/clip: get synthesis targets from user-selected cell
+      const synthTargets = getSynthesisTargets(board, pos2, effect, undefined, targetCells);
+      const activated = new Set<string>();
+      activated.add(`${pos1.row},${pos1.col}`);
+      activated.add(`${pos2.row},${pos2.col}`);
+
+      for (const t of synthTargets) {
+        const c = board[t.row]?.[t.col];
+        if (c === null) continue;
+        if (c.item) {
+          const tKey = `${t.row},${t.col}`;
+          if (!activated.has(tKey)) {
+            activated.add(tKey);
+            const effects = computeItemEffects(board, t, c.item);
+            for (const e of effects) {
+              totalScore += 10 * e.targets.length;
+              itemEffects.push(e);
+            }
+          }
+        } else {
+          board[t.row][t.col] = null;
+          effectTargets.push(t);
+          totalScore += 10;
+        }
+      }
+    }
+
+    const boardAfterClear = cloneBoard(board);
+
+    const { moves: dropMoves, newTilesPerCol } = computeDropMoves(board);
+    applyGravity(board);
+    rng = fillEmptyCells(board, rng);
+    const boardAfterDrop = cloneBoard(board);
+
+    const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
+      computeChainSteps(board, rng, totalScore, 2);
+
+    const newMoveCount = state.moveCount + 1;
+    const gameOver = checkGameOver(board, state.mode, newMoveCount, state.moveLimit);
+    let score = finalScore;
+    if (gameOver && state.mode === 'limited') score += calculateRemainingItemBonus(board);
+
+    return {
+      pos1, pos2, synthEffect: effect, targetCells, effectTargets,
+      itemEffects, boardAfterClear,
+      dropMoves, newTilesPerCol, boardAfterDrop,
+      regularChains,
+      finalState: {
+        board: cloneBoard(board),
+        score,
+        rngState: finalRng,
+        moveCount: newMoveCount,
+        undoUsed: state.undoUsed,
+        isGameOver: gameOver,
+        mode: state.mode,
+        moveLimit: state.moveLimit,
+        previousState: cloneGameState(state),
+      },
+    };
   }
 
   function undo() {
@@ -331,12 +559,18 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       matches = findMatches(board);
     }
 
+    const newMoveCount = state.moveCount + 1;
+    const gameOver = checkGameOver(board, state.mode, newMoveCount, state.moveLimit);
+    let finalScore = totalScore;
+    if (gameOver && state.mode === 'limited') finalScore += calculateRemainingItemBonus(board);
+
     return {
       boardAfterSwap, chains,
       finalState: {
-        board: cloneBoard(board), score: totalScore, rngState: rng,
-        moveCount: state.moveCount + 1, undoUsed: state.undoUsed,
-        isGameOver: checkGameOver(board), previousState: cloneGameState(state),
+        board: cloneBoard(board), score: finalScore, rngState: rng,
+        moveCount: newMoveCount, undoUsed: state.undoUsed,
+        isGameOver: gameOver, mode: state.mode, moveLimit: state.moveLimit,
+        previousState: cloneGameState(state),
       },
     };
   }
@@ -357,6 +591,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     return buildItemPlan(
       board, state.rngState, state.score, state.moveCount,
       state.undoUsed, pos, cell.item, targetColor, cloneGameState(state),
+      state.mode, state.moveLimit,
     );
   }
 
@@ -387,6 +622,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const plan = buildItemPlan(
       board, state.rngState, state.score, state.moveCount,
       state.undoUsed, newItemPos, itemCell.item!, targetColor, cloneGameState(state),
+      state.mode, state.moveLimit,
     );
     return { boardAfterSwap, plan };
   }
@@ -485,6 +721,37 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         effectType: effect, item1: cell1.item, item2: cell2.item,
         pos1: target, pos2: pos, targets: allTargets, detonations,
       });
+    } else if (effect === 'mag+coffee') {
+      // mag+coffee: coffee color clear (same as coffee activation)
+      const coffeePos = cell1.item === 'coffee' ? pos : target;
+      const targetColor = findCoffeeTargetColor(board, coffeePos) ?? undefined;
+
+      board[pos.row][pos.col] = null;
+      board[target.row][target.col] = null;
+
+      const colorTargets = targetColor != null ? getCoffeeTargets(board, targetColor) : [];
+      const cleared: Position[] = [];
+      const detonations: { pos: Position; item: ItemType }[] = [];
+      for (const t of colorTargets) {
+        const c = board[t.row]?.[t.col];
+        if (c === null) continue;
+        if (c.item) {
+          const tKey = `${t.row},${t.col}`;
+          if (!activated.has(tKey)) {
+            activated.add(tKey);
+            detonations.push({ pos: t, item: c.item });
+          }
+        } else {
+          board[t.row][t.col] = null;
+          cleared.push(t);
+        }
+      }
+      totalScore += 10 * cleared.length;
+
+      effects.push({
+        effectType: effect, item1: cell1.item, item2: cell2.item,
+        pos1: target, pos2: pos, targets: cleared, detonations,
+      });
     } else {
       // Non-coffee synthesis
       board[pos.row][pos.col] = null;
@@ -540,15 +807,23 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       effects,
       dropMoves, newTilesPerCol, boardAfterDrop,
       regularChains,
-      finalState: {
-        board: cloneBoard(board),
-        score: finalScore,
-        rngState: finalRng,
-        moveCount: state.moveCount + 1,
-        undoUsed: state.undoUsed,
-        isGameOver: checkGameOver(board),
-        previousState: cloneGameState(state),
-      },
+      finalState: (() => {
+        const newMoveCount = state.moveCount + 1;
+        const gameOver = checkGameOver(board, state.mode, newMoveCount, state.moveLimit);
+        let score = finalScore;
+        if (gameOver && state.mode === 'limited') score += calculateRemainingItemBonus(board);
+        return {
+          board: cloneBoard(board),
+          score,
+          rngState: finalRng,
+          moveCount: newMoveCount,
+          undoUsed: state.undoUsed,
+          isGameOver: gameOver,
+          mode: state.mode,
+          moveLimit: state.moveLimit,
+          previousState: cloneGameState(state),
+        };
+      })(),
     };
   }
 
@@ -566,7 +841,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   return {
     gameState, seed,
     board, score, moveCount, isGameOver, canUndo,
+    mode, moveLimit, remainingMoves,
     startGame, swap, tap, undo,
+    activateMagnifyingGlass, applyMagnifyingSynthesis,
+    computeMagGlassPlan, computeMagSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,
     applyState, placeItem,
   };

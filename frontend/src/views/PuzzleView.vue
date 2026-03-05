@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router';
 import { usePuzzleStore } from '@/stores/puzzle';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
+import type { GameMode } from '@tomado/engine';
 
 const isDev = import.meta.env.DEV;
 
@@ -11,21 +12,30 @@ const store = usePuzzleStore();
 const route = useRoute();
 const debugPanel = ref<InstanceType<typeof DebugPanel> | null>(null);
 const puzzleBoard = ref<InstanceType<typeof PuzzleBoard> | null>(null);
+const showModeSelect = ref(false);
+const pendingSeed = ref<number | undefined>(undefined);
 
 onMounted(() => {
   const seedParam = route.params.seed;
   const seed = seedParam ? Number(seedParam) : undefined;
   if (!store.gameState || (seed !== undefined && seed !== store.seed)) {
-    store.startGame(seed);
+    pendingSeed.value = seed;
+    showModeSelect.value = true;
   }
 });
 
+function selectMode(mode: GameMode) {
+  showModeSelect.value = false;
+  store.startGame(pendingSeed.value, mode);
+}
+
 function restart() {
-  store.startGame(store.seed);
+  store.startGame(store.seed, store.mode);
 }
 
 function newGame() {
-  store.startGame();
+  pendingSeed.value = undefined;
+  showModeSelect.value = true;
 }
 </script>
 
@@ -37,8 +47,19 @@ function newGame() {
         <div class="score-label">SCORE: {{ store.score }}</div>
       </div>
       <div class="header-row">
-        <div class="move-label">MOVE: {{ store.moveCount }}</div>
-        <button v-if="store.canUndo" class="btn-undo" @click="store.undo()">UNDO</button>
+        <div class="move-label">
+          <template v-if="store.mode === 'limited' && store.remainingMoves !== undefined">
+            MOVES: {{ store.remainingMoves }} / {{ store.moveLimit }}
+          </template>
+          <template v-else>
+            MOVE: {{ store.moveCount }}
+          </template>
+        </div>
+        <div class="header-right">
+          <span v-if="store.mode === 'limited'" class="mode-badge">LIMITED</span>
+          <span v-else class="mode-badge mode-free">FREE</span>
+          <button v-if="store.canUndo" class="btn-undo" @click="store.undo()">UNDO</button>
+        </div>
       </div>
     </header>
 
@@ -46,7 +67,24 @@ function newGame() {
       <PuzzleBoard ref="puzzleBoard" :debug-panel="debugPanel" />
     </div>
 
-    <div v-if="store.isGameOver" class="game-over-overlay">
+    <div v-if="showModeSelect" class="game-over-overlay">
+      <div class="game-over-card">
+        <h2>SELECT MODE</h2>
+        <p class="mode-desc">Choose your game mode</p>
+        <div class="game-over-actions mode-actions">
+          <button class="btn" @click="selectMode('limited')">
+            <span class="mode-btn-title">LIMITED</span>
+            <span class="mode-btn-sub">30 moves</span>
+          </button>
+          <button class="btn btn-secondary" @click="selectMode('free')">
+            <span class="mode-btn-title">FREE</span>
+            <span class="mode-btn-sub">No limit</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="store.isGameOver && !showModeSelect" class="game-over-overlay">
       <div class="game-over-card">
         <h2>GAME OVER</h2>
         <p class="final-score">{{ store.score }} pts</p>
@@ -98,6 +136,23 @@ function newGame() {
   font-size: 13px;
   color: #666;
 }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mode-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #c0392b;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+.mode-free {
+  background: #27ae60;
+}
 .btn-undo {
   padding: 4px 12px;
   border: 1px solid #c0392b;
@@ -136,6 +191,25 @@ function newGame() {
 .btn-small {
   padding: 6px 16px;
   font-size: 12px;
+}
+.mode-desc {
+  color: #666;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.mode-actions {
+  flex-direction: column;
+  gap: 10px;
+}
+.mode-btn-title {
+  display: block;
+  font-size: 16px;
+}
+.mode-btn-sub {
+  display: block;
+  font-size: 11px;
+  opacity: 0.8;
+  margin-top: 2px;
 }
 .game-over-overlay {
   position: absolute;

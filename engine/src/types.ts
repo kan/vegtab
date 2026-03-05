@@ -2,7 +2,7 @@
 export type Color = 0 | 1 | 2 | 3 | 4;
 
 /** アイテム種別 */
-export type ItemType = 'scissors' | 'cutter' | 'clip' | 'coffee';
+export type ItemType = 'magnifying_glass' | 'scissors' | 'cutter' | 'clip' | 'coffee';
 
 /** 盤面上のセル */
 export type Cell = {
@@ -22,12 +22,14 @@ export type Direction = 'up' | 'down' | 'left' | 'right';
 /** プレイヤー操作 */
 export type Action =
   | { type: 'swap'; pos: Position; dir: Direction }
-  | { type: 'tap'; pos: Position };
+  | { type: 'tap'; pos: Position }
+  | { type: 'magnifying_glass'; pos: Position; targetCells: Position[] };
 
 /** マッチ情報 */
 export type Match = {
   positions: Position[];
   color: Color;
+  shape?: '2x2';
 };
 
 /** 連鎖ステップの結果 */
@@ -39,6 +41,9 @@ export type ChainStep = {
   score: number;
 };
 
+/** ゲームモード */
+export type GameMode = 'limited' | 'free';
+
 /** ゲーム状態 */
 export type GameState = {
   board: (Cell | null)[][];
@@ -47,6 +52,8 @@ export type GameState = {
   moveCount: number;
   undoUsed: boolean;
   isGameOver: boolean;
+  mode: GameMode;
+  moveLimit?: number;
   previousState?: GameState;
 };
 

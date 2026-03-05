@@ -36,6 +36,34 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
     }
   }
 
+  // 2×2正方形マッチ検出
+  for (let row = 0; row < BOARD_SIZE - 1; row++) {
+    for (let col = 0; col < BOARD_SIZE - 1; col++) {
+      const c00 = board[row][col];
+      const c01 = board[row][col + 1];
+      const c10 = board[row + 1][col];
+      const c11 = board[row + 1][col + 1];
+      if (
+        c00 && !c00.item &&
+        c01 && !c01.item &&
+        c10 && !c10.item &&
+        c11 && !c11.item &&
+        c00.color === c01.color &&
+        c00.color === c10.color &&
+        c00.color === c11.color
+      ) {
+        matches.push({
+          positions: [
+            { row, col }, { row, col: col + 1 },
+            { row: row + 1, col }, { row: row + 1, col: col + 1 },
+          ],
+          color: c00.color,
+          shape: '2x2',
+        });
+      }
+    }
+  }
+
   // 縦方向のマッチ検出
   for (let col = 0; col < BOARD_SIZE; col++) {
     let row = 0;

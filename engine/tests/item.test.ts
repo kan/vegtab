@@ -140,6 +140,71 @@ describe('determineItemFromMatches - swap position', () => {
   });
 });
 
+describe('determineItemFromMatches - 2×2 magnifying glass', () => {
+  it('2×2マッチのみで虫めがねを生成', () => {
+    const matches: Match[] = [
+      {
+        positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }],
+        color: 1 as Color,
+        shape: '2x2',
+      },
+    ];
+    const result = determineItemFromMatches(matches);
+    expect(result).not.toBeNull();
+    expect(result!.item).toBe('magnifying_glass');
+  });
+
+  it('2×2 + 3直線の重複では虫めがねが成立', () => {
+    const matches: Match[] = [
+      {
+        positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }],
+        color: 1 as Color,
+        shape: '2x2',
+      },
+      {
+        positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }],
+        color: 1 as Color,
+      },
+    ];
+    const result = determineItemFromMatches(matches);
+    expect(result).not.toBeNull();
+    expect(result!.item).toBe('magnifying_glass');
+  });
+
+  it('2×2 + 4直線の重複では上位アイテム（はさみ）が優先', () => {
+    const matches: Match[] = [
+      {
+        positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }],
+        color: 1 as Color,
+        shape: '2x2',
+      },
+      {
+        positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }],
+        color: 1 as Color,
+      },
+    ];
+    const result = determineItemFromMatches(matches);
+    expect(result).not.toBeNull();
+    expect(result!.item).toBe('scissors');
+  });
+
+  it('2×2 + L字5マス以上の重複では上位アイテム（クリップ）が優先', () => {
+    const matches: Match[] = [
+      {
+        positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }],
+        color: 1 as Color,
+        shape: '2x2',
+      },
+      // L字: 横3 + 縦3 (共有1) = 5マス非直線 → clip
+      { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }], color: 1 as Color },
+      { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 1 as Color },
+    ];
+    const result = determineItemFromMatches(matches);
+    expect(result).not.toBeNull();
+    expect(result!.item).toBe('clip');
+  });
+});
+
 describe('Item Synthesis', () => {
   it('はさみ+はさみ → line+line', () => {
     expect(getSynthesisEffect('scissors', 'scissors')?.effect).toBe('line+line');
@@ -171,5 +236,25 @@ describe('Item Synthesis', () => {
 
   it('コーヒー+コーヒー → coffee+coffee', () => {
     expect(getSynthesisEffect('coffee', 'coffee')?.effect).toBe('coffee+coffee');
+  });
+
+  it('虫めがね+虫めがね → mag+mag', () => {
+    expect(getSynthesisEffect('magnifying_glass', 'magnifying_glass')?.effect).toBe('mag+mag');
+  });
+
+  it('虫めがね+はさみ → mag+scissors', () => {
+    expect(getSynthesisEffect('magnifying_glass', 'scissors')?.effect).toBe('mag+scissors');
+  });
+
+  it('虫めがね+カッター → mag+cutter', () => {
+    expect(getSynthesisEffect('magnifying_glass', 'cutter')?.effect).toBe('mag+cutter');
+  });
+
+  it('虫めがね+クリップ → mag+clip', () => {
+    expect(getSynthesisEffect('magnifying_glass', 'clip')?.effect).toBe('mag+clip');
+  });
+
+  it('虫めがね+コーヒー → mag+coffee', () => {
+    expect(getSynthesisEffect('magnifying_glass', 'coffee')?.effect).toBe('mag+coffee');
   });
 });

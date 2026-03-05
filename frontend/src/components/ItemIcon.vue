@@ -3,8 +3,19 @@ defineProps<{ item: string; size: number }>();
 </script>
 
 <template>
+  <!-- 虫めがね -->
+  <svg v-if="item === 'magnifying_glass'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
+    <!-- レンズ -->
+    <circle cx="14" cy="14" r="8" fill="none" stroke="#5b9bd5" stroke-width="2"/>
+    <circle cx="14" cy="14" r="5" fill="#d6eaf8" opacity="0.5"/>
+    <!-- 柄 -->
+    <line x1="20" y1="20" x2="28" y2="28" stroke="#8b6914" stroke-width="3" stroke-linecap="round"/>
+    <!-- レンズの光沢 -->
+    <path d="M10 10 Q11 8 13 9" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  </svg>
+
   <!-- はさみ: 刃が下を向いている (エフェクトが上→下なので) -->
-  <svg v-if="item === 'scissors'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
+  <svg v-else-if="item === 'scissors'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
     <!-- 左の持ち手 -->
     <ellipse cx="11" cy="8" rx="3.5" ry="4" fill="none" stroke="#888" stroke-width="1.6" stroke-linecap="round"/>
     <!-- 右の持ち手 -->

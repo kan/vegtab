@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { initializeGame, processAction, undoAction, cloneGameState } from '../src/engine.js';
+import { initializeGame, processAction, processMagnifyingSynthesis, undoAction, cloneGameState } from '../src/engine.js';
 import { hasMatches, findMatches } from '../src/match.js';
 import { isGameOver, hasValidSwap, hasActivatableItems } from '../src/gameOver.js';
-import { BOARD_SIZE } from '../src/types.js';
+import { calculateRemainingItemBonus } from '../src/score.js';
+import { BOARD_SIZE, Cell, Color } from '../src/types.js';
 
 describe('Game Initialization', () => {
   it('初期盤面にマッチが存在しない', () => {
@@ -159,6 +160,145 @@ describe('Game Over', () => {
   it('有効な手がありアイテムもない通常盤面はゲームオーバーではない', () => {
     const state = initializeGame(42);
     expect(state.isGameOver).toBe(false);
+  });
+});
+
+describe('Game Mode', () => {
+  it('デフォルトは手数制限モード(30手)', () => {
+    const state = initializeGame(42);
+    expect(state.mode).toBe('limited');
+    expect(state.moveLimit).toBe(30);
+  });
+
+  it('フリーモードでは手数制限なし', () => {
+    const state = initializeGame(42, 'free');
+    expect(state.mode).toBe('free');
+    expect(state.moveLimit).toBeUndefined();
+  });
+
+  it('手数制限モードのカスタム手数', () => {
+    const state = initializeGame(42, 'limited', 20);
+    expect(state.moveLimit).toBe(20);
+  });
+
+  it('手数制限モードで規定手数到達時にゲーム終了', () => {
+    // 2手制限で2手打つ
+    let state = initializeGame(42, 'limited', 2);
+    const action1 = findValidSwap(state);
+    if (!action1) return;
+    state = processAction(state, action1);
+    expect(state.moveCount).toBe(1);
+    expect(state.isGameOver).toBe(false);
+
+    const action2 = findValidSwap(state);
+    if (!action2) return;
+    state = processAction(state, action2);
+    expect(state.moveCount).toBe(2);
+    expect(state.isGameOver).toBe(true);
+  });
+
+  it('フリーモードでは手数で終了しない', () => {
+    let state = initializeGame(42, 'free');
+    const action = findValidSwap(state);
+    if (!action) return;
+    state = processAction(state, action);
+    expect(state.isGameOver).toBe(false);
+  });
+});
+
+describe('Undo - move count', () => {
+  it('Undoで手数カウントが1戻る', () => {
+    const state = initializeGame(42);
+    const action = findValidSwap(state);
+    if (!action) return;
+    const afterAction = processAction(state, action);
+    expect(afterAction.moveCount).toBe(1);
+    const undone = undoAction(afterAction);
+    expect(undone).not.toBeNull();
+    expect(undone!.moveCount).toBe(0);
+  });
+});
+
+describe('Remaining Item Bonus', () => {
+  it('盤上のアイテムに応じたボーナスを計算', () => {
+    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
+      Array.from({ length: BOARD_SIZE }, () => ({ color: 0 as Color }))
+    );
+    board[0][0] = { color: 0 as Color, item: 'magnifying_glass' };
+    board[1][1] = { color: 0 as Color, item: 'scissors' };
+    board[2][2] = { color: 0 as Color, item: 'coffee' };
+    expect(calculateRemainingItemBonus(board)).toBe(50 + 150 + 500);
+  });
+
+  it('アイテムがなければボーナス0', () => {
+    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
+      Array.from({ length: BOARD_SIZE }, () => ({ color: 0 as Color }))
+    );
+    expect(calculateRemainingItemBonus(board)).toBe(0);
+  });
+
+  it('手数制限モード終了時に残存アイテムボーナスが加算される', () => {
+    // 1手制限で始めて、アイテムを配置してから1手消費
+    let state = initializeGame(42, 'limited', 1);
+    // 手動でアイテムを配置
+    state.board[7][7] = { color: 0 as Color, item: 'coffee' };
+    const action = findValidSwap(state);
+    if (!action) return;
+    const newState = processAction(state, action);
+    if (newState.isGameOver) {
+      // コーヒーが残っていればボーナスが加算されているはず
+      const coffeeOnBoard = newState.board.some(row =>
+        row.some(cell => cell?.item === 'coffee')
+      );
+      if (coffeeOnBoard) {
+        // スコアにはアイテムボーナス500が含まれる
+        expect(newState.score).toBeGreaterThanOrEqual(500);
+      }
+    }
+  });
+});
+
+describe('Magnifying Glass Action', () => {
+  it('虫めがねタップで1マス消去', () => {
+    let state = initializeGame(42, 'limited', 30);
+    // 虫めがねを手動配置
+    state.board[3][3] = { color: 0 as Color, item: 'magnifying_glass' };
+    const target = { row: 4, col: 4 };
+    const beforeScore = state.score;
+    const newState = processAction(state, {
+      type: 'magnifying_glass',
+      pos: { row: 3, col: 3 },
+      targetCells: [target],
+    });
+    expect(newState.moveCount).toBe(1);
+    expect(newState.score).toBeGreaterThan(beforeScore);
+    // 虫めがね自体は消えている
+    expect(newState.board[3][3]?.item).not.toBe('magnifying_glass');
+  });
+
+  it('虫めがねでアイテムを選択するとそのアイテムが発動', () => {
+    let state = initializeGame(42, 'limited', 30);
+    state.board[3][3] = { color: 0 as Color, item: 'magnifying_glass' };
+    state.board[4][4] = { color: 0 as Color, item: 'scissors' };
+    const newState = processAction(state, {
+      type: 'magnifying_glass',
+      pos: { row: 3, col: 3 },
+      targetCells: [{ row: 4, col: 4 }],
+    });
+    // はさみが発動して縦一列消去→スコア増加
+    expect(newState.score).toBeGreaterThan(0);
+    expect(newState.board[4][4]?.item).toBeUndefined();
+  });
+
+  it('通常tapでは虫めがねは起動しない', () => {
+    let state = initializeGame(42, 'limited', 30);
+    state.board[3][3] = { color: 0 as Color, item: 'magnifying_glass' };
+    const newState = processAction(state, {
+      type: 'tap',
+      pos: { row: 3, col: 3 },
+    });
+    // tapは無効 → 元のstateが返る
+    expect(newState).toBe(state);
   });
 });
 

@@ -1,4 +1,4 @@
-import { Cell, Direction, Position, BOARD_SIZE } from './types.js';
+import { Cell, Direction, GameMode, Position, BOARD_SIZE } from './types.js';
 import { findMatches } from './match.js';
 import { cloneBoard } from './board.js';
 
@@ -46,7 +46,17 @@ export function hasActivatableItems(board: (Cell | null)[][]): boolean {
   return false;
 }
 
-/** ゲーム終了判定 */
-export function isGameOver(board: (Cell | null)[][]): boolean {
+/** ゲーム終了判定（モード対応） */
+export function isGameOver(
+  board: (Cell | null)[][],
+  mode: GameMode = 'free',
+  moveCount: number = 0,
+  moveLimit?: number,
+): boolean {
+  // 手数制限モード: 規定手数到達
+  if (mode === 'limited' && moveLimit !== undefined && moveCount >= moveLimit) {
+    return true;
+  }
+  // 詰み判定（両モード共通）
   return !hasValidSwap(board) && !hasActivatableItems(board);
 }

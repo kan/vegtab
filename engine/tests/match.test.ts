@@ -70,6 +70,41 @@ describe('Match Detection', () => {
     expect(unique.length).toBe(5); // (0,0)は1回だけ
   });
 
+  it('2×2正方形マッチを検出する', () => {
+    const board = emptyBoard();
+    // 左上2×2を色2にする
+    board[0][0] = { color: 2 };
+    board[0][1] = { color: 2 };
+    board[1][0] = { color: 2 };
+    board[1][1] = { color: 2 };
+    const matches = findMatches(board);
+    const match2x2 = matches.find(m => m.shape === '2x2' && m.color === 2);
+    expect(match2x2).toBeDefined();
+    expect(match2x2!.positions.length).toBe(4);
+  });
+
+  it('2×2マッチは4つのセルの色が全て同じ場合のみ成立する', () => {
+    const board = emptyBoard();
+    board[0][0] = { color: 2 };
+    board[0][1] = { color: 2 };
+    board[1][0] = { color: 2 };
+    board[1][1] = { color: 3 }; // 1マスだけ違う色
+    const matches = findMatches(board);
+    const match2x2 = matches.find(m => m.shape === '2x2' && m.color === 2);
+    expect(match2x2).toBeUndefined();
+  });
+
+  it('2×2マッチとアイテムセルは共存しない', () => {
+    const board = emptyBoard();
+    board[0][0] = { color: 2 };
+    board[0][1] = { color: 2 };
+    board[1][0] = { color: 2 };
+    board[1][1] = { color: 2, item: 'scissors' };
+    const matches = findMatches(board);
+    const match2x2 = matches.find(m => m.shape === '2x2' && m.color === 2);
+    expect(match2x2).toBeUndefined();
+  });
+
   it('アイテムセルはマッチに含まれない', () => {
     const board = emptyBoard();
     board[0][0] = { color: 1 };

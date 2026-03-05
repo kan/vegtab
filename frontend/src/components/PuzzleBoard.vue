@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
-import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
-import { BOARD_SIZE, type Position, type Direction, type Cell } from '@tomado/engine';
+import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan, type MagGlassAnimPlan, type MagSynthesisAnimPlan } from '@/stores/puzzle';
+import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell } from '@tomado/engine';
 import ItemIcon from './ItemIcon.vue';
 import type DebugPanel from './DebugPanel.vue';
 
@@ -13,6 +13,13 @@ const store = usePuzzleStore();
 const wrapperEl = ref<HTMLElement | null>(null);
 const boardEl = ref<HTMLElement | null>(null);
 const cellSize = ref(0);
+
+// --- Magnifying glass selection state ---
+const magSelecting = ref(false);
+const magSourcePos = ref<Position | null>(null);
+const magTargetsNeeded = ref(0);
+const magSelectedCells = ref<Position[]>([]);
+const magSynthesisInfo = ref<{ pos1: Position; pos2: Position } | null>(null);
 
 const STICKY_COLORS = [
   { band: '#e6c832', bg: '#fdf6d0', fold: '#d4b828' },
@@ -171,6 +178,24 @@ function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() =>
 
 // --- Tap ---
 async function handleTap(pos: Position) {
+  // Magnifying glass cell selection mode
+  if (magSelecting.value) {
+    handleMagSelection(pos);
+    return;
+  }
+
+  // Check if tapping a magnifying glass → enter selection mode
+  const cell = activeBoard.value?.[pos.row]?.[pos.col];
+  if (cell?.item === 'magnifying_glass') {
+    magSelecting.value = true;
+    magSourcePos.value = pos;
+    magTargetsNeeded.value = 1;
+    magSelectedCells.value = [];
+    magSynthesisInfo.value = null;
+    clearOff(pos.row, pos.col);
+    return;
+  }
+
   const plan = store.computeItemTapPlan(pos);
   if (!plan) { store.tap(pos); return; }
 
@@ -180,6 +205,209 @@ async function handleTap(pos: Position) {
 
   await animateItemEffects(plan);
   await animateDropAndChains(plan);
+
+  store.applyState(plan.finalState);
+  visualBoard.value = null;
+  locked = false;
+}
+
+async function handleMagSelection(pos: Position) {
+  // Don't allow selecting the magnifying glass itself
+  if (magSourcePos.value && pos.row === magSourcePos.value.row && pos.col === magSourcePos.value.col) return;
+  // Don't allow duplicate selections
+  if (magSelectedCells.value.some(p => p.row === pos.row && p.col === pos.col)) return;
+
+  magSelectedCells.value.push(pos);
+
+  if (magSelectedCells.value.length >= magTargetsNeeded.value) {
+    const cells = [...magSelectedCells.value];
+    const source = magSourcePos.value!;
+    const synthInfo = magSynthesisInfo.value;
+
+    // Reset selection state
+    magSelecting.value = false;
+    magSourcePos.value = null;
+    magSelectedCells.value = [];
+    magSynthesisInfo.value = null;
+
+    if (synthInfo) {
+      await animateMagSynthesis(synthInfo.pos1, synthInfo.pos2, cells);
+    } else {
+      await animateMagGlass(source, cells);
+    }
+  }
+}
+
+function cancelMagSelection() {
+  magSelecting.value = false;
+  magSourcePos.value = null;
+  magSelectedCells.value = [];
+  magSynthesisInfo.value = null;
+  visualBoard.value = null;
+}
+
+async function animateMagGlass(magPos: Position, targetCells: Position[]) {
+  // If visualBoard is set (e.g. from a swap), apply the swapped board to the store
+  // so computeMagGlassPlan sees the correct board. Save original state for undo.
+  let originalState: typeof store.gameState = null;
+  if (visualBoard.value !== null) {
+    originalState = store.gameState ? { ...store.gameState } : null;
+    const swappedState = { ...store.gameState!, board: cloneBoard(visualBoard.value!) };
+    store.applyState(swappedState);
+    visualBoard.value = null;
+  }
+
+  const plan = store.computeMagGlassPlan(magPos, targetCells);
+  if (!plan) {
+    // Fallback: apply instantly
+    if (originalState) store.applyState(originalState);
+    store.activateMagnifyingGlass(magPos, targetCells);
+    return;
+  }
+
+  // Patch previousState to point to the original (pre-swap) state for correct undo
+  if (originalState) {
+    plan.finalState.previousState = originalState;
+  }
+
+  locked = true;
+
+  // Build a board with the magnifying glass removed but targets still present
+  const boardWithoutMag = cloneBoard(store.board!);
+  boardWithoutMag[magPos.row][magPos.col] = null;
+  visualBoard.value = boardWithoutMag;
+
+  // Show check marks on target cells (only non-item targets)
+  const nonItemTargets = targetCells.filter(t => {
+    const cell = boardWithoutMag[t.row]?.[t.col];
+    return cell && !cell.item;
+  });
+  for (const t of nonItemTargets) matchedCells.add(pk(t.row, t.col));
+  await wait(MATCH_SHOW_DURATION);
+
+  // Clear animation
+  for (const t of nonItemTargets) clearingCells.add(pk(t.row, t.col));
+  await wait(CLEAR_DURATION);
+  matchedCells.clear();
+  clearingCells.clear();
+
+  // Switch to board after clear
+  visualBoard.value = plan.boardAfterClear;
+
+  // Animate item detonations if any
+  for (const effect of plan.itemEffects) {
+    vbRemove(effect.itemPos);
+    switch (effect.itemType) {
+      case 'magnifying_glass': await animateClip(effect.itemPos, effect.targets); break;
+      case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
+      case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
+      case 'clip': await animateClip(effect.itemPos, effect.targets); break;
+      case 'coffee': await animateCoffee(effect.itemPos, effect.targets); break;
+    }
+    for (const t of effect.targets) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  }
+
+  // Drop animation
+  const cs = cellSize.value;
+  for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
+  for (const [col, count] of plan.newTilesPerCol) {
+    for (let row = 0; row < count; row++) dropOffsets[pk(row, col)] = -count * cs;
+  }
+  visualBoard.value = plan.boardAfterDrop;
+  await nextFrame();
+  dropTransitioning.value = true;
+  const keys = Object.keys(dropOffsets);
+  for (const k of keys) dropOffsets[k] = 0;
+  await wait(DROP_DURATION);
+  dropTransitioning.value = false;
+  for (const k of keys) delete dropOffsets[k];
+
+  // Regular chains
+  for (const chain of plan.regularChains) await animateChainStep(chain);
+
+  store.applyState(plan.finalState);
+  visualBoard.value = null;
+  locked = false;
+}
+
+async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
+  const plan = store.computeMagSynthesisPlan(pos1, pos2, targetCells);
+  if (!plan) {
+    // Fallback: apply instantly
+    store.applyMagnifyingSynthesis(pos1, pos2, targetCells);
+    return;
+  }
+
+  locked = true;
+
+  // Remove both items from visual board
+  const boardWithoutItems = cloneBoard(store.board!);
+  boardWithoutItems[pos1.row][pos1.col] = null;
+  boardWithoutItems[pos2.row][pos2.col] = null;
+  visualBoard.value = boardWithoutItems;
+
+  if (plan.synthEffect === 'mag+mag') {
+    // mag+mag: show check marks on 3 selected cells, then clear
+    const nonItemTargets = plan.effectTargets;
+    for (const t of nonItemTargets) matchedCells.add(pk(t.row, t.col));
+    await wait(MATCH_SHOW_DURATION);
+    for (const t of nonItemTargets) clearingCells.add(pk(t.row, t.col));
+    await wait(CLEAR_DURATION);
+    matchedCells.clear();
+    clearingCells.clear();
+  } else if (plan.synthEffect === 'mag+scissors') {
+    await animateScissors(targetCells[0], plan.effectTargets);
+    for (const t of plan.effectTargets) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  } else if (plan.synthEffect === 'mag+cutter') {
+    await animateCutter(targetCells[0], plan.effectTargets);
+    for (const t of plan.effectTargets) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  } else if (plan.synthEffect === 'mag+clip') {
+    await animateClip(targetCells[0], plan.effectTargets);
+    for (const t of plan.effectTargets) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  }
+
+  visualBoard.value = plan.boardAfterClear;
+
+  // Animate item detonations if any
+  for (const effect of plan.itemEffects) {
+    vbRemove(effect.itemPos);
+    switch (effect.itemType) {
+      case 'magnifying_glass': await animateClip(effect.itemPos, effect.targets); break;
+      case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
+      case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
+      case 'clip': await animateClip(effect.itemPos, effect.targets); break;
+      case 'coffee': await animateCoffee(effect.itemPos, effect.targets); break;
+    }
+    for (const t of effect.targets) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  }
+
+  // Drop animation
+  const cs = cellSize.value;
+  for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
+  for (const [col, count] of plan.newTilesPerCol) {
+    for (let row = 0; row < count; row++) dropOffsets[pk(row, col)] = -count * cs;
+  }
+  visualBoard.value = plan.boardAfterDrop;
+  await nextFrame();
+  dropTransitioning.value = true;
+  const keys = Object.keys(dropOffsets);
+  for (const k of keys) dropOffsets[k] = 0;
+  await wait(DROP_DURATION);
+  dropTransitioning.value = false;
+  for (const k of keys) delete dropOffsets[k];
+
+  // Regular chains
+  for (const chain of plan.regularChains) await animateChainStep(chain);
 
   store.applyState(plan.finalState);
   visualBoard.value = null;
@@ -210,6 +438,33 @@ async function commitSwap(pos: Position, dir: Direction) {
     return;
   }
 
+  // Magnifying glass swap with regular tile → enter selection mode
+  {
+    const cell1 = activeBoard.value?.[pos.row]?.[pos.col];
+    const cell2 = activeBoard.value?.[nb.row]?.[nb.col];
+    if (cell1 && cell2) {
+      const magCell = cell1.item === 'magnifying_glass' ? cell1 : cell2.item === 'magnifying_glass' ? cell2 : null;
+      if (magCell && !(cell1.item && cell2.item)) {
+        // One is magnifying glass, the other is a regular tile (not both items)
+        // After slide animation, mag moved to the neighbor's position
+        const magPos = cell1.item === 'magnifying_glass' ? nb : pos;
+        clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
+        // Show the swapped board visually
+        const swapped = cloneBoard(store.board!);
+        swapped[pos.row][pos.col] = cell2;
+        swapped[nb.row][nb.col] = cell1;
+        visualBoard.value = swapped;
+        magSelecting.value = true;
+        magSourcePos.value = magPos;
+        magTargetsNeeded.value = 1;
+        magSelectedCells.value = [];
+        magSynthesisInfo.value = null;
+        locked = false;
+        return;
+      }
+    }
+  }
+
   // Try item swap
   const itemSwap = store.computeItemSwapPlan(pos, dir);
   if (itemSwap) {
@@ -224,6 +479,28 @@ async function commitSwap(pos: Position, dir: Direction) {
     visualBoard.value = null;
     locked = false;
     return;
+  }
+
+  // Magnifying glass synthesis (needs user selection)
+  {
+    const cell1 = activeBoard.value?.[pos.row]?.[pos.col];
+    const cell2 = activeBoard.value?.[nb.row]?.[nb.col];
+    if (cell1?.item && cell2?.item) {
+      const hasMag = cell1.item === 'magnifying_glass' || cell2.item === 'magnifying_glass';
+      if (hasMag) {
+        const synth = getSynthesisEffect(cell1.item, cell2.item);
+        if (synth && ['mag+mag', 'mag+scissors', 'mag+cutter', 'mag+clip'].includes(synth.effect)) {
+          clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
+          magSelecting.value = true;
+          magSourcePos.value = pos;
+          magTargetsNeeded.value = synth.effect === 'mag+mag' ? 3 : 1;
+          magSelectedCells.value = [];
+          magSynthesisInfo.value = { pos1: pos, pos2: nb };
+          locked = false;
+          return;
+        }
+      }
+    }
   }
 
   // Synthesis
@@ -257,6 +534,7 @@ async function animateItemEffects(plan: ItemAnimPlan) {
     vbRemove(effect.itemPos);
 
     switch (effect.itemType) {
+      case 'magnifying_glass': await animateClip(effect.itemPos, effect.targets); break;
       case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
       case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
       case 'clip': await animateClip(effect.itemPos, effect.targets); break;
@@ -380,6 +658,9 @@ async function animateSynthesisEffects(plan: SynthesisAnimPlan) {
         break;
       case 'coffee+coffee':
         await animateCoffeeAll(center, effect.targets);
+        break;
+      case 'mag+coffee':
+        await animateCoffee(center, effect.targets);
         break;
       default:
         if (effect.effectType.startsWith('coffee+')) {
@@ -708,6 +989,33 @@ function tileTransition(r: number, c: number) {
       >
         <ItemIcon :item="sweepIcon.item" :size="sweepIcon.size" />
       </div>
+
+      <!-- Magnifying glass selection overlay -->
+      <template v-if="magSelecting">
+        <div
+          v-for="row in BOARD_SIZE" :key="'mag-' + row"
+        >
+          <div
+            v-for="col in BOARD_SIZE" :key="'mag-' + row + '-' + col"
+            class="mag-select-cell"
+            :class="{
+              'mag-selected': magSelectedCells.some(p => p.row === row - 1 && p.col === col - 1),
+              'mag-source': magSourcePos && magSourcePos.row === row - 1 && magSourcePos.col === col - 1,
+            }"
+            :style="{
+              position: 'absolute',
+              left: ((col - 1) * cellSize) + 'px',
+              top: ((row - 1) * cellSize) + 'px',
+              width: cellSize + 'px',
+              height: cellSize + 'px',
+            }"
+          />
+        </div>
+        <div class="mag-status">
+          <span>Select {{ magTargetsNeeded - magSelectedCells.length }} cell{{ magTargetsNeeded - magSelectedCells.length !== 1 ? 's' : '' }}</span>
+          <button class="mag-cancel" @click="cancelMagSelection">Cancel</button>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -857,5 +1165,46 @@ function tileTransition(r: number, c: number) {
   0%   { transform: scale(0); opacity: 0; }
   70%  { transform: scale(1.2); opacity: 0.9; }
   100% { transform: scale(1); opacity: 0.8; }
+}
+.mag-select-cell {
+  border: 2px solid rgba(91, 155, 213, 0.5);
+  background: rgba(91, 155, 213, 0.1);
+  cursor: pointer;
+  z-index: 20;
+  box-sizing: border-box;
+}
+.mag-select-cell:hover {
+  background: rgba(91, 155, 213, 0.3);
+}
+.mag-selected {
+  background: rgba(91, 155, 213, 0.5) !important;
+  border-color: #5b9bd5;
+}
+.mag-source {
+  background: rgba(91, 155, 213, 0.05);
+  border-color: rgba(91, 155, 213, 0.2);
+  pointer-events: none;
+}
+.mag-status {
+  position: absolute;
+  bottom: -32px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #5b9bd5;
+  font-weight: 600;
+}
+.mag-cancel {
+  padding: 2px 10px;
+  border: 1px solid #5b9bd5;
+  border-radius: 4px;
+  background: #fff;
+  color: #5b9bd5;
+  font-size: 11px;
+  cursor: pointer;
 }
 </style>

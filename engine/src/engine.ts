@@ -1,6 +1,6 @@
 import {
   Cell, Color, ItemType, Position, Direction, Action,
-  Match, ChainStep, GameState, BOARD_SIZE, NUM_COLORS,
+  Match, ChainStep, GameState, GameMode, BOARD_SIZE, NUM_COLORS,
 } from './types.js';
 import { createRng, nextInt } from './rng.js';
 import {
@@ -14,8 +14,10 @@ import {
   findCoffeeTargetColor, getCoffeeTargets,
   getScissorsTargets, getCutterTargets, getClipTargets,
 } from './item.js';
-import { calculateStepScore, getFullClearBonus } from './score.js';
+import { calculateStepScore, getFullClearBonus, calculateRemainingItemBonus } from './score.js';
 import { isGameOver } from './gameOver.js';
+
+const DEFAULT_MOVE_LIMIT = 30;
 
 /** 方向から隣接位置を計算 */
 function getAdjacentPos(pos: Position, dir: Direction): Position {
@@ -28,7 +30,11 @@ function getAdjacentPos(pos: Position, dir: Direction): Position {
 }
 
 /** 初期盤面を生成（自動消去込み、スコア0・アイテムなし） */
-export function initializeGame(seed: number): GameState {
+export function initializeGame(
+  seed: number,
+  mode: GameMode = 'limited',
+  moveLimit?: number,
+): GameState {
   let { board, rngState } = generateRawBoard(seed);
 
   // 自動消去ループ: マッチがなくなるまで繰り返す
@@ -49,6 +55,8 @@ export function initializeGame(seed: number): GameState {
     moveCount: 0,
     undoUsed: false,
     isGameOver: false,
+    mode,
+    moveLimit: mode === 'limited' ? (moveLimit ?? DEFAULT_MOVE_LIMIT) : undefined,
   };
 }
 
@@ -61,6 +69,8 @@ export function cloneGameState(state: GameState): GameState {
     moveCount: state.moveCount,
     undoUsed: state.undoUsed,
     isGameOver: state.isGameOver,
+    mode: state.mode,
+    moveLimit: state.moveLimit,
   };
 }
 
@@ -72,6 +82,7 @@ function activateItem(
   targetColor: number | undefined,
   chainIndex: number,
   rngState: number,
+  targetCells?: Position[],
 ): { score: number; rngState: number; chainSteps: ChainStep[] } {
   const activated = new Set<string>();
   const chainSteps: ChainStep[] = [];
@@ -79,8 +90,8 @@ function activateItem(
   let rng = rngState;
 
   // 再帰的に誘爆を処理するキュー
-  const queue: { pos: Position; item: ItemType; targetColor?: number }[] = [
-    { pos, item, targetColor },
+  const queue: { pos: Position; item: ItemType; targetColor?: number; targetCells?: Position[] }[] = [
+    { pos, item, targetColor, targetCells },
   ];
 
   while (queue.length > 0) {
@@ -95,7 +106,7 @@ function activateItem(
       board[current.pos.row][current.pos.col] = null;
     }
 
-    const targets = getItemTargets(board, current.pos, current.item, current.targetColor);
+    const targets = getItemTargets(board, current.pos, current.item, current.targetColor, current.targetCells);
     const cleared: Position[] = [];
 
     for (const t of targets) {
@@ -202,6 +213,14 @@ function activateCoffeeSynthesis(
   return { score: totalScore, rngState: rng, chainSteps: allSteps };
 }
 
+/** ゲーム終了チェック＋残存アイテムボーナス加算 */
+function checkGameOver(state: GameState): void {
+  state.isGameOver = isGameOver(state.board, state.mode, state.moveCount, state.moveLimit);
+  if (state.isGameOver && state.mode === 'limited') {
+    state.score += calculateRemainingItemBonus(state.board);
+  }
+}
+
 /** プレイヤーの操作を処理して新しいGameStateを返す */
 export function processAction(state: GameState, action: Action): GameState {
   if (state.isGameOver) return state;
@@ -211,12 +230,54 @@ export function processAction(state: GameState, action: Action): GameState {
   newState.previousState = prevState;
   const board = newState.board;
 
+  if (action.type === 'magnifying_glass') {
+    // 虫めがね起動: タップで1手消費、ユーザー選択マスを消去
+    const cell = getCell(board, action.pos);
+    if (!cell?.item || cell.item !== 'magnifying_glass') return state;
+
+    board[action.pos.row][action.pos.col] = null;
+    newState.moveCount++;
+
+    // 各ターゲットセルを処理
+    for (const target of action.targetCells) {
+      const targetCell = getCell(board, target);
+      if (!targetCell) continue;
+      if (targetCell.item) {
+        // アイテムを発動
+        let targetColor: number | undefined;
+        if (targetCell.item === 'coffee') {
+          targetColor = findCoffeeTargetColor(board, target) ?? undefined;
+        }
+        const result = activateItem(board, target, targetCell.item, targetColor, 1, newState.rngState);
+        newState.score += result.score;
+        newState.rngState = result.rngState;
+      } else {
+        board[target.row][target.col] = null;
+        newState.score += 10;
+      }
+    }
+
+    // 落下 → 補充 → 連鎖
+    applyGravity(board);
+    newState.rngState = fillEmptyCells(board, newState.rngState);
+    const chainResult = processChains(board, newState.rngState, 2);
+    newState.score += chainResult.score;
+    newState.rngState = chainResult.rngState;
+
+    checkGameOver(newState);
+    return newState;
+  }
+
   if (action.type === 'tap') {
     // タップ: アイテム起動
     const cell = getCell(board, action.pos);
     if (!cell?.item) return state; // アイテムがなければ無効
 
     const item = cell.item;
+
+    // 虫めがねはtapでは起動しない（magnifying_glass actionを使う）
+    if (item === 'magnifying_glass') return state;
+
     let targetColor: number | undefined;
     if (item === 'coffee') {
       targetColor = findCoffeeTargetColor(board, action.pos) ?? undefined;
@@ -248,6 +309,14 @@ export function processAction(state: GameState, action: Action): GameState {
     if (cell1.item && cell2.item) {
       const synthesis = getSynthesisEffect(cell1.item, cell2.item);
       if (synthesis) {
+        // 虫めがね合成でユーザー選択が必要な場合は無効（別Actionで処理）
+        if (synthesis.effect === 'mag+mag' ||
+            synthesis.effect === 'mag+scissors' ||
+            synthesis.effect === 'mag+cutter' ||
+            synthesis.effect === 'mag+clip') {
+          return state; // フロントエンドが magnifying_glass_synthesis アクションを送る
+        }
+
         const synthResult = processSynthesis(
           board, action.pos, targetPos, cell1.item, cell2.item,
           synthesis.effect, newState.rngState
@@ -262,7 +331,7 @@ export function processAction(state: GameState, action: Action): GameState {
         newState.score += chainResult.score;
         newState.rngState = chainResult.rngState;
 
-        newState.isGameOver = isGameOver(board);
+        checkGameOver(newState);
         return newState;
       }
     }
@@ -273,6 +342,9 @@ export function processAction(state: GameState, action: Action): GameState {
       const itemPos = cell1.item ? action.pos : targetPos;
       const otherCell = cell1.item ? cell2 : cell1;
       const otherPos = cell1.item ? targetPos : action.pos;
+
+      // 虫めがねはスワイプ起動不可（tapの代わりにmagnifying_glass actionで）
+      if (itemCell.item === 'magnifying_glass') return state;
 
       // まず入れ替え
       board[action.pos.row][action.pos.col] = cell2;
@@ -295,7 +367,7 @@ export function processAction(state: GameState, action: Action): GameState {
       newState.score += chainResult.score;
       newState.rngState = chainResult.rngState;
 
-      newState.isGameOver = isGameOver(board);
+      checkGameOver(newState);
       return newState;
     }
 
@@ -339,7 +411,7 @@ export function processAction(state: GameState, action: Action): GameState {
     newState.rngState = chainResult.rngState;
   }
 
-  newState.isGameOver = isGameOver(board);
+  checkGameOver(newState);
   return newState;
 }
 
@@ -386,13 +458,39 @@ function processSynthesis(
     return { score: totalScore, rngState: rng };
   }
 
+  if (effect === 'mag+coffee') {
+    // 虫めがね+コーヒー: コーヒーの隣接色で全消し
+    const coffeePos = item1 === 'coffee' ? pos1 : pos2;
+    board[pos1.row][pos1.col] = null;
+    board[pos2.row][pos2.col] = null;
+
+    const targetColor = findCoffeeTargetColor(board, coffeePos);
+    if (targetColor === null) {
+      return { score: 0, rngState: rng };
+    }
+
+    const targets = getCoffeeTargets(board, targetColor);
+    for (const t of targets) {
+      const cell = board[t.row]?.[t.col];
+      if (cell === null) continue;
+      if (cell.item) {
+        const result = activateItem(board, t, cell.item, undefined, 1, rng);
+        totalScore += result.score;
+        rng = result.rngState;
+      } else {
+        board[t.row][t.col] = null;
+      }
+    }
+    totalScore += 10 * targets.length * 1;
+
+    return { score: totalScore, rngState: rng };
+  }
+
   if (effect.startsWith('coffee+')) {
     const otherItem = effect.replace('coffee+', '') as ItemType;
     const coffeePos = item1 === 'coffee' ? pos1 : pos2;
     const otherPos = item1 === 'coffee' ? pos2 : pos1;
 
-    // 隣接するセルの色を対象色とする
-    // コーヒー合成時: 上隣から時計回りで色を探す
     const targetColor = findCoffeeTargetColor(board, coffeePos);
     if (targetColor === null) {
       board[pos1.row][pos1.col] = null;
@@ -442,6 +540,90 @@ function processSynthesis(
   totalScore += 10 * cleared.length * 1;
 
   return { score: totalScore, rngState: rng };
+}
+
+/** 虫めがね合成を処理（ユーザー選択後に呼ばれる） */
+export function processMagnifyingSynthesis(
+  state: GameState,
+  pos1: Position,
+  pos2: Position,
+  targetCells: Position[],
+): GameState {
+  if (state.isGameOver) return state;
+
+  const cell1 = getCell(state.board, pos1);
+  const cell2 = getCell(state.board, pos2);
+  if (!cell1?.item || !cell2?.item) return state;
+
+  const synthesis = getSynthesisEffect(cell1.item, cell2.item);
+  if (!synthesis) return state;
+
+  const prevState = cloneGameState(state);
+  const newState = cloneGameState(state);
+  newState.previousState = prevState;
+  const board = newState.board;
+
+  board[pos1.row][pos1.col] = null;
+  board[pos2.row][pos2.col] = null;
+  newState.moveCount++;
+
+  const synthPos = pos2;
+  const effect = synthesis.effect;
+
+  if (effect === 'mag+mag') {
+    // 3マス消去
+    for (const target of targetCells) {
+      const cell = getCell(board, target);
+      if (!cell) continue;
+      if (cell.item) {
+        let targetColor: number | undefined;
+        if (cell.item === 'coffee') {
+          targetColor = findCoffeeTargetColor(board, target) ?? undefined;
+        }
+        const result = activateItem(board, target, cell.item, targetColor, 1, newState.rngState);
+        newState.score += result.score;
+        newState.rngState = result.rngState;
+      } else {
+        board[target.row][target.col] = null;
+        newState.score += 10;
+      }
+    }
+  } else {
+    // mag+scissors, mag+cutter, mag+clip: 1マス選択→効果発動
+    const targets = getSynthesisTargets(board, synthPos, effect, undefined, targetCells);
+    const activated = new Set<string>();
+    activated.add(`${pos1.row},${pos1.col}`);
+    activated.add(`${pos2.row},${pos2.col}`);
+    let cleared = 0;
+
+    for (const t of targets) {
+      const cell = board[t.row]?.[t.col];
+      if (cell === null) continue;
+      if (cell.item) {
+        const key = `${t.row},${t.col}`;
+        if (!activated.has(key)) {
+          activated.add(key);
+          const result = activateItem(board, t, cell.item, undefined, 1, newState.rngState);
+          newState.score += result.score;
+          newState.rngState = result.rngState;
+        }
+      } else {
+        board[t.row][t.col] = null;
+        cleared++;
+      }
+    }
+    newState.score += 10 * cleared;
+  }
+
+  // 落下 → 補充 → 連鎖
+  applyGravity(board);
+  newState.rngState = fillEmptyCells(board, newState.rngState);
+  const chainResult = processChains(board, newState.rngState, 2);
+  newState.score += chainResult.score;
+  newState.rngState = chainResult.rngState;
+
+  checkGameOver(newState);
+  return newState;
 }
 
 /** 落下後の連鎖を処理 */

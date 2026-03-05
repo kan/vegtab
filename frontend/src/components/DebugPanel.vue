@@ -14,9 +14,14 @@ const collapsed = ref(true);
 const pendingPlace = ref<PlaceMode | null>(null);
 const placedFirst = ref<{ row: number; col: number } | null>(null);
 
-const items: ItemType[] = ['scissors', 'cutter', 'clip', 'coffee'];
+const items: ItemType[] = ['magnifying_glass', 'scissors', 'cutter', 'clip', 'coffee'];
 
 const pairs: { label: string; items: [ItemType, ItemType] }[] = [
+  { label: 'Mag+Mag', items: ['magnifying_glass', 'magnifying_glass'] },
+  { label: 'Mag+Sci', items: ['magnifying_glass', 'scissors'] },
+  { label: 'Mag+Cut', items: ['magnifying_glass', 'cutter'] },
+  { label: 'Mag+Clip', items: ['magnifying_glass', 'clip'] },
+  { label: 'Mag+Cof', items: ['magnifying_glass', 'coffee'] },
   { label: 'Line+Line', items: ['scissors', 'scissors'] },
   { label: 'Sci+Clip', items: ['scissors', 'clip'] },
   { label: 'Cut+Clip', items: ['cutter', 'clip'] },
