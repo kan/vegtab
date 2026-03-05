@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan, type MagGlassAnimPlan, type MagSynthesisAnimPlan } from '@/stores/puzzle';
-import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell } from '@tomado/engine';
+import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type ItemType } from '@tomado/engine';
 import ItemIcon from './ItemIcon.vue';
 import type DebugPanel from './DebugPanel.vue';
 
@@ -293,13 +293,7 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
   // Animate item detonations if any
   for (const effect of plan.itemEffects) {
     vbRemove(effect.itemPos);
-    switch (effect.itemType) {
-      case 'magnifying_glass': await animateRadial(effect.itemPos, effect.targets, 'magnifying_glass'); break;
-      case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
-      case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
-      case 'clip': await animateClip(effect.itemPos, effect.targets); break;
-      case 'coffee': await animateCoffee(effect.itemPos, effect.targets); break;
-    }
+    await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -361,7 +355,7 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
     itemClearingCells.clear();
     cellItemOverlay.clear();
   } else if (plan.synthEffect === 'mag+clip') {
-    await animateClip(targetCells[0], plan.effectTargets);
+    await animateRadial(targetCells[0], plan.effectTargets, 'clip');
     for (const t of plan.effectTargets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -372,13 +366,7 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
   // Animate item detonations if any
   for (const effect of plan.itemEffects) {
     vbRemove(effect.itemPos);
-    switch (effect.itemType) {
-      case 'magnifying_glass': await animateRadial(effect.itemPos, effect.targets, 'magnifying_glass'); break;
-      case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
-      case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
-      case 'clip': await animateClip(effect.itemPos, effect.targets); break;
-      case 'coffee': await animateCoffee(effect.itemPos, effect.targets); break;
-    }
+    await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -521,20 +509,20 @@ async function commitSwap(pos: Position, dir: Direction) {
 
 // --- Item effect animations ---
 
+async function animateSingleEffect(itemType: ItemType, pos: Position, targets: Position[]) {
+  switch (itemType) {
+    case 'magnifying_glass': await animateRadial(pos, targets, 'magnifying_glass'); break;
+    case 'scissors': await animateScissors(pos, targets); break;
+    case 'cutter': await animateCutter(pos, targets); break;
+    case 'clip': await animateRadial(pos, targets, 'clip'); break;
+    case 'coffee': await animateCoffee(pos, targets); break;
+  }
+}
+
 async function animateItemEffects(plan: ItemAnimPlan) {
   for (const effect of plan.effects) {
-    // Remove item from visual board
     vbRemove(effect.itemPos);
-
-    switch (effect.itemType) {
-      case 'magnifying_glass': await animateRadial(effect.itemPos, effect.targets, 'magnifying_glass'); break;
-      case 'scissors': await animateScissors(effect.itemPos, effect.targets); break;
-      case 'cutter': await animateCutter(effect.itemPos, effect.targets); break;
-      case 'clip': await animateClip(effect.itemPos, effect.targets); break;
-      case 'coffee': await animateCoffee(effect.itemPos, effect.targets); break;
-    }
-
-    // Remove targets from visual board
+    await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -569,7 +557,7 @@ async function animateCutter(pos: Position, targets: Position[]) {
   await wait(ITEM_CLEAR_DURATION + 100);
 }
 
-async function animateRadial(pos: Position, targets: Position[], icon: string) {
+async function animateRadial(pos: Position, targets: Position[], icon: ItemType) {
   // Sort by distance from center (radial expansion)
   const sorted = [...targets].sort((a, b) => {
     const da = Math.abs(a.row - pos.row) + Math.abs(a.col - pos.col);
@@ -590,10 +578,6 @@ async function animateRadial(pos: Position, targets: Position[], icon: string) {
   }
 
   await wait(ITEM_CLEAR_DURATION + 100);
-}
-
-async function animateClip(pos: Position, targets: Position[]) {
-  await animateRadial(pos, targets, 'clip');
 }
 
 async function animateCoffee(pos: Position, targets: Position[]) {

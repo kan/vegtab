@@ -1,6 +1,12 @@
 import { Cell, ItemType, Match, Position, BOARD_SIZE } from './types.js';
 import { isValidPosition } from './board.js';
 
+/** 上から時計回りの8方向 */
+const CLOCKWISE_8: readonly [number, number][] = [
+  [-1, 0], [-1, 1], [0, 1], [1, 1],
+  [1, 0], [1, -1], [0, -1], [-1, -1],
+];
+
 /**
  * 個別マッチパターンからアイテム生成を判定（直線マッチのみ）
  * 優先順: コーヒーカップ > クリップ > カッター = はさみ
@@ -242,11 +248,7 @@ export function getCoffeeTargets(board: (Cell | null)[][], targetColor: number):
 /** コーヒーカップのタップ/連鎖時: 上隣から時計回りで最初の付箋の色を取得 */
 /** 誘爆時の虫めがね: 上から時計回りで最初に見つかる隣接セル1マスを返す */
 function getMagnifyingGlassAutoTarget(board: (Cell | null)[][], pos: Position): Position[] {
-  const directions = [
-    [-1, 0], [-1, 1], [0, 1], [1, 1],
-    [1, 0], [1, -1], [0, -1], [-1, -1],
-  ];
-  for (const [dr, dc] of directions) {
+  for (const [dr, dc] of CLOCKWISE_8) {
     const p = { row: pos.row + dr, col: pos.col + dc };
     if (isValidPosition(p)) {
       const cell = board[p.row][p.col];
@@ -258,11 +260,7 @@ function getMagnifyingGlassAutoTarget(board: (Cell | null)[][], pos: Position): 
 
 export function findCoffeeTargetColor(board: (Cell | null)[][], pos: Position): number | null {
   // 上隣から時計回り: 上, 右上, 右, 右下, 下, 左下, 左, 左上
-  const directions = [
-    [-1, 0], [-1, 1], [0, 1], [1, 1],
-    [1, 0], [1, -1], [0, -1], [-1, -1],
-  ];
-  for (const [dr, dc] of directions) {
+  for (const [dr, dc] of CLOCKWISE_8) {
     const p = { row: pos.row + dr, col: pos.col + dc };
     if (isValidPosition(p)) {
       const cell = board[p.row][p.col];
