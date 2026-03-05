@@ -1,0 +1,14 @@
+{
+  "name": "tomado",
+  "version": "0.0.1",
+  "private": true,
+  "description": "TODO × 3-match puzzle gamification app",
+  "scripts": {
+    "test": "npm test --workspaces --if-present"
+  },
+  "workspaces": [
+    "engine",
+    "frontend",
+    "backend"
+  ]
+}
