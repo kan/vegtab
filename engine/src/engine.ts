@@ -314,7 +314,7 @@ export function processAction(state: GameState, action: Action): GameState {
     newState.moveCount++;
 
     // アイテム生成判定
-    const itemGen = determineItemFromMatches(matches, action.pos);
+    const itemGen = determineItemFromMatches(matches, [action.pos, targetPos]);
 
     // マッチ消去
     const cleared = getUniquePositions(matches);
@@ -413,8 +413,8 @@ function processSynthesis(
   board[pos1.row][pos1.col] = null;
   board[pos2.row][pos2.col] = null;
 
-  // 合成位置は最初のアイテム位置
-  const synthPos = pos1;
+  // 合成位置はスワイプ先（pos2 = targetPos）
+  const synthPos = pos2;
   const targets = getSynthesisTargets(board, synthPos, effect);
   const cleared: Position[] = [];
 

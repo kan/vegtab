@@ -25,12 +25,79 @@ export function determineItem(match: Match): ItemType | null {
 }
 
 /**
+ * 同色のマッチをマージして連結グループを作る
+ * L字やT字のパターンを検出するために必要
+ */
+function mergeConnectedMatches(matches: Match[]): { positions: Position[]; color: number }[] {
+  // 色ごとにマッチをグループ化
+  const byColor = new Map<number, Match[]>();
+  for (const m of matches) {
+    const arr = byColor.get(m.color) ?? [];
+    arr.push(m);
+    byColor.set(m.color, arr);
+  }
+
+  const groups: { positions: Position[]; color: number }[] = [];
+
+  for (const [color, colorMatches] of byColor) {
+    // Union-Find で連結判定
+    const posMap = new Map<string, number>(); // key -> index
+    const allPositions: Position[] = [];
+
+    for (const m of colorMatches) {
+      for (const p of m.positions) {
+        const key = `${p.row},${p.col}`;
+        if (!posMap.has(key)) {
+          posMap.set(key, allPositions.length);
+          allPositions.push(p);
+        }
+      }
+    }
+
+    const parent = allPositions.map((_, i) => i);
+    function find(x: number): number {
+      while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+      return x;
+    }
+    function union(a: number, b: number) {
+      const ra = find(a), rb = find(b);
+      if (ra !== rb) parent[ra] = rb;
+    }
+
+    // 同じマッチ内のポジションを結合
+    for (const m of colorMatches) {
+      const firstIdx = posMap.get(`${m.positions[0].row},${m.positions[0].col}`)!;
+      for (let i = 1; i < m.positions.length; i++) {
+        const idx = posMap.get(`${m.positions[i].row},${m.positions[i].col}`)!;
+        union(firstIdx, idx);
+      }
+    }
+
+    // グループ化
+    const groupMap = new Map<number, Position[]>();
+    for (let i = 0; i < allPositions.length; i++) {
+      const root = find(i);
+      const arr = groupMap.get(root) ?? [];
+      arr.push(allPositions[i]);
+      groupMap.set(root, arr);
+    }
+
+    for (const positions of groupMap.values()) {
+      groups.push({ positions, color });
+    }
+  }
+
+  return groups;
+}
+
+/**
  * 複数のマッチから最も優先度の高いアイテムを1つ決定
- * swapOriginがある場合はスワイプ起点位置に配置
+ * swapPositions: ユーザーのスワイプに関わる2つの位置 [origin, target]
+ *   - originを優先し、originがマッチに含まれなければtargetを使う
  */
 export function determineItemFromMatches(
   matches: Match[],
-  swapOrigin?: Position
+  swapPositions?: [Position, Position]
 ): { item: ItemType; pos: Position } | null {
   const priority: Record<ItemType, number> = {
     coffee: 4,
@@ -39,22 +106,55 @@ export function determineItemFromMatches(
     scissors: 2,
   };
 
+  // 全マッチの位置をセットにまとめる
+  const allMatchPositions = new Set<string>();
+  for (const m of matches) {
+    for (const p of m.positions) {
+      allMatchPositions.add(`${p.row},${p.col}`);
+    }
+  }
+
+  // スワイプ位置のうちマッチに含まれるものを優先順で選択
+  let swapPos: Position | undefined;
+  if (swapPositions) {
+    const [origin, target] = swapPositions;
+    if (allMatchPositions.has(`${origin.row},${origin.col}`)) {
+      swapPos = origin;
+    } else if (allMatchPositions.has(`${target.row},${target.col}`)) {
+      swapPos = target;
+    }
+  }
+
   let best: { item: ItemType; pos: Position; priority: number } | null = null;
 
+  // 1. 個別マッチから直線アイテム判定 (scissors, cutter, coffee)
   for (const match of matches) {
     const item = determineItem(match);
     if (item === null) continue;
 
     const p = priority[item];
     if (best === null || p > best.priority) {
-      // 生成位置の決定
-      let pos: Position;
-      if (swapOrigin && match.positions.some(mp => mp.row === swapOrigin.row && mp.col === swapOrigin.col)) {
-        pos = swapOrigin;
-      } else {
-        pos = getCenterPosition(match.positions);
-      }
+      const pos = swapPos ?? getCenterPosition(match.positions);
       best = { item, pos, priority: p };
+    }
+  }
+
+  // 2. 連結グループからクリップ判定 (5+マス非直線)
+  //    coffeeが既に見つかっている場合はスキップ（優先度が上）
+  if (!best || best.priority < priority.clip) {
+    const groups = mergeConnectedMatches(matches);
+    for (const group of groups) {
+      if (group.positions.length >= 5) {
+        const isH = group.positions.every(p => p.row === group.positions[0].row);
+        const isV = group.positions.every(p => p.col === group.positions[0].col);
+        if (!isH && !isV) {
+          const p = priority.clip;
+          if (!best || p > best.priority) {
+            const pos = swapPos ?? getCenterPosition(group.positions);
+            best = { item: 'clip', pos, priority: p };
+          }
+        }
+      }
     }
   }
 
