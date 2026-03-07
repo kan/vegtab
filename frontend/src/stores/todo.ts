@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { useGameStore } from './game';
+import { todayLocal, formatDateLocal } from '@/utils/date';
 
 export type RepeatRule =
   | { type: 'daily' }
@@ -257,7 +258,7 @@ function computeNextDate(rule: RepeatRule, currentDueDate: string | null): strin
     case 'daily': {
       const next = new Date(base);
       next.setDate(next.getDate() + 1);
-      return fmt(next);
+      return formatDateLocal(next);
     }
     case 'weekly': {
       const next = new Date(base);
@@ -265,7 +266,7 @@ function computeNextDate(rule: RepeatRule, currentDueDate: string | null): strin
       while (next.getDay() !== rule.dayOfWeek) {
         next.setDate(next.getDate() + 1);
       }
-      return fmt(next);
+      return formatDateLocal(next);
     }
     case 'monthly': {
       const next = new Date(base);
@@ -273,18 +274,11 @@ function computeNextDate(rule: RepeatRule, currentDueDate: string | null): strin
       // Clamp day to valid range for the month
       const day = Math.min(rule.dayOfMonth, daysInMonth(next.getFullYear(), next.getMonth()));
       next.setDate(day);
-      return fmt(next);
+      return formatDateLocal(next);
     }
   }
 }
 
-function todayLocal(): string {
-  return fmt(new Date());
-}
-
-function fmt(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();

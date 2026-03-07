@@ -2,14 +2,13 @@
 import { ref } from 'vue';
 import { usePuzzleStore } from '@/stores/puzzle';
 import type { ItemType } from '@tomado/engine';
+import { ALL_ITEM_TYPES } from '@/utils/constants';
 import ItemIcon from './ItemIcon.vue';
 
 const store = usePuzzleStore();
 
 const visible = ref(false);
 const pendingItem = ref<ItemType | null>(null);
-
-const items: ItemType[] = ['magnifying_glass', 'scissors', 'cutter', 'clip', 'coffee'];
 
 function show() {
   visible.value = true;
@@ -61,7 +60,7 @@ defineExpose({
         </div>
         <div class="item-grid">
           <button
-            v-for="item in items"
+            v-for="item in ALL_ITEM_TYPES"
             :key="item"
             class="item-btn"
             @click="selectItem(item)"

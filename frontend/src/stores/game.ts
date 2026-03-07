@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import type { ItemType } from '@tomado/engine';
+import { todayLocal } from '@/utils/date';
+
+export type { ItemType };
 
 // --- Types ---
-
-export type ItemType = 'magnifying_glass' | 'scissors' | 'cutter' | 'clip' | 'coffee';
 
 export interface ItemStock {
   magnifying_glass: number;
@@ -62,6 +64,9 @@ export const useGameStore = defineStore('game', () => {
   const trialSeeds = ref<number[]>(loadJson('tomado_trial_seeds', [])); // seeds with trial used
   const playRecords = ref<PlayRecord[]>(loadJson('tomado_play_records', []));
   const dailyState = ref<DailyState>(loadDailyState());
+
+  // Ensure daily state is fresh on store init
+  ensureDailyState();
 
   function setDisplayName(name: string) {
     displayName.value = name.slice(0, 20);
@@ -136,7 +141,6 @@ export const useGameStore = defineStore('game', () => {
   // --- Items ---
 
   const availableItemChoices = computed<ItemType[]>(() => {
-    ensureDailyState();
     const count = dailyState.value.todoCompletedCount;
     if (count < 2) return [];
     const choices: ItemType[] = ['magnifying_glass'];
@@ -147,7 +151,6 @@ export const useGameStore = defineStore('game', () => {
   });
 
   const canSelectItem = computed(() => {
-    ensureDailyState();
     return !dailyState.value.itemSelected && availableItemChoices.value.length > 0;
   });
 
@@ -222,10 +225,14 @@ export const useGameStore = defineStore('game', () => {
     return status === 'daily_today' || status === 'unlocked';
   }
 
+  function randomSeed(): number {
+    return ((Date.now() & 0x7fffffff) ^ (Math.random() * 0x7fffffff)) >>> 0;
+  }
+
   function generateNewSeed(): number | null {
     tickStamina();
     if (stamina.value <= 0) return null;
-    const seed = ((Date.now() & 0x7fffffff) ^ (Math.random() * 0x7fffffff)) >>> 0;
+    const seed = randomSeed();
     if (!consumeStamina()) return null;
     unlockedSeeds.value.push({ seed, unlockedAt: Date.now() });
     saveSeeds();
@@ -351,7 +358,7 @@ export const useGameStore = defineStore('game', () => {
     grantUndoFromTodo, useUndo,
     selectItem, consumeItem,
     onTodoCompleted,
-    generateDailySeed, generateNewSeed,
+    generateDailySeed, generateNewSeed, randomSeed,
     isSeedUnlocked, isTodaysDailySeed, isTrialUsed,
     getSeedStatus, canPlay, canRetry,
     unlockSeed, markTrialUsed, discardTrial,
@@ -362,11 +369,6 @@ export const useGameStore = defineStore('game', () => {
 });
 
 // --- Helpers ---
-
-function todayLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 function loadStr(key: string, fallback: string): string {
   try {

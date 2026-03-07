@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useTodoStore, GROUP_COLORS, type RepeatRule, type Todo } from '@/stores/todo';
+import { formatDateLocal } from '@/utils/date';
 
 const store = useTodoStore();
 
@@ -144,9 +145,7 @@ function repeatLabel(r: RepeatRule | null): string {
   }
 }
 
-function fmtLocal(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const fmtLocal = formatDateLocal;
 
 function dueDateLabel(d: string): string {
   const today = fmtLocal(new Date());

@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { useGameStore, type ItemType } from '@/stores/game';
+import { useGameStore } from '@/stores/game';
+import type { ItemType } from '@tomado/engine';
 import { useTodoStore } from '@/stores/todo';
+import { todayLocal } from '@/utils/date';
+import { ALL_ITEM_TYPES, ITEM_LABELS } from '@/utils/constants';
 import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
 
@@ -38,12 +41,8 @@ onMounted(() => {
 onUnmounted(() => clearInterval(staminaTimer));
 
 // --- Daily seed ---
-function todayLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-const todaySeed = computed(() => gameStore.generateDailySeed(todayLocal()));
+const today = todayLocal();
+const todaySeed = computed(() => gameStore.generateDailySeed(today));
 const todayBestScore = computed(() => gameStore.getBestScore(todaySeed.value, 'limited'));
 
 function playDaily() {
@@ -110,21 +109,14 @@ function playCalendarSeed(dateStr: string, seed: number) {
 }
 
 function isToday(dateStr: string): boolean {
-  return dateStr === todayLocal();
+  return dateStr === today;
 }
 
 function isFuture(dateStr: string): boolean {
-  return dateStr > todayLocal();
+  return dateStr > today;
 }
 
 // --- Item selection ---
-const ITEM_LABELS: Record<ItemType, string> = {
-  magnifying_glass: 'Magnifying Glass',
-  scissors: 'Scissors',
-  cutter: 'Cutter',
-  clip: 'Clip',
-  coffee: 'Coffee Cup',
-};
 
 const ITEM_DESCS: Record<ItemType, string> = {
   magnifying_glass: 'Tap to remove 1 tile',
@@ -140,10 +132,8 @@ function pickItem(type: ItemType) {
 }
 
 // --- Item stock ---
-const ALL_ITEMS: ItemType[] = ['magnifying_glass', 'scissors', 'cutter', 'clip', 'coffee'];
-
 const totalItems = computed(() =>
-  ALL_ITEMS.reduce((sum, t) => sum + gameStore.items[t], 0)
+  ALL_ITEM_TYPES.reduce((sum, t) => sum + gameStore.items[t], 0)
 );
 
 // --- Generated seeds ---
@@ -229,7 +219,7 @@ const staminaDots = computed(() => {
 
     <!-- Item stock -->
     <div v-if="totalItems > 0" class="item-stock-row">
-      <template v-for="type in ALL_ITEMS" :key="type">
+      <template v-for="type in ALL_ITEM_TYPES" :key="type">
         <div v-if="gameStore.items[type] > 0" class="item-stock-chip">
           <ItemIcon :item="type" :size="18" />
           <span class="item-stock-count">{{ gameStore.items[type] }}</span>

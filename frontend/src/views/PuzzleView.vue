@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { usePuzzleStore } from '@/stores/puzzle';
-import { useGameStore, type ItemType } from '@/stores/game';
+import { useGameStore } from '@/stores/game';
+import type { ItemType } from '@tomado/engine';
+import { ALL_ITEM_TYPES, ITEM_LABELS, STICKY_NOTE_COLORS } from '@/utils/constants';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
@@ -24,23 +26,14 @@ const selectedItem = ref<ItemType | null>(null);
 const placedItems = ref<{ row: number; col: number; item: ItemType }[]>([]);
 
 const availableItems = computed<{ type: ItemType; label: string }[]>(() => {
-  const labels: Record<ItemType, string> = {
-    magnifying_glass: 'Magnifying Glass',
-    scissors: 'Scissors',
-    cutter: 'Cutter',
-    clip: 'Clip',
-    coffee: 'Coffee Cup',
-  };
-  const allTypes: ItemType[] = ['magnifying_glass', 'scissors', 'cutter', 'clip', 'coffee'];
-  return allTypes
+  return ALL_ITEM_TYPES
     .filter(t => gameStore.items[t] > 0)
     .filter(t => !placedItems.value.some(p => p.item === t)) // max 1 per type
-    .map(t => ({ type: t, label: labels[t] }));
+    .map(t => ({ type: t, label: ITEM_LABELS[t] }));
 });
 
 const hasAnyItems = computed(() => {
-  const allTypes: ItemType[] = ['magnifying_glass', 'scissors', 'cutter', 'clip', 'coffee'];
-  return allTypes.some(t => gameStore.items[t] > 0);
+  return ALL_ITEM_TYPES.some(t => gameStore.items[t] > 0);
 });
 
 const usedItems = computed(() => placedItems.value.length > 0);
@@ -81,7 +74,7 @@ function beginGame(seed?: number) {
 
 function previewNewSeed() {
   // Generate a random seed just to show the board, but don't commit yet
-  const seed = ((Date.now() & 0x7fffffff) ^ (Math.random() * 0x7fffffff)) >>> 0;
+  const seed = gameStore.randomSeed();
   store.startGame(seed);
   scoreRecorded.value = false;
   isTrial.value = true;
@@ -262,16 +255,28 @@ const previewTop3 = computed(() => {
     .map((r, i) => ({ rank: i + 1, score: r.score, name: r.playerName || 'Anonymous' }));
 });
 
+let peekCleanup: (() => void) | null = null;
+
 function startPeek() {
   peeking.value = true;
   const onUp = () => {
     peeking.value = false;
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
+    peekCleanup = null;
   };
   window.addEventListener('pointerup', onUp);
   window.addEventListener('pointercancel', onUp);
+  peekCleanup = onUp;
 }
+
+onUnmounted(() => {
+  if (peekCleanup) {
+    window.removeEventListener('pointerup', peekCleanup);
+    window.removeEventListener('pointercancel', peekCleanup);
+    peekCleanup = null;
+  }
+});
 
 // --- Board grid for preparation overlay ---
 const showRanking = ref(false);
@@ -282,13 +287,6 @@ const myBest = computed(() => {
 });
 
 const BOARD_SIZE = 8;
-const COLORS: Record<number, string> = {
-  0: '#e6c832',
-  1: '#5aad5e',
-  2: '#4088c4',
-  3: '#e06b6b',
-  4: '#a85e90',
-};
 </script>
 
 <template>
@@ -380,7 +378,7 @@ const COLORS: Record<number, string> = {
                 <div
                   v-else
                   class="prep-cell-color"
-                  :style="{ background: COLORS[store.board[row - 1][col - 1].color] || '#ccc' }"
+                  :style="{ background: STICKY_NOTE_COLORS[store.board[row - 1][col - 1].color] ?? '#ccc' }"
                 />
               </template>
             </div>
