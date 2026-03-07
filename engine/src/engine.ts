@@ -416,6 +416,39 @@ export function processAction(state: GameState, action: Action): GameState {
 }
 
 /** 合成効果を処理 */
+/** Clear targets, activating any items encountered. Returns updated score and rng. */
+function clearTargets(
+  board: (Cell | null)[][],
+  targets: Position[],
+  rngState: number,
+  excludePositions?: Set<string>,
+): { score: number; rngState: number } {
+  let rng = rngState;
+  let score = 0;
+  let cleared = 0;
+  const activated = excludePositions ?? new Set<string>();
+
+  for (const t of targets) {
+    const cell = board[t.row]?.[t.col];
+    if (cell === null) continue;
+    if (cell.item) {
+      const key = `${t.row},${t.col}`;
+      if (!activated.has(key)) {
+        activated.add(key);
+        const result = activateItem(board, t, cell.item, undefined, 1, rng);
+        score += result.score;
+        rng = result.rngState;
+      }
+    } else {
+      board[t.row][t.col] = null;
+      cleared++;
+    }
+  }
+
+  score += 10 * cleared;
+  return { score, rngState: rng };
+}
+
 function processSynthesis(
   board: (Cell | null)[][],
   pos1: Position,
@@ -430,8 +463,6 @@ function processSynthesis(
 
   if (effect === 'coffee+coffee') {
     // 全消し: アイテムは残留
-    const items: { pos: Position; item: ItemType }[] = [];
-    // 合成元の2つは消える
     board[pos1.row][pos1.col] = null;
     board[pos2.row][pos2.col] = null;
 
@@ -439,19 +470,11 @@ function processSynthesis(
       for (let col = 0; col < BOARD_SIZE; col++) {
         const cell = board[row][col];
         if (cell === null) continue;
-        if (cell.item) {
-          items.push({ pos: { row, col }, item: cell.item });
-          // アイテムはそのまま残る
-        } else {
-          board[row][col] = null;
-        }
+        if (!cell.item) board[row][col] = null;
       }
     }
 
-    // 全消しボーナス
     totalScore += getFullClearBonus();
-
-    // 空きマスに補充（アイテム位置は残す）
     applyGravity(board);
     rng = fillEmptyCells(board, rng);
 
@@ -459,7 +482,6 @@ function processSynthesis(
   }
 
   if (effect === 'mag+coffee') {
-    // 虫めがね+コーヒー: コーヒーの隣接色で全消し
     const coffeePos = item1 === 'coffee' ? pos1 : pos2;
     board[pos1.row][pos1.col] = null;
     board[pos2.row][pos2.col] = null;
@@ -481,7 +503,7 @@ function processSynthesis(
         board[t.row][t.col] = null;
       }
     }
-    totalScore += 10 * targets.length * 1;
+    totalScore += 10 * targets.length;
 
     return { score: totalScore, rngState: rng };
   }
@@ -511,33 +533,11 @@ function processSynthesis(
   board[pos1.row][pos1.col] = null;
   board[pos2.row][pos2.col] = null;
 
-  // 合成位置はスワイプ先（pos2 = targetPos）
-  const synthPos = pos2;
-  const targets = getSynthesisTargets(board, synthPos, effect);
-  const cleared: Position[] = [];
-
-  const activated = new Set<string>();
-  activated.add(`${pos1.row},${pos1.col}`);
-  activated.add(`${pos2.row},${pos2.col}`);
-
-  for (const t of targets) {
-    const cell = board[t.row]?.[t.col];
-    if (cell === null) continue;
-    if (cell.item) {
-      const key = `${t.row},${t.col}`;
-      if (!activated.has(key)) {
-        activated.add(key);
-        const result = activateItem(board, t, cell.item, undefined, 1, rng);
-        totalScore += result.score;
-        rng = result.rngState;
-      }
-    } else {
-      board[t.row][t.col] = null;
-      cleared.push(t);
-    }
-  }
-
-  totalScore += 10 * cleared.length * 1;
+  const excluded = new Set([`${pos1.row},${pos1.col}`, `${pos2.row},${pos2.col}`]);
+  const targets = getSynthesisTargets(board, pos2, effect);
+  const result = clearTargets(board, targets, rng, excluded);
+  totalScore += result.score;
+  rng = result.rngState;
 
   return { score: totalScore, rngState: rng };
 }
@@ -571,7 +571,7 @@ export function processMagnifyingSynthesis(
   const effect = synthesis.effect;
 
   if (effect === 'mag+mag') {
-    // 3マス消去
+    // 3マス消去: each target may have a coffee item needing color detection
     for (const target of targetCells) {
       const cell = getCell(board, target);
       if (!cell) continue;
@@ -590,29 +590,11 @@ export function processMagnifyingSynthesis(
     }
   } else {
     // mag+scissors, mag+cutter, mag+clip: 1マス選択→効果発動
+    const excluded = new Set([`${pos1.row},${pos1.col}`, `${pos2.row},${pos2.col}`]);
     const targets = getSynthesisTargets(board, synthPos, effect, undefined, targetCells);
-    const activated = new Set<string>();
-    activated.add(`${pos1.row},${pos1.col}`);
-    activated.add(`${pos2.row},${pos2.col}`);
-    let cleared = 0;
-
-    for (const t of targets) {
-      const cell = board[t.row]?.[t.col];
-      if (cell === null) continue;
-      if (cell.item) {
-        const key = `${t.row},${t.col}`;
-        if (!activated.has(key)) {
-          activated.add(key);
-          const result = activateItem(board, t, cell.item, undefined, 1, newState.rngState);
-          newState.score += result.score;
-          newState.rngState = result.rngState;
-        }
-      } else {
-        board[t.row][t.col] = null;
-        cleared++;
-      }
-    }
-    newState.score += 10 * cleared;
+    const result = clearTargets(board, targets, newState.rngState, excluded);
+    newState.score += result.score;
+    newState.rngState = result.rngState;
   }
 
   // 落下 → 補充 → 連鎖
