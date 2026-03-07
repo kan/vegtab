@@ -209,6 +209,23 @@ watch(() => store.isGameOver || store.isMoveLimitReached, (ended) => {
   }
 });
 
+// --- Share ---
+async function shareScore() {
+  if (store.seed === undefined) return;
+  const mode = store.mode === 'limited' ? 'LIMITED' : 'FREE';
+  const text = `Tomado Puzzle #${store.seed} | ${mode} ${store.moveCount}moves ${store.score.toLocaleString()}pts`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ text });
+    } catch { /* user cancelled */ }
+  } else {
+    await navigator.clipboard.writeText(text);
+    shareToast.value = true;
+    setTimeout(() => { shareToast.value = false; }, 2000);
+  }
+}
+const shareToast = ref(false);
+
 function restart() {
   if (store.seed !== undefined && !gameStore.canRetry(store.seed)) {
     // Can't retry without unlocking
@@ -404,6 +421,7 @@ const BOARD_SIZE = 8;
         <div class="game-over-actions actions-col">
           <button class="btn" @click="restart">RETRY</button>
           <button class="btn btn-continue" @click="continueAsFree">CONTINUE (FREE)</button>
+          <button class="btn btn-share" @click="shareScore">SHARE</button>
           <button class="btn btn-home" @click="router.push('/')">HOME</button>
         </div>
       </div>
@@ -417,6 +435,7 @@ const BOARD_SIZE = 8;
         <p v-if="usedItems" class="ref-note">Reference record (items used)</p>
         <div class="game-over-actions actions-col">
           <button class="btn" @click="restart">RETRY</button>
+          <button class="btn btn-share" @click="shareScore">SHARE</button>
           <button class="btn btn-home" @click="router.push('/')">HOME</button>
         </div>
       </div>
@@ -426,6 +445,9 @@ const BOARD_SIZE = 8;
       <button class="btn btn-small" @click="restart">RETRY</button>
       <button v-if="isDev" class="btn btn-small btn-debug" @click="debugPanel?.show()">DEBUG</button>
     </footer>
+
+    <!-- Share toast -->
+    <div v-if="shareToast" class="share-toast">Copied to clipboard!</div>
 
     <!-- New seed confirmation modal -->
     <div v-if="showNewSeedConfirm && !peeking" class="game-over-overlay">
@@ -628,10 +650,25 @@ const BOARD_SIZE = 8;
 .btn-continue {
   background: #27ae60;
 }
+.btn-share {
+  background: #3498db;
+}
 .btn-home {
   background: #fff;
   color: #666;
   border: 1px solid #ddd;
+}
+.share-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 13px;
+  z-index: 2000;
 }
 .btn-small {
   padding: 6px 16px;

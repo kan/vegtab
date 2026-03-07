@@ -12,7 +12,6 @@ import RankingModal from '@/components/RankingModal.vue';
 const router = useRouter();
 const gameStore = useGameStore();
 const todoStore = useTodoStore();
-const seedInput = ref('');
 
 // Ranking modal
 const rankingSeed = ref(0);
@@ -52,13 +51,6 @@ function playDaily() {
 // --- New puzzle ---
 function newPuzzle() {
   router.push('/puzzle');
-}
-
-function playWithSeed() {
-  const seed = parseInt(seedInput.value, 10);
-  if (!isNaN(seed) && seed > 0) {
-    router.push(`/puzzle/${seed}`);
-  }
 }
 
 // --- Calendar ---
@@ -264,15 +256,6 @@ const staminaDots = computed(() => {
         >
           New Puzzle
         </button>
-        <div class="seed-input-row">
-          <input
-            v-model="seedInput"
-            class="seed-input"
-            type="text"
-            placeholder="Seed / Serial Code..."
-          />
-          <button class="btn btn-small" @click="playWithSeed">GO</button>
-        </div>
       </div>
     </div>
 
@@ -648,19 +631,6 @@ const staminaDots = computed(() => {
   padding: 10px 16px;
   font-size: 14px;
 }
-.seed-input-row {
-  display: flex;
-  gap: 8px;
-}
-.seed-input {
-  flex: 1;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 15px;
-  background: #fff;
-}
-
 /* Calendar */
 .calendar {
   background: #fff;
