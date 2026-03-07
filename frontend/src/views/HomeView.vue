@@ -5,7 +5,7 @@ import { useGameStore } from '@/stores/game';
 import type { ItemType } from '@tomado/engine';
 import { useTodoStore } from '@/stores/todo';
 import { todayLocal } from '@/utils/date';
-import { ALL_ITEM_TYPES, ITEM_LABELS } from '@/utils/constants';
+import { ALL_ITEM_TYPES, ITEM_INFO } from '@/utils/constants';
 import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
 
@@ -110,13 +110,6 @@ function isFuture(dateStr: string): boolean {
 
 // --- Item selection ---
 
-const ITEM_DESCS: Record<ItemType, string> = {
-  magnifying_glass: 'Tap to remove 1 tile',
-  scissors: 'Clears a vertical line',
-  cutter: 'Clears a horizontal line',
-  clip: 'Clears surrounding tiles',
-  coffee: 'Clears all tiles of one color',
-};
 
 function pickItem(type: ItemType) {
   gameStore.selectItem(type);
@@ -339,8 +332,8 @@ const staminaDots = computed(() => {
             >
               <ItemIcon :item="type" :size="32" />
               <div class="item-info">
-                <span class="item-name">{{ ITEM_LABELS[type] }}</span>
-                <span class="item-desc">{{ ITEM_DESCS[type] }}</span>
+                <span class="item-name">{{ ITEM_INFO[type].label }}</span>
+                <span class="item-desc">{{ ITEM_INFO[type].desc }}</span>
               </div>
               <span class="item-stock">x{{ gameStore.items[type] }}</span>
             </button>
