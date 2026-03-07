@@ -192,7 +192,7 @@ function skipItems() {
 watch(() => store.isGameOver || store.isMoveLimitReached, (ended) => {
   if (ended && !scoreRecorded.value && store.seed !== undefined) {
     scoreRecorded.value = true;
-    gameStore.addPlayRecord({
+    const wasTrial = gameStore.recordGameEnd({
       seed: store.seed,
       mode: store.mode,
       score: store.score,
@@ -200,9 +200,7 @@ watch(() => store.isGameOver || store.isMoveLimitReached, (ended) => {
       usedItems: usedItems.value,
       isTrial: isTrial.value,
     });
-    // Mark trial as used
-    if (isTrial.value) {
-      gameStore.markTrialUsed(store.seed);
+    if (wasTrial) {
       viewPhase.value = 'unlock';
     }
   }
@@ -240,13 +238,7 @@ function continueAsFree() {
 
 function doUnlock() {
   if (store.seed === undefined) return;
-  if (gameStore.unlockSeed(store.seed)) {
-    // Upgrade trial records to non-trial
-    for (const r of gameStore.playRecords) {
-      if (r.seed === store.seed && r.isTrial) {
-        r.isTrial = false;
-      }
-    }
+  if (gameStore.confirmUnlock(store.seed)) {
     isTrial.value = false;
     viewPhase.value = 'playing';
   }

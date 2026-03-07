@@ -260,6 +260,19 @@ export const useGameStore = defineStore('game', () => {
     return true;
   }
 
+  /** Unlock a seed and upgrade trial records to ranked. Returns false if insufficient stamina. */
+  function confirmUnlock(seed: number): boolean {
+    if (!unlockSeed(seed)) return false;
+    // Upgrade trial play records to non-trial (now ranked)
+    for (const r of playRecords.value) {
+      if (r.seed === seed && r.isTrial) {
+        r.isTrial = false;
+      }
+    }
+    saveRecords();
+    return true;
+  }
+
   /** Discard trial record for a seed (user chose not to unlock) */
   function discardTrial(seed: number) {
     // Remove trial play records (isTrial=true) for this seed
@@ -268,6 +281,16 @@ export const useGameStore = defineStore('game', () => {
   }
 
   // --- Play records ---
+
+  /** Record a game result. If trial, also marks the seed as trial-used. Returns true if trial. */
+  function recordGameEnd(record: Omit<PlayRecord, 'playedAt' | 'playerName'>): boolean {
+    addPlayRecord(record);
+    if (record.isTrial) {
+      markTrialUsed(record.seed);
+      return true;
+    }
+    return false;
+  }
 
   function addPlayRecord(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
     playRecords.value.push({
@@ -361,8 +384,8 @@ export const useGameStore = defineStore('game', () => {
     generateDailySeed, generateNewSeed, randomSeed,
     isSeedUnlocked, isTodaysDailySeed, isTrialUsed,
     getSeedStatus, canPlay, canRetry,
-    unlockSeed, markTrialUsed, discardTrial,
-    addPlayRecord, getRecordsForSeed, getBestScore,
+    unlockSeed, confirmUnlock, markTrialUsed, discardTrial,
+    recordGameEnd, addPlayRecord, getRecordsForSeed, getBestScore,
     getDailySeeds, hasPlayedDaily,
     ensureDailyState,
   };
