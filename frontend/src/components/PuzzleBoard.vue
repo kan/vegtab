@@ -29,12 +29,15 @@ const STICKY_COLORS = [
   { band: '#a85e90', bg: '#f0dce8', fold: '#954f80' },
 ];
 
-const SWAP_DURATION = 150;
-const MATCH_SHOW_DURATION = 350;
-const CLEAR_DURATION = 250;
-const DROP_DURATION = 300;
-const CELL_SWEEP_INTERVAL = 40;
-const ITEM_CLEAR_DURATION = 150;
+/** Animation timing constants (ms) */
+const ANIM = {
+  SWAP: 150,
+  MATCH_SHOW: 350,
+  CLEAR: 250,
+  DROP: 300,
+  CELL_SWEEP_INTERVAL: 40,
+  ITEM_CLEAR: 150,
+} as const;
 
 // --- Layout ---
 onMounted(() => { updateCellSize(); window.addEventListener('resize', updateCellSize); });
@@ -164,7 +167,7 @@ function snapBack(pos: Position) {
   setTimeout(() => {
     clearOff(pos.row, pos.col);
     for (const d of ['up', 'down', 'left', 'right'] as Direction[]) { const n = adj(pos, d); clearOff(n.row, n.col); }
-  }, SWAP_DURATION);
+  }, ANIM.SWAP);
 }
 
 function dragDir(dx: number, dy: number): Direction | null {
@@ -310,7 +313,7 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
   dropTransitioning.value = true;
   const keys = Object.keys(dropOffsets);
   for (const k of keys) dropOffsets[k] = 0;
-  await wait(DROP_DURATION);
+  await wait(ANIM.DROP);
   dropTransitioning.value = false;
   for (const k of keys) delete dropOffsets[k];
 
@@ -383,7 +386,7 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
   dropTransitioning.value = true;
   const keys = Object.keys(dropOffsets);
   for (const k of keys) dropOffsets[k] = 0;
-  await wait(DROP_DURATION);
+  await wait(ANIM.DROP);
   dropTransitioning.value = false;
   for (const k of keys) delete dropOffsets[k];
 
@@ -405,7 +408,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   // Slide
   setOff(pos.row, pos.col, fullX, fullY, true, 10);
   setOff(nb.row, nb.col, -fullX, -fullY, true, 0);
-  await wait(SWAP_DURATION);
+  await wait(ANIM.SWAP);
 
   // Try normal swap
   const swapPlan = store.computeSwapPlan(pos, dir);
@@ -502,7 +505,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   // Invalid → bounce back
   setOff(pos.row, pos.col, 0, 0, true, 0);
   setOff(nb.row, nb.col, 0, 0, true, 0);
-  await wait(SWAP_DURATION);
+  await wait(ANIM.SWAP);
   clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
   locked = false;
 }
@@ -537,10 +540,10 @@ async function animateScissors(pos: Position, targets: Position[]) {
   for (const t of sorted) {
     cellItemOverlay.set(pk(t.row, t.col), 'scissors');
     itemClearingCells.add(pk(t.row, t.col));
-    await wait(CELL_SWEEP_INTERVAL);
+    await wait(ANIM.CELL_SWEEP_INTERVAL);
   }
 
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 async function animateCutter(pos: Position, targets: Position[]) {
@@ -551,10 +554,10 @@ async function animateCutter(pos: Position, targets: Position[]) {
   for (const t of sorted) {
     cellItemOverlay.set(pk(t.row, t.col), 'cutter');
     itemClearingCells.add(pk(t.row, t.col));
-    await wait(CELL_SWEEP_INTERVAL);
+    await wait(ANIM.CELL_SWEEP_INTERVAL);
   }
 
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 async function animateRadial(pos: Position, targets: Position[], icon: ItemType) {
@@ -577,7 +580,7 @@ async function animateRadial(pos: Position, targets: Position[], icon: ItemType)
     itemClearingCells.add(pk(t.row, t.col));
   }
 
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 async function animateCoffee(pos: Position, targets: Position[]) {
@@ -609,7 +612,7 @@ async function animateCoffee(pos: Position, targets: Position[]) {
   for (const t of targets) {
     itemClearingCells.add(pk(t.row, t.col));
   }
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 // --- Synthesis effect animations ---
@@ -672,9 +675,9 @@ async function animateCross(pos: Position, targets: Position[]) {
       cellItemOverlay.set(pk(t.row, t.col), 'cutter');
       itemClearingCells.add(pk(t.row, t.col));
     }
-    await wait(CELL_SWEEP_INTERVAL);
+    await wait(ANIM.CELL_SWEEP_INTERVAL);
   }
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 // scissors+clip: 3 vertical columns
@@ -697,9 +700,9 @@ async function animateVerticalMulti(pos: Position, targets: Position[], icon: st
         itemClearingCells.add(pk(t.row, t.col));
       }
     }
-    await wait(CELL_SWEEP_INTERVAL);
+    await wait(ANIM.CELL_SWEEP_INTERVAL);
   }
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 // cutter+clip: 3 horizontal rows
@@ -721,9 +724,9 @@ async function animateHorizontalMulti(pos: Position, targets: Position[], icon: 
         itemClearingCells.add(pk(t.row, t.col));
       }
     }
-    await wait(CELL_SWEEP_INTERVAL);
+    await wait(ANIM.CELL_SWEEP_INTERVAL);
   }
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 // clip+clip: large radial expansion
@@ -743,7 +746,7 @@ async function animateClipLarge(pos: Position, targets: Position[]) {
     cellItemOverlay.set(pk(t.row, t.col), 'clip');
     itemClearingCells.add(pk(t.row, t.col));
   }
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 // coffee+coffee: all tiles blink then clear
@@ -770,7 +773,7 @@ async function animateCoffeeAll(pos: Position, targets: Position[]) {
   for (const t of targets) {
     itemClearingCells.add(pk(t.row, t.col));
   }
-  await wait(ITEM_CLEAR_DURATION + 100);
+  await wait(ANIM.ITEM_CLEAR + 100);
 }
 
 // coffee+item: color targets clear, then item effects from each
@@ -796,7 +799,7 @@ async function animateCoffeeSynthesis(pos: Position, targets: Position[], effect
     cellItemOverlay.set(pk(t.row, t.col), otherItem);
     itemClearingCells.add(pk(t.row, t.col));
   }
-  await wait(ITEM_CLEAR_DURATION + 200);
+  await wait(ANIM.ITEM_CLEAR + 200);
 }
 
 async function animateSynthesisDropAndChains(plan: SynthesisAnimPlan) {
@@ -810,7 +813,7 @@ async function animateSynthesisDropAndChains(plan: SynthesisAnimPlan) {
   dropTransitioning.value = true;
   const dkeys = Object.keys(dropOffsets);
   for (const k of dkeys) dropOffsets[k] = 0;
-  await wait(DROP_DURATION);
+  await wait(ANIM.DROP);
   dropTransitioning.value = false;
   for (const k of dkeys) delete dropOffsets[k];
   for (const chain of plan.regularChains) await animateChainStep(chain);
@@ -831,7 +834,7 @@ async function animateDropAndChains(plan: ItemAnimPlan) {
   dropTransitioning.value = true;
   const dkeys = Object.keys(dropOffsets);
   for (const k of dkeys) dropOffsets[k] = 0;
-  await wait(DROP_DURATION);
+  await wait(ANIM.DROP);
   dropTransitioning.value = false;
   for (const k of dkeys) delete dropOffsets[k];
 
@@ -844,11 +847,11 @@ async function animateChainStep(chain: ChainAnimData) {
 
   // Checkmarks
   for (const p of chain.clearedPositions) matchedCells.add(pk(p.row, p.col));
-  await wait(MATCH_SHOW_DURATION);
+  await wait(ANIM.MATCH_SHOW);
 
   // Fade out
   for (const p of chain.clearedPositions) clearingCells.add(pk(p.row, p.col));
-  await wait(CLEAR_DURATION);
+  await wait(ANIM.CLEAR);
   matchedCells.clear();
   clearingCells.clear();
 
@@ -862,7 +865,7 @@ async function animateChainStep(chain: ChainAnimData) {
   dropTransitioning.value = true;
   const keys = Object.keys(dropOffsets);
   for (const k of keys) dropOffsets[k] = 0;
-  await wait(DROP_DURATION);
+  await wait(ANIM.DROP);
   dropTransitioning.value = false;
   for (const k of keys) delete dropOffsets[k];
 }
@@ -875,8 +878,8 @@ function tileTransform(r: number, c: number) {
 }
 function tileTransition(r: number, c: number) {
   const o = getOff(r, c);
-  if (o.transition) return `transform ${SWAP_DURATION}ms ease`;
-  if (dropTransitioning.value && pk(r, c) in dropOffsets) return `transform ${DROP_DURATION}ms ease-in`;
+  if (o.transition) return `transform ${ANIM.SWAP}ms ease`;
+  if (dropTransitioning.value && pk(r, c) in dropOffsets) return `transform ${ANIM.DROP}ms ease-in`;
   return 'none';
 }
 </script>
@@ -963,7 +966,7 @@ function tileTransition(r: number, c: number) {
           transform: `translate(${sweepIcon.x}px, ${sweepIcon.y}px)`,
           width: sweepIcon.size + 'px',
           height: sweepIcon.size + 'px',
-          transition: sweepTransition ? `transform ${CELL_SWEEP_INTERVAL}ms linear` : 'none',
+          transition: sweepTransition ? `transform ${ANIM.CELL_SWEEP_INTERVAL}ms linear` : 'none',
         }"
       >
         <ItemIcon :item="sweepIcon.item" :size="sweepIcon.size" />
