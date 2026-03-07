@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { useGameStore } from './game';
 
 export type RepeatRule =
   | { type: 'daily' }
@@ -108,7 +109,7 @@ export const useTodoStore = defineStore('todo', () => {
     if (todo.status !== 'active') return false;
     // Repeat tasks with a future due date cannot be completed yet
     if (todo.repeat && todo.dueDate) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayLocal();
       if (todo.dueDate > today) return false;
     }
     return true;
@@ -123,9 +124,17 @@ export const useTodoStore = defineStore('todo', () => {
     saveDailyCount(dailyCompleted.value);
     save();
 
+    // Game integration: stamina, undo, item rights
+    const gameStore = useGameStore();
+    gameStore.onTodoCompleted();
+
     // Regenerate if repeat rule is set
     if (todo.repeat) {
-      const nextDate = computeNextDate(todo.repeat, todo.dueDate);
+      // Only compute next due date if the original had one;
+      // otherwise keep it null so the task stays completable anytime.
+      const nextDate = todo.dueDate
+        ? computeNextDate(todo.repeat, todo.dueDate)
+        : null;
       addTodo({
         title: todo.title,
         memo: todo.memo,
@@ -229,7 +238,7 @@ function loadDailyCount(): number {
     const raw = localStorage.getItem('tomado_daily');
     if (!raw) return 0;
     const data = JSON.parse(raw);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocal();
     return data.date === today ? data.count : 0;
   } catch {
     return 0;
@@ -237,7 +246,7 @@ function loadDailyCount(): number {
 }
 
 function saveDailyCount(count: number) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   localStorage.setItem('tomado_daily', JSON.stringify({ date: today, count }));
 }
 
@@ -269,8 +278,12 @@ function computeNextDate(rule: RepeatRule, currentDueDate: string | null): strin
   }
 }
 
+function todayLocal(): string {
+  return fmt(new Date());
+}
+
 function fmt(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function daysInMonth(year: number, month: number): number {

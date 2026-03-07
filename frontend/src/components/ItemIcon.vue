@@ -59,10 +59,10 @@ defineProps<{ item: string; size: number }>();
     <path d="M15 7 Q16 4 15 1" stroke="#bbb" stroke-width="1" fill="none" stroke-linecap="round"/>
     <path d="M20 8 Q21 5 20 2" stroke="#bbb" stroke-width="1" fill="none" stroke-linecap="round"/>
     <!-- カップ本体 -->
-    <path d="M5 11 L7 26 Q15 30 23 26 L25 11 Z" fill="#fff" stroke="#c0392b" stroke-width="1.2"/>
+    <path d="M5 11 L7 26 Q15 30 23 26 L25 11 Z" fill="#fff" stroke="#333" stroke-width="1.2"/>
     <!-- 取っ手 -->
-    <path d="M25 14 Q30 14 30 19 Q30 24 25 23" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M25 14 Q30 14 30 19 Q30 24 25 23" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round"/>
     <!-- カップの帯ライン -->
-    <path d="M6 16 Q15 18 24 16" stroke="#c0392b" stroke-width="0.8" fill="none"/>
+    <path d="M6 16 Q15 18 24 16" stroke="#333" stroke-width="0.8" fill="none"/>
   </svg>
 </template>

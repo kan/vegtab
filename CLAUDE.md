@@ -19,8 +19,8 @@ tomado/
 ## 開発フェーズ
 Phase 1 → 2 → 3 → 4 の順で段階的に実装する。各Phaseの詳細は `docs/SPEC.md` §8 を参照。
 - Phase 1 (Core Engine): 完了
-- Phase 2 (Frontend UI): 完了（パズル部分。TODO画面は未実装）
-- **現在の対象: Phase 2 追加実装（ゲームモード対応）→ Phase 3 (Backend API)**
+- Phase 2 (Frontend UI): パズル・TODO・HOME完了（localStorageモック）。シード共有UI（共有導線・シリアルコード入力等）は未実装・要検討。
+- **現在の対象: Phase 2 残タスク（シード共有UI）→ Phase 3 (Backend API)**
 
 ## 技術スタック
 - **言語:** TypeScript (全パッケージ共通)

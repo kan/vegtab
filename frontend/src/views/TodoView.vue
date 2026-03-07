@@ -144,19 +144,23 @@ function repeatLabel(r: RepeatRule | null): string {
   }
 }
 
+function fmtLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function dueDateLabel(d: string): string {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = fmtLocal(new Date());
   if (d === today) return 'Today';
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  if (d === tomorrow.toISOString().slice(0, 10)) return 'Tomorrow';
+  if (d === fmtLocal(tomorrow)) return 'Tomorrow';
   // Show month/day
   const parts = d.split('-');
   return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
 }
 
 function isOverdue(d: string): boolean {
-  return d < new Date().toISOString().slice(0, 10);
+  return d < fmtLocal(new Date());
 }
 
 const ungroupedTodos = computed(() => store.todosByGroup.get(null) ?? []);
