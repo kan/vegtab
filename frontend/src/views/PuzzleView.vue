@@ -20,8 +20,20 @@ const debugPanel = ref<InstanceType<typeof DebugPanel> | null>(null);
 const puzzleBoard = ref<InstanceType<typeof PuzzleBoard> | null>(null);
 const scoreRecorded = ref(false);
 
+// --- View phase (exclusive modal/overlay states) ---
+type ViewPhase =
+  | 'playing'          // normal gameplay
+  | 'preparing'        // item placement before game start
+  | 'newSeedConfirm'   // "Play this new seed?" modal
+  | 'newSeedPeeking'   // temporarily showing board during newSeedConfirm
+  | 'abandonConfirm'   // "Abandon current game?" modal
+  | 'unlock'           // "Unlock this seed?" modal after trial
+  ;
+
+const viewPhase = ref<ViewPhase>('playing');
+const boardLocked = computed(() => viewPhase.value === 'newSeedConfirm' || viewPhase.value === 'newSeedPeeking');
+
 // --- Item placement phase ---
-const preparing = ref(false);
 const selectedItem = ref<ItemType | null>(null);
 const placedItems = ref<{ row: number; col: number; item: ItemType }[]>([]);
 
@@ -40,11 +52,6 @@ const usedItems = computed(() => placedItems.value.length > 0);
 
 // --- Seed status / trial ---
 const isTrial = ref(false);
-const showUnlockModal = ref(false);
-const showNewSeedConfirm = ref(false); // "Play this new seed?" modal
-const showAbandonConfirm = ref(false); // "Abandon current game?" modal
-const boardLocked = ref(false); // prevent interaction before confirming
-const peeking = ref(false); // temporarily hide modal to show board
 
 const seedStatus = computed(() => {
   if (store.seed === undefined) return 'trial_available' as const;
@@ -56,9 +63,6 @@ function beginGame(seed?: number) {
   scoreRecorded.value = false;
   placedItems.value = [];
   selectedItem.value = null;
-  showUnlockModal.value = false;
-  showNewSeedConfirm.value = false;
-  boardLocked.value = false;
 
   // Determine if this is a trial play
   const actualSeed = store.seed!;
@@ -66,9 +70,9 @@ function beginGame(seed?: number) {
   isTrial.value = status === 'trial_available';
 
   if (hasAnyItems.value && (status === 'daily_today' || status === 'unlocked')) {
-    preparing.value = true;
+    viewPhase.value = 'preparing';
   } else {
-    preparing.value = false;
+    viewPhase.value = 'playing';
   }
 }
 
@@ -78,20 +82,17 @@ function previewNewSeed() {
   store.startGame(seed);
   scoreRecorded.value = false;
   isTrial.value = true;
-  preparing.value = false;
-  showNewSeedConfirm.value = true;
-  boardLocked.value = true;
+  viewPhase.value = 'newSeedConfirm';
   // Put seed in URL so it's visible and shareable
   router.replace(`/puzzle/${seed}`);
 }
 
 function confirmNewSeed() {
-  showNewSeedConfirm.value = false;
-  boardLocked.value = false;
+  viewPhase.value = 'playing';
 }
 
 function cancelNewSeed() {
-  showNewSeedConfirm.value = false;
+  viewPhase.value = 'playing';
   store.gameState = null;
   router.replace('/');
 }
@@ -99,7 +100,7 @@ function cancelNewSeed() {
 function handleRoute(seed: number | undefined) {
   if (seed === undefined && store.gameState && !store.isGameOver && !store.isMoveLimitReached) {
     // Active game exists, user wants new puzzle — ask to abandon
-    showAbandonConfirm.value = true;
+    viewPhase.value = 'abandonConfirm';
     return;
   }
 
@@ -110,11 +111,10 @@ function handleRoute(seed: number | undefined) {
 
   if (!store.gameState || (seed !== undefined && seed !== store.seed)) {
     if (seed !== undefined && !gameStore.canPlay(seed)) {
-      showUnlockModal.value = true;
+      viewPhase.value = 'unlock';
       store.startGame(seed);
       scoreRecorded.value = false;
       isTrial.value = false;
-      preparing.value = false;
       return;
     }
     beginGame(seed);
@@ -122,12 +122,11 @@ function handleRoute(seed: number | undefined) {
 }
 
 function confirmAbandon() {
-  showAbandonConfirm.value = false;
   previewNewSeed();
 }
 
 function cancelAbandon() {
-  showAbandonConfirm.value = false;
+  viewPhase.value = 'playing';
   // Restore URL to current seed
   if (store.seed !== undefined) {
     router.replace(`/puzzle/${store.seed}`);
@@ -182,11 +181,11 @@ function confirmStart() {
   for (const p of placedItems.value) {
     gameStore.consumeItem(p.item);
   }
-  preparing.value = false;
+  viewPhase.value = 'playing';
 }
 
 function skipItems() {
-  preparing.value = false;
+  viewPhase.value = 'playing';
 }
 
 // --- Record score when game ends ---
@@ -204,7 +203,7 @@ watch(() => store.isGameOver || store.isMoveLimitReached, (ended) => {
     // Mark trial as used
     if (isTrial.value) {
       gameStore.markTrialUsed(store.seed);
-      showUnlockModal.value = true;
+      viewPhase.value = 'unlock';
     }
   }
 });
@@ -229,7 +228,7 @@ const shareToast = ref(false);
 function restart() {
   if (store.seed !== undefined && !gameStore.canRetry(store.seed)) {
     // Can't retry without unlocking
-    showUnlockModal.value = true;
+    viewPhase.value = 'unlock';
     return;
   }
   beginGame(store.seed);
@@ -249,7 +248,7 @@ function doUnlock() {
       }
     }
     isTrial.value = false;
-    showUnlockModal.value = false;
+    viewPhase.value = 'playing';
   }
 }
 
@@ -257,7 +256,7 @@ function giveUpTrial() {
   if (store.seed !== undefined) {
     gameStore.discardTrial(store.seed);
   }
-  showUnlockModal.value = false;
+  viewPhase.value = 'playing';
   store.gameState = null;
   router.push('/');
 }
@@ -275,9 +274,9 @@ const previewTop3 = computed(() => {
 let peekCleanup: (() => void) | null = null;
 
 function startPeek() {
-  peeking.value = true;
+  viewPhase.value = 'newSeedPeeking';
   const onUp = () => {
-    peeking.value = false;
+    viewPhase.value = 'newSeedConfirm';
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
     peekCleanup = null;
@@ -333,7 +332,7 @@ const BOARD_SIZE = 8;
           <span v-if="store.mode === 'limited'" class="mode-badge">LIMITED</span>
           <span v-else class="mode-badge mode-free">FREE</span>
           <span v-if="isTrial" class="trial-badge">TRIAL</span>
-          <span v-if="usedItems && !preparing" class="ref-badge">REF</span>
+          <span v-if="usedItems && viewPhase !== 'preparing'" class="ref-badge">REF</span>
           <button v-if="store.canUndo" class="btn-undo" @click="store.undo()">UNDO</button>
         </div>
       </div>
@@ -345,7 +344,7 @@ const BOARD_SIZE = 8;
     </div>
 
     <!-- Item Placement Phase -->
-    <div v-if="preparing" class="game-over-overlay prep-overlay">
+    <div v-if="viewPhase === 'preparing'" class="game-over-overlay prep-overlay">
       <div class="prep-panel">
         <h2 class="prep-title">Place Items</h2>
         <p class="prep-desc">Select an item, then tap a cell to place it.<br>Placed items make this a reference record (no ranking).</p>
@@ -450,7 +449,7 @@ const BOARD_SIZE = 8;
     <div v-if="shareToast" class="share-toast">Copied to clipboard!</div>
 
     <!-- New seed confirmation modal -->
-    <div v-if="showNewSeedConfirm && !peeking" class="game-over-overlay">
+    <div v-if="viewPhase === 'newSeedConfirm'" class="game-over-overlay">
       <div class="game-over-card confirm-card">
         <h2>New Puzzle</h2>
         <p class="confirm-seed">Seed: {{ store.seed }}</p>
@@ -477,7 +476,7 @@ const BOARD_SIZE = 8;
     </div>
 
     <!-- Abandon confirmation modal -->
-    <div v-if="showAbandonConfirm" class="game-over-overlay">
+    <div v-if="viewPhase === 'abandonConfirm'" class="game-over-overlay">
       <div class="game-over-card">
         <h2>Abandon Game?</h2>
         <p>Current game will be lost. Start a new puzzle?</p>
@@ -489,7 +488,7 @@ const BOARD_SIZE = 8;
     </div>
 
     <!-- Unlock modal (trial ended or trial_used) -->
-    <div v-if="showUnlockModal" class="game-over-overlay">
+    <div v-if="viewPhase === 'unlock'" class="game-over-overlay">
       <div class="game-over-card unlock-card">
         <h2>Unlock this Seed?</h2>
         <p class="unlock-desc">
