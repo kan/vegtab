@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useGameStore } from '@/stores/game';
 import type { ItemType } from '@tomado/engine';
 import { useTodoStore } from '@/stores/todo';
+import { useCalendar } from '@/composables/useCalendar';
 import { todayLocal } from '@/utils/date';
 import { ALL_ITEM_TYPES, ITEM_INFO } from '@/utils/constants';
 import ItemIcon from '@/components/ItemIcon.vue';
@@ -22,10 +23,8 @@ function openRanking(seed: number) {
   showRanking.value = true;
 }
 
-// Calendar state
-const now = new Date();
-const calendarYear = ref(now.getFullYear());
-const calendarMonth = ref(now.getMonth()); // 0-indexed
+// Calendar
+const cal = useCalendar();
 const showCalendar = ref(false);
 
 // Item selection modal
@@ -54,48 +53,7 @@ function newPuzzle() {
 }
 
 // --- Calendar ---
-const calendarDays = computed(() => gameStore.getDailySeeds(calendarYear.value, calendarMonth.value));
-
-const calendarMonthLabel = computed(() => {
-  const d = new Date(calendarYear.value, calendarMonth.value);
-  return d.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long' });
-});
-
-const calendarGrid = computed(() => {
-  const firstDay = new Date(calendarYear.value, calendarMonth.value, 1).getDay();
-  const days = calendarDays.value;
-  const grid: (typeof days[0] | null)[] = [];
-  for (let i = 0; i < firstDay; i++) grid.push(null);
-  for (const d of days) grid.push(d);
-  return grid;
-});
-
-const isCurrentMonth = computed(() => {
-  const n = new Date();
-  return calendarYear.value === n.getFullYear() && calendarMonth.value === n.getMonth();
-});
-
-function prevMonth() {
-  if (calendarMonth.value === 0) {
-    calendarMonth.value = 11;
-    calendarYear.value--;
-  } else {
-    calendarMonth.value--;
-  }
-}
-
-function nextMonth() {
-  if (isCurrentMonth.value) return;
-  if (calendarMonth.value === 11) {
-    calendarMonth.value = 0;
-    calendarYear.value++;
-  } else {
-    calendarMonth.value++;
-  }
-}
-
 function playCalendarSeed(dateStr: string, seed: number) {
-  const today = todayLocal();
   if (dateStr > today) return;
   router.push(`/puzzle/${seed}`);
 }
@@ -132,11 +90,6 @@ const generatedSeeds = computed(() =>
     }))
 );
 const showSeeds = ref(false);
-
-// --- Calendar best scores ---
-function calendarBestScore(seed: number): number {
-  return gameStore.getBestScore(seed, 'limited');
-}
 
 // --- User name ---
 const editingName = ref(false);
@@ -260,16 +213,16 @@ const staminaDots = computed(() => {
       </button>
       <div v-if="showCalendar" class="calendar">
         <div class="calendar-header">
-          <button class="cal-nav" @click="prevMonth">&lt;</button>
-          <span class="cal-month">{{ calendarMonthLabel }}</span>
-          <button class="cal-nav" :disabled="isCurrentMonth" @click="nextMonth">&gt;</button>
+          <button class="cal-nav" @click="cal.prevMonth">&lt;</button>
+          <span class="cal-month">{{ cal.monthLabel.value }}</span>
+          <button class="cal-nav" :disabled="cal.isCurrentMonth.value" @click="cal.nextMonth">&gt;</button>
         </div>
         <div class="calendar-weekdays">
           <span v-for="d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']" :key="d" class="cal-weekday">{{ d }}</span>
         </div>
         <div class="calendar-grid">
           <div
-            v-for="(cell, i) in calendarGrid"
+            v-for="(cell, i) in cal.grid.value"
             :key="i"
             :class="[
               'cal-cell',
@@ -284,7 +237,7 @@ const staminaDots = computed(() => {
           >
             <template v-if="cell">
               <span class="cal-day">{{ parseInt(cell.date.slice(8)) }}</span>
-              <span v-if="!isFuture(cell.date) && calendarBestScore(cell.seed) > 0" class="cal-score">{{ calendarBestScore(cell.seed) }}</span>
+              <span v-if="!isFuture(cell.date) && cal.bestScore(cell.seed) > 0" class="cal-score">{{ cal.bestScore(cell.seed) }}</span>
               <span v-else-if="!isFuture(cell.date) && gameStore.hasPlayedDaily(cell.date)" class="cal-check">\u2713</span>
             </template>
           </div>
