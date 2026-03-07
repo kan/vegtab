@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
-import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan, type MagGlassAnimPlan, type MagSynthesisAnimPlan } from '@/stores/puzzle';
+import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
 import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type ItemType } from '@tomado/engine';
+import { useMagGlassSelection } from '@/composables/useMagGlassSelection';
+import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import ItemIcon from './ItemIcon.vue';
 import type DebugPanel from './DebugPanel.vue';
 
@@ -14,12 +16,8 @@ const wrapperEl = ref<HTMLElement | null>(null);
 const boardEl = ref<HTMLElement | null>(null);
 const cellSize = ref(0);
 
-// --- Magnifying glass selection state ---
-const magSelecting = ref(false);
-const magSourcePos = ref<Position | null>(null);
-const magTargetsNeeded = ref(0);
-const magSelectedCells = ref<Position[]>([]);
-const magSynthesisInfo = ref<{ pos1: Position; pos2: Position } | null>(null);
+// --- Magnifying glass selection ---
+const mag = useMagGlassSelection();
 
 const STICKY_COLORS = [
   { band: '#e6c832', bg: '#fdf6d0', fold: '#d4b828' },
@@ -74,105 +72,15 @@ const cellItemOverlay = reactive(new Map<string, string>());
 const dropOffsets = reactive<Record<string, number>>({});
 const dropTransitioning = ref(false);
 
-// --- Drag offsets ---
-const cellOffsets = reactive<Record<string, { x: number; y: number; transition: boolean; z: number }>>({});
+// --- Drag handling ---
+const drag = useDragHandler(cellSize, boardEl, commitSwap, handleTap);
+const { cellOffsets, getOff, setOff, clearOff } = drag;
 
-function pk(row: number, col: number) { return `${row},${col}`; }
-function getOff(r: number, c: number) { return cellOffsets[pk(r, c)] ?? { x: 0, y: 0, transition: false, z: 0 }; }
-function setOff(r: number, c: number, x: number, y: number, tr: boolean, z = 0) { cellOffsets[pk(r, c)] = { x, y, transition: tr, z }; }
-function clearOff(r: number, c: number) { delete cellOffsets[pk(r, c)]; }
-
-// --- Pointer handling ---
-let ptrX = 0, ptrY = 0;
-let ptrPos: Position | null = null;
-let handled = false, locked = false;
-let dragAxis: 'x' | 'y' | null = null;
-
-function getCellAt(x: number, y: number): Position | null {
-  if (!boardEl.value || !cellSize.value) return null;
-  const r = boardEl.value.getBoundingClientRect();
-  const col = Math.floor((x - r.left) / cellSize.value);
-  const row = Math.floor((y - r.top) / cellSize.value);
-  if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return null;
-  return { row, col };
-}
-
-function adj(p: Position, d: Direction): Position {
-  switch (d) {
-    case 'up': return { row: p.row - 1, col: p.col };
-    case 'down': return { row: p.row + 1, col: p.col };
-    case 'left': return { row: p.row, col: p.col - 1 };
-    case 'right': return { row: p.row, col: p.col + 1 };
-  }
-}
-
-function onPointerDown(e: PointerEvent) {
-  if (locked) return;
-  const pos = getCellAt(e.clientX, e.clientY);
-  if (!pos) return;
-  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  ptrX = e.clientX; ptrY = e.clientY;
-  ptrPos = pos; handled = false; dragAxis = null;
-  setOff(pos.row, pos.col, 0, 0, false, 10);
-}
-
-function onPointerMove(e: PointerEvent) {
-  if (!ptrPos || handled || locked) return;
-  const dx = e.clientX - ptrX, dy = e.clientY - ptrY;
-  const cs = cellSize.value;
-  if (!dragAxis) {
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) dragAxis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
-    else return;
-  }
-  let cx = 0, cy = 0;
-  if (dragAxis === 'x') cx = Math.max(-cs, Math.min(cs, dx));
-  else cy = Math.max(-cs, Math.min(cs, dy));
-  setOff(ptrPos.row, ptrPos.col, cx, cy, false, 10);
-  const dir = dragDir(cx, cy);
-  if (dir) {
-    const nb = adj(ptrPos, dir);
-    if (nb.row >= 0 && nb.row < BOARD_SIZE && nb.col >= 0 && nb.col < BOARD_SIZE)
-      setOff(nb.row, nb.col, -cx, -cy, false, 0);
-  }
-  if (Math.abs(cx) > cs * 0.4 || Math.abs(cy) > cs * 0.4) {
-    handled = true;
-    commitSwap(ptrPos, dir!);
-    ptrPos = null;
-  }
-}
-
-function onPointerUp(e: PointerEvent) {
-  if (locked) return;
-  if (ptrPos && !handled) {
-    if (Math.abs(e.clientX - ptrX) < 5 && Math.abs(e.clientY - ptrY) < 5) {
-      // Debug panel intercept
-      if (props.debugPanel?.isPlacing && props.debugPanel.handleCellTap(ptrPos.row, ptrPos.col)) {
-        clearOff(ptrPos.row, ptrPos.col);
-        ptrPos = null; handled = false; dragAxis = null;
-        return;
-      }
-      handleTap(ptrPos);
-    }
-    snapBack(ptrPos);
-  }
-  ptrPos = null; handled = false; dragAxis = null;
-}
-
-function snapBack(pos: Position) {
-  setOff(pos.row, pos.col, 0, 0, true, 0);
-  for (const d of ['up', 'down', 'left', 'right'] as Direction[]) {
-    const n = adj(pos, d);
-    if (n.row >= 0 && n.row < BOARD_SIZE && n.col >= 0 && n.col < BOARD_SIZE) setOff(n.row, n.col, 0, 0, true, 0);
-  }
-  setTimeout(() => {
-    clearOff(pos.row, pos.col);
-    for (const d of ['up', 'down', 'left', 'right'] as Direction[]) { const n = adj(pos, d); clearOff(n.row, n.col); }
-  }, ANIM.SWAP);
-}
-
-function dragDir(dx: number, dy: number): Direction | null {
-  if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return null;
-  return Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+function onPointerUpWithDebug(e: PointerEvent) {
+  drag.onPointerUp(e, (pos) => {
+    // Debug panel intercept
+    return !!(props.debugPanel?.isPlacing && props.debugPanel.handleCellTap(pos.row, pos.col));
+  });
 }
 
 // --- Utilities ---
@@ -182,7 +90,7 @@ function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() =>
 // --- Tap ---
 async function handleTap(pos: Position) {
   // Magnifying glass cell selection mode
-  if (magSelecting.value) {
+  if (mag.magSelecting.value) {
     handleMagSelection(pos);
     return;
   }
@@ -190,11 +98,7 @@ async function handleTap(pos: Position) {
   // Check if tapping a magnifying glass → enter selection mode
   const cell = activeBoard.value?.[pos.row]?.[pos.col];
   if (cell?.item === 'magnifying_glass') {
-    magSelecting.value = true;
-    magSourcePos.value = pos;
-    magTargetsNeeded.value = 1;
-    magSelectedCells.value = [];
-    magSynthesisInfo.value = null;
+    mag.startSelection(pos);
     clearOff(pos.row, pos.col);
     return;
   }
@@ -202,7 +106,7 @@ async function handleTap(pos: Position) {
   const plan = store.computeItemTapPlan(pos);
   if (!plan) { store.tap(pos); return; }
 
-  locked = true;
+  drag.setLocked(true);
   clearOff(pos.row, pos.col);
   visualBoard.value = plan.boardBeforeActivation;
 
@@ -211,41 +115,22 @@ async function handleTap(pos: Position) {
 
   store.applyState(plan.finalState);
   visualBoard.value = null;
-  locked = false;
+  drag.setLocked(false);
 }
 
 async function handleMagSelection(pos: Position) {
-  // Don't allow selecting the magnifying glass itself
-  if (magSourcePos.value && pos.row === magSourcePos.value.row && pos.col === magSourcePos.value.col) return;
-  // Don't allow duplicate selections
-  if (magSelectedCells.value.some(p => p.row === pos.row && p.col === pos.col)) return;
+  const result = mag.selectCell(pos);
+  if (!result) return;
 
-  magSelectedCells.value.push(pos);
-
-  if (magSelectedCells.value.length >= magTargetsNeeded.value) {
-    const cells = [...magSelectedCells.value];
-    const source = magSourcePos.value!;
-    const synthInfo = magSynthesisInfo.value;
-
-    // Reset selection state
-    magSelecting.value = false;
-    magSourcePos.value = null;
-    magSelectedCells.value = [];
-    magSynthesisInfo.value = null;
-
-    if (synthInfo) {
-      await animateMagSynthesis(synthInfo.pos1, synthInfo.pos2, cells);
-    } else {
-      await animateMagGlass(source, cells);
-    }
+  if (result.synthesis) {
+    await animateMagSynthesis(result.synthesis.pos1, result.synthesis.pos2, result.cells);
+  } else {
+    await animateMagGlass(result.source, result.cells);
   }
 }
 
 function cancelMagSelection() {
-  magSelecting.value = false;
-  magSourcePos.value = null;
-  magSelectedCells.value = [];
-  magSynthesisInfo.value = null;
+  mag.cancelSelection();
   visualBoard.value = null;
 }
 
@@ -273,7 +158,7 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
     plan.finalState.previousState = originalState;
   }
 
-  locked = true;
+  drag.setLocked(true);
 
   // Build a board with the magnifying glass removed but targets still present
   const boardWithoutMag = cloneBoard(store.board!);
@@ -322,7 +207,7 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
 
   store.applyState(plan.finalState);
   visualBoard.value = null;
-  locked = false;
+  drag.setLocked(false);
 }
 
 async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
@@ -333,7 +218,7 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
     return;
   }
 
-  locked = true;
+  drag.setLocked(true);
 
   // Remove both items from visual board
   const boardWithoutItems = cloneBoard(store.board!);
@@ -395,12 +280,12 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
 
   store.applyState(plan.finalState);
   visualBoard.value = null;
-  locked = false;
+  drag.setLocked(false);
 }
 
 // --- Swap ---
 async function commitSwap(pos: Position, dir: Direction) {
-  locked = true;
+  drag.setLocked(true);
   const cs = cellSize.value;
   const nb = adj(pos, dir);
   const fullX = (nb.col - pos.col) * cs, fullY = (nb.row - pos.row) * cs;
@@ -418,7 +303,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     for (const chain of swapPlan.chains) await animateChainStep(chain);
     store.applyState(swapPlan.finalState);
     visualBoard.value = null;
-    locked = false;
+    drag.setLocked(false);
     return;
   }
 
@@ -438,12 +323,8 @@ async function commitSwap(pos: Position, dir: Direction) {
         swapped[pos.row][pos.col] = cell2;
         swapped[nb.row][nb.col] = cell1;
         visualBoard.value = swapped;
-        magSelecting.value = true;
-        magSourcePos.value = magPos;
-        magTargetsNeeded.value = 1;
-        magSelectedCells.value = [];
-        magSynthesisInfo.value = null;
-        locked = false;
+        mag.startSelection(magPos);
+        drag.setLocked(false);
         return;
       }
     }
@@ -461,7 +342,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     await animateDropAndChains(itemSwap.plan);
     store.applyState(itemSwap.plan.finalState);
     visualBoard.value = null;
-    locked = false;
+    drag.setLocked(false);
     return;
   }
 
@@ -475,12 +356,8 @@ async function commitSwap(pos: Position, dir: Direction) {
         const synth = getSynthesisEffect(cell1.item, cell2.item);
         if (synth && ['mag+mag', 'mag+scissors', 'mag+cutter', 'mag+clip'].includes(synth.effect)) {
           clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
-          magSelecting.value = true;
-          magSourcePos.value = pos;
-          magTargetsNeeded.value = synth.effect === 'mag+mag' ? 3 : 1;
-          magSelectedCells.value = [];
-          magSynthesisInfo.value = { pos1: pos, pos2: nb };
-          locked = false;
+          mag.startSelection(pos, synth.effect === 'mag+mag' ? 3 : 1, { pos1: pos, pos2: nb });
+          drag.setLocked(false);
           return;
         }
       }
@@ -498,7 +375,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     await animateSynthesisDropAndChains(synthPlan);
     store.applyState(synthPlan.finalState);
     visualBoard.value = null;
-    locked = false;
+    drag.setLocked(false);
     return;
   }
 
@@ -507,7 +384,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   setOff(nb.row, nb.col, 0, 0, true, 0);
   await wait(ANIM.SWAP);
   clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
-  locked = false;
+  drag.setLocked(false);
 }
 
 // --- Item effect animations ---
@@ -890,9 +767,9 @@ function tileTransition(r: number, c: number) {
       ref="boardEl"
       class="puzzle-board"
       :style="{ width: boardSize + 'px', height: boardSize + 'px' }"
-      @pointerdown="onPointerDown"
-      @pointermove="onPointerMove"
-      @pointerup="onPointerUp"
+      @pointerdown="drag.onPointerDown"
+      @pointermove="drag.onPointerMove"
+      @pointerup="onPointerUpWithDebug"
     >
       <template v-if="activeBoard">
         <div v-for="row in BOARD_SIZE" :key="row" class="board-row">
@@ -973,7 +850,7 @@ function tileTransition(r: number, c: number) {
       </div>
 
       <!-- Magnifying glass selection overlay -->
-      <template v-if="magSelecting">
+      <template v-if="mag.magSelecting.value">
         <div
           v-for="row in BOARD_SIZE" :key="'mag-' + row"
         >
@@ -981,8 +858,8 @@ function tileTransition(r: number, c: number) {
             v-for="col in BOARD_SIZE" :key="'mag-' + row + '-' + col"
             class="mag-select-cell"
             :class="{
-              'mag-selected': magSelectedCells.some(p => p.row === row - 1 && p.col === col - 1),
-              'mag-source': magSourcePos && magSourcePos.row === row - 1 && magSourcePos.col === col - 1,
+              'mag-selected': mag.magSelectedCells.value.some(p => p.row === row - 1 && p.col === col - 1),
+              'mag-source': mag.magSourcePos.value && mag.magSourcePos.value.row === row - 1 && mag.magSourcePos.value.col === col - 1,
             }"
             :style="{
               position: 'absolute',
@@ -994,7 +871,7 @@ function tileTransition(r: number, c: number) {
           />
         </div>
         <div class="mag-status">
-          <span>Select {{ magTargetsNeeded - magSelectedCells.length }} cell{{ magTargetsNeeded - magSelectedCells.length !== 1 ? 's' : '' }}</span>
+          <span>Select {{ mag.magTargetsNeeded.value - mag.magSelectedCells.value.length }} cell{{ mag.magTargetsNeeded.value - mag.magSelectedCells.value.length !== 1 ? 's' : '' }}</span>
           <button class="mag-cancel" @click="cancelMagSelection">Cancel</button>
         </div>
       </template>
