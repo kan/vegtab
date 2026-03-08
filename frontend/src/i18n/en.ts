@@ -47,6 +47,9 @@ export default {
     soundPromptMessage: 'Would you like to enable sound effects?',
     soundPromptYes: 'Enable Sound',
     soundPromptNo: 'No Thanks',
+    enterShareCode: 'Enter Share Code',
+    shareCodeDesc: 'Enter the share code to play a shared puzzle.',
+    shareCodePlaceholder: 'e.g. ABC123',
   },
   weekdays: {
     sun: 'Sun',
@@ -140,5 +143,7 @@ export default {
     notFoundMessage: 'This share link may be invalid or expired.',
     goHome: 'Go to HOME',
     loading: 'Loading puzzle...',
+    scanToPlay: 'Scan the QR code on your phone to play',
+    playInBrowser: 'Play in Browser',
   },
 } as const;

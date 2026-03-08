@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
+import { generateOgpSvg } from '../lib/qr';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -7,13 +8,43 @@ function escapeHtml(s: string): string {
 
 export const shareRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
+// GET /s/:seedId/ogp.svg - Dynamic OGP image with QR code
+shareRoutes.get('/:seedId/ogp.svg', async (c) => {
+  const seedId = c.req.param('seedId');
+
+  const seed = await c.env.DB.prepare(
+    'SELECT id, seed_value, share_code, is_daily, daily_date FROM puzzle_seeds WHERE id = ? OR share_code = ?'
+  ).bind(seedId, seedId.toUpperCase()).first<{
+    id: string; seed_value: string; share_code: string; is_daily: number; daily_date: string | null;
+  }>();
+
+  if (!seed) {
+    return c.text('Not found', 404);
+  }
+
+  const topScore = await c.env.DB.prepare(
+    `SELECT MAX(score) as best_score FROM play_scores
+     WHERE seed_id = ? AND mode = 'limited' AND used_brought_items = 0 AND is_trial = 0`
+  ).bind(seed.id).first<{ best_score: number | null }>();
+
+  const description = topScore?.best_score
+    ? `Top score: ${topScore.best_score} points`
+    : 'Try this puzzle!';
+
+  const shareUrl = `https://tomado.app/s/${seed.share_code}`;
+  const svg = generateOgpSvg(seed.share_code, shareUrl, description);
+
+  return c.body(svg, 200, {
+    'Content-Type': 'image/svg+xml',
+    'Cache-Control': 'public, max-age=3600',
+  });
+});
+
 // GET /s/:seedId - Share URL endpoint
-// Returns OGP for crawlers, app intro page for browsers
 shareRoutes.get('/:seedId', async (c) => {
   const seedId = c.req.param('seedId');
   const ua = c.req.header('User-Agent') ?? '';
 
-  // Look up seed
   const seed = await c.env.DB.prepare(
     'SELECT id, seed_value, share_code, is_daily, daily_date FROM puzzle_seeds WHERE id = ? OR share_code = ?'
   ).bind(seedId, seedId.toUpperCase()).first<{
@@ -24,7 +55,6 @@ shareRoutes.get('/:seedId', async (c) => {
     return c.html('<html><body><h1>Seed not found</h1></body></html>', 404);
   }
 
-  // Get top score for this seed
   const topScore = await c.env.DB.prepare(
     `SELECT MAX(score) as best_score FROM play_scores
      WHERE seed_id = ? AND mode = 'limited' AND used_brought_items = 0 AND is_trial = 0`
@@ -37,11 +67,11 @@ shareRoutes.get('/:seedId', async (c) => {
     ? `Top score: ${topScore.best_score} points. Can you beat it?`
     : 'Try this puzzle and compete for the high score!');
   const shareCode = escapeHtml(seed.share_code);
+  const ogpImageUrl = `https://tomado.app/s/${shareCode}/ogp.svg`;
 
   const isCrawler = /bot|crawl|spider|facebook|twitter|slack|discord|telegram|line|whatsapp/i.test(ua);
 
   if (isCrawler) {
-    // Return OGP meta tags for SNS preview
     return c.html(`<!DOCTYPE html>
 <html>
 <head>
@@ -50,49 +80,29 @@ shareRoutes.get('/:seedId', async (c) => {
   <meta property="og:description" content="${description}">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://tomado.app/s/${shareCode}">
-  <meta property="og:image" content="https://tomado.app/ogp.png">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="${ogpImageUrl}">
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${title}">
   <meta name="twitter:description" content="${description}">
-  <meta name="twitter:image" content="https://tomado.app/ogp.png">
+  <meta name="twitter:image" content="${ogpImageUrl}">
   <title>${title}</title>
 </head>
 <body></body>
 </html>`);
   }
 
-  // For browsers: app intro page with deep link attempt
-  // seed.id is always a UUID, safe for URL context
-  const deepLink = `tomado://puzzle/${encodeURIComponent(seed.id)}`;
+  // For browsers: redirect to SPA
   return c.html(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta property="og:title" content="${title}">
-  <meta property="og:image" content="https://tomado.app/ogp.png">
+  <meta property="og:image" content="${ogpImageUrl}">
   <meta property="og:description" content="${description}">
   <title>${title}</title>
-  <style>
-    body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 20px; text-align: center; }
-    h1 { font-size: 1.5rem; }
-    .code { font-size: 2rem; font-weight: bold; letter-spacing: 0.2em; margin: 20px 0; }
-    .score { color: #666; margin: 10px 0; }
-    .btn { display: inline-block; padding: 12px 32px; background: #4CAF50; color: white; text-decoration: none; border-radius: 8px; margin: 10px; }
-  </style>
+  <script>window.location.replace('/s/${shareCode}');</script>
 </head>
-<body>
-  <h1>Tomado Puzzle</h1>
-  <div class="code">${shareCode}</div>
-  <p class="score">${description}</p>
-  <a class="btn" href="${deepLink}">Open in App</a>
-  <p style="margin-top: 40px; color: #999; font-size: 0.9rem;">
-    Don't have the app? Download it from the store.
-  </p>
-  <script>
-    // Try deep link, fallback stays on page
-    setTimeout(() => { window.location.href = "${deepLink}"; }, 100);
-  </script>
-</body>
+<body></body>
 </html>`);
 });

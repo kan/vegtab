@@ -47,6 +47,9 @@ export default {
     soundPromptMessage: '効果音を有効にしますか？',
     soundPromptYes: 'サウンドON',
     soundPromptNo: 'いいえ',
+    enterShareCode: '共有コードを入力',
+    shareCodeDesc: '共有コードを入力して、パズルをプレイしましょう。',
+    shareCodePlaceholder: '例: ABC123',
   },
   weekdays: {
     sun: '日',
@@ -140,5 +143,7 @@ export default {
     notFoundMessage: 'この共有リンクは無効または期限切れです。',
     goHome: 'HOMEへ',
     loading: 'パズルを読み込み中...',
+    scanToPlay: 'スマホでQRコードを読み取ってプレイ',
+    playInBrowser: 'ブラウザでプレイ',
   },
 } as const;

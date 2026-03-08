@@ -28,6 +28,26 @@ const menuOpen = ref(false);
 const rankingSeed = ref(0);
 const showRanking = ref(false);
 
+// Share code input
+const showShareCodeInput = ref(false);
+const shareCodeInput = ref('');
+const shareCodeError = ref(false);
+
+function openShareCodeInput() {
+  menuOpen.value = false;
+  shareCodeInput.value = '';
+  shareCodeError.value = false;
+  showShareCodeInput.value = true;
+}
+
+async function submitShareCode() {
+  const code = shareCodeInput.value.trim().toUpperCase();
+  if (!code) return;
+  shareCodeError.value = false;
+  router.push(`/s/${code}`);
+  showShareCodeInput.value = false;
+}
+
 function openRanking(seed: number) {
   rankingSeed.value = seed;
   showRanking.value = true;
@@ -342,6 +362,11 @@ const staminaDots = computed(() => {
               <span :class="['menu-item-status', { on: vibrationEnabled }]">{{ vibrationEnabled ? 'ON' : 'OFF' }}</span>
             </button>
             <div class="menu-divider" />
+            <button class="menu-item" @click="openShareCodeInput">
+              <span class="menu-item-icon">🔗</span>
+              <span class="menu-item-label">{{ t('home.enterShareCode') }}</span>
+            </button>
+            <div class="menu-divider" />
             <button class="menu-item" @click="doToggleTheme">
               <span class="menu-item-icon">{{ isDark ? '☀️' : '🌙' }}</span>
               <span class="menu-item-label">{{ t('home.darkMode') }}</span>
@@ -363,9 +388,30 @@ const staminaDots = computed(() => {
         <div class="modal">
           <h3 class="modal-title">{{ t('home.soundPromptTitle') }}</h3>
           <p class="modal-desc">{{ t('home.soundPromptMessage') }}</p>
-          <div class="sound-prompt-actions">
-            <button class="btn btn-sound-yes" @click="acceptSound()">{{ t('home.soundPromptYes') }}</button>
-            <button class="btn btn-cancel" @click="declineSound()">{{ t('home.soundPromptNo') }}</button>
+          <div class="modal-actions">
+            <button class="modal-btn-primary" @click="acceptSound()">{{ t('home.soundPromptYes') }}</button>
+            <button class="modal-btn-secondary" @click="declineSound()">{{ t('home.soundPromptNo') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Share code input modal -->
+    <Teleport to="body">
+      <div v-if="showShareCodeInput" class="modal-overlay" @click.self="showShareCodeInput = false">
+        <div class="modal">
+          <h3 class="modal-title">{{ t('home.enterShareCode') }}</h3>
+          <p class="modal-desc">{{ t('home.shareCodeDesc') }}</p>
+          <input
+            v-model="shareCodeInput"
+            class="share-code-input"
+            maxlength="10"
+            :placeholder="t('home.shareCodePlaceholder')"
+            @keyup.enter="submitShareCode"
+          />
+          <div class="modal-actions">
+            <button class="modal-btn-primary" :disabled="!shareCodeInput.trim()" @click="submitShareCode">{{ t('common.ok') }}</button>
+            <button class="modal-btn-secondary" @click="showShareCodeInput = false">{{ t('common.cancel') }}</button>
           </div>
         </div>
       </div>
@@ -513,14 +559,49 @@ const staminaDots = computed(() => {
   background: var(--border);
   margin: 4px 12px;
 }
-.sound-prompt-actions {
+.modal-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.btn-sound-yes {
+.modal-btn-primary {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
   background: var(--brand);
   color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+.modal-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.modal-btn-secondary {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+.share-code-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-align: center;
+  text-transform: uppercase;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  box-sizing: border-box;
 }
 
 /* Hero */

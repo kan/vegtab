@@ -10,7 +10,6 @@ import { playSE, vibrate, startBGM, stopBGM, useSound } from '@/sound';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
-import QrCode from '@/components/QrCode.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
 
 const isDev = import.meta.env.DEV;
@@ -436,10 +435,6 @@ const BOARD_SIZE = 8;
         <p class="final-score">{{ t('puzzle.pts', { score: store.score }) }}</p>
         <p class="move-info">{{ t('puzzle.movesCompleted', { count: store.moveLimit }) }}</p>
         <p v-if="usedItems" class="ref-note">{{ t('puzzle.refNote') }}</p>
-        <div v-if="shareCode" class="share-info">
-          <QrCode :value="shareUrl!" :size="100" />
-          <span class="share-code-label">{{ shareCode }}</span>
-        </div>
         <div class="game-over-actions actions-col">
           <button class="btn" @click="restart">{{ t('common.retry') }}</button>
           <button class="btn btn-continue" @click="continueAsFree">{{ t('puzzle.continueFree') }}</button>
@@ -455,10 +450,6 @@ const BOARD_SIZE = 8;
         <h2>{{ t('puzzle.gameOver') }}</h2>
         <p class="final-score">{{ t('puzzle.pts', { score: store.score }) }}</p>
         <p v-if="usedItems" class="ref-note">{{ t('puzzle.refNote') }}</p>
-        <div v-if="shareCode" class="share-info">
-          <QrCode :value="shareUrl!" :size="100" />
-          <span class="share-code-label">{{ shareCode }}</span>
-        </div>
         <div class="game-over-actions actions-col">
           <button class="btn" @click="restart">{{ t('common.retry') }}</button>
           <button class="btn btn-share" @click="shareScore">{{ t('common.share') }}</button>
@@ -737,19 +728,6 @@ const BOARD_SIZE = 8;
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 12px;
-}
-.share-info {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-.share-code-label {
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  color: var(--text-secondary);
 }
 .game-over-overlay {
   position: absolute;
