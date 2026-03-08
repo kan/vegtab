@@ -147,7 +147,10 @@ const staminaDots = computed(() => {
 
     <!-- Hero -->
     <div class="hero">
-      <h1 class="app-title">{{ t('common.appName') }}</h1>
+      <h1 class="app-title">
+        <img src="/tomado-icon.svg" alt="" class="app-icon" />
+        {{ t('common.appName') }}
+      </h1>
       <p class="app-subtitle">{{ t('home.subtitle') }}</p>
       <div class="user-name-row">
         <template v-if="editingName">
@@ -614,6 +617,14 @@ const staminaDots = computed(() => {
   color: var(--brand);
   font-weight: 800;
   letter-spacing: -1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.app-icon {
+  width: 40px;
+  height: 40px;
 }
 .app-subtitle {
   font-size: 13px;

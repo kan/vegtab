@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Tomato body -->
+  <ellipse cx="64" cy="74" rx="52" ry="46" fill="#e53935"/>
+  <ellipse cx="64" cy="74" rx="52" ry="46" fill="none" stroke="#c62828" stroke-width="1.5"/>
+  <!-- Highlight (bottom-right, narrow and bright) -->
+  <ellipse cx="86" cy="94" rx="16" ry="6" fill="#fff" opacity="0.55" transform="rotate(-30 86 94)"/>
+  <!-- Calyx (3 large pointed leaves) -->
+  <g fill="#43a047">
+    <!-- Center leaf (pointing up) -->
+    <path d="M64 44 Q56 8 48 28 L58 42Z"/>
+    <path d="M64 44 Q72 8 80 28 L70 42Z"/>
+    <!-- Left leaf -->
+    <path d="M56 46 Q24 14 34 38 L52 44Z"/>
+    <!-- Right leaf -->
+    <path d="M72 46 Q104 14 94 38 L76 44Z"/>
+  </g>
+  <!-- Stem -->
+  <rect x="61.5" y="26" width="5" height="18" rx="2.5" fill="#2e7d32"/>
+</svg>
