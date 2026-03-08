@@ -119,17 +119,26 @@ todoRoutes.post('/:id/complete', async (c) => {
   }>();
   if (!todo) return c.json({ error: 'Todo not found or already completed' }, 404);
 
-  // Mark as done
-  await c.env.DB.prepare(
-    "UPDATE todos SET status = 'done', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
-  ).bind(todoId).run();
+  // Batch: mark done + fetch all needed state in parallel
+  const [, progressResult, recoveryResult, userResult] = await c.env.DB.batch([
+    c.env.DB.prepare(
+      "UPDATE todos SET status = 'done', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+    ).bind(todoId),
+    c.env.DB.prepare(
+      'SELECT id, completed_count, item_claimed, undo_claimed FROM daily_todo_progress WHERE user_id = ? AND target_date = ?'
+    ).bind(userId, today),
+    c.env.DB.prepare(
+      'SELECT id, recovered_count FROM stamina_recovery_logs WHERE user_id = ? AND target_date = ?'
+    ).bind(userId, today),
+    c.env.DB.prepare(
+      'SELECT stamina, undo_stock FROM users WHERE id = ?'
+    ).bind(userId),
+  ]);
 
-  // Get or create daily progress
-  let progress = await c.env.DB.prepare(
-    'SELECT id, completed_count, item_claimed, undo_claimed FROM daily_todo_progress WHERE user_id = ? AND target_date = ?'
-  ).bind(userId, today).first<{
+  // Daily progress
+  let progress = (progressResult.results?.[0] ?? null) as {
     id: string; completed_count: number; item_claimed: number; undo_claimed: number;
-  }>();
+  } | null;
 
   if (!progress) {
     const progressId = generateId();
@@ -144,68 +153,63 @@ todoRoutes.post('/:id/complete', async (c) => {
     progress.completed_count += 1;
   }
 
+  const recoveryLog = (recoveryResult.results?.[0] ?? null) as { id: string; recovered_count: number } | null;
+  const user = (userResult.results?.[0] ?? null) as { stamina: number; undo_stock: number } | null;
+
+  // Collect writes to batch at the end
+  const writes: D1PreparedStatement[] = [];
+
   // Stamina recovery (max 5 per day)
   let staminaRecovered = false;
-  const recoveryLog = await c.env.DB.prepare(
-    'SELECT id, recovered_count FROM stamina_recovery_logs WHERE user_id = ? AND target_date = ?'
-  ).bind(userId, today).first<{ id: string; recovered_count: number }>();
-
   const currentRecoveryCount = recoveryLog?.recovered_count ?? 0;
   if (currentRecoveryCount < 5) {
-    const user = await c.env.DB.prepare(
-      'SELECT stamina FROM users WHERE id = ?'
-    ).bind(userId).first<{ stamina: number }>();
-
     if (user && user.stamina < MAX_STAMINA) {
-      await c.env.DB.prepare(
+      writes.push(c.env.DB.prepare(
         "UPDATE users SET stamina = stamina + 1, updated_at = datetime('now') WHERE id = ?"
-      ).bind(userId).run();
+      ).bind(userId));
       staminaRecovered = true;
     }
 
     if (recoveryLog) {
-      await c.env.DB.prepare(
+      writes.push(c.env.DB.prepare(
         'UPDATE stamina_recovery_logs SET recovered_count = recovered_count + 1 WHERE id = ?'
-      ).bind(recoveryLog.id).run();
+      ).bind(recoveryLog.id));
     } else {
-      await c.env.DB.prepare(
+      writes.push(c.env.DB.prepare(
         'INSERT INTO stamina_recovery_logs (id, user_id, target_date, recovered_count) VALUES (?, ?, ?, 1)'
-      ).bind(generateId(), userId, today).run();
+      ).bind(generateId(), userId, today));
     }
   }
 
   // Undo ticket (max 1 per day, stock max 10)
   let undoGranted = false;
   if (!progress.undo_claimed) {
-    const user = await c.env.DB.prepare(
-      'SELECT undo_stock FROM users WHERE id = ?'
-    ).bind(userId).first<{ undo_stock: number }>();
-
     if (user && user.undo_stock < 10) {
-      await c.env.DB.prepare(
-        "UPDATE users SET undo_stock = undo_stock + 1, updated_at = datetime('now') WHERE id = ?"
-      ).bind(userId).run();
+      // If stamina write already queued for users table, combine; otherwise add separate
+      if (staminaRecovered) {
+        // Replace the stamina-only update with a combined one
+        writes[0] = c.env.DB.prepare(
+          "UPDATE users SET stamina = stamina + 1, undo_stock = undo_stock + 1, updated_at = datetime('now') WHERE id = ?"
+        ).bind(userId);
+      } else {
+        writes.push(c.env.DB.prepare(
+          "UPDATE users SET undo_stock = undo_stock + 1, updated_at = datetime('now') WHERE id = ?"
+        ).bind(userId));
+      }
       undoGranted = true;
     }
-    await c.env.DB.prepare(
+    writes.push(c.env.DB.prepare(
       "UPDATE daily_todo_progress SET undo_claimed = 1, updated_at = datetime('now') WHERE id = ?"
-    ).bind(progress.id).run();
+    ).bind(progress.id));
   }
 
-  // Handle recurrence: create next occurrence
-  if (todo.recurrence_rule) {
-    const nextDate = calculateNextOccurrence(todo.recurrence_rule, todo.due_date);
-    const newId = generateId();
-    await c.env.DB.prepare(
-      `INSERT INTO todos (id, user_id, group_id, title, memo, due_date, recurrence_rule, subtasks)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      newId, userId, todo.group_id, todo.title, todo.memo,
-      nextDate, todo.recurrence_rule,
-      // Reset subtask completion for next occurrence
-      JSON.stringify(JSON.parse(todo.subtasks).map((s: { text: string }) => ({ text: s.text, done: false })))
-    ).run();
+  // Execute all accumulated writes in a single batch
+  if (writes.length > 0) {
+    await c.env.DB.batch(writes);
   }
+
+  // Note: Recurrence (next occurrence) is handled by the frontend,
+  // which creates the new todo via POST /api/todos after completion.
 
   return c.json({
     completedCount: progress.completed_count,
@@ -226,27 +230,3 @@ todoRoutes.delete('/:id', async (c) => {
   return c.json({ success: true });
 });
 
-function calculateNextOccurrence(rule: string, currentDueDate: string | null): string {
-  const base = currentDueDate ? new Date(currentDueDate + 'T00:00:00Z') : new Date();
-
-  if (rule === 'daily') {
-    base.setUTCDate(base.getUTCDate() + 1);
-  } else if (rule.startsWith('weekly:')) {
-    // weekly:1 (Monday=1, Sunday=0)
-    const targetDay = parseInt(rule.split(':')[1], 10);
-    do {
-      base.setUTCDate(base.getUTCDate() + 1);
-    } while (base.getUTCDay() !== targetDay);
-  } else if (rule.startsWith('monthly:')) {
-    // monthly:15 (15th of each month)
-    const targetDate = parseInt(rule.split(':')[1], 10);
-    base.setUTCMonth(base.getUTCMonth() + 1);
-    base.setUTCDate(Math.min(targetDate, daysInMonth(base.getUTCFullYear(), base.getUTCMonth())));
-  }
-
-  return base.toISOString().slice(0, 10);
-}
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-}

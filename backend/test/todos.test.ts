@@ -101,7 +101,7 @@ describe('TODO API', () => {
     expect(todos).toHaveLength(0);
   });
 
-  it('completing todo with recurrence creates next occurrence', async () => {
+  it('completing todo with recurrence does not duplicate (frontend handles next occurrence)', async () => {
     const createRes = await SELF.fetch('http://localhost/api/todos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
@@ -113,18 +113,17 @@ describe('TODO API', () => {
     });
     const { id } = await createRes.json() as { id: string };
 
-    await SELF.fetch(`http://localhost/api/todos/${id}/complete`, {
+    const completeRes = await SELF.fetch(`http://localhost/api/todos/${id}/complete`, {
       method: 'POST',
       headers: authHeader(accessToken),
     });
+    expect(completeRes.status).toBe(200);
 
-    // Should have a new active todo with next date
+    // Backend should NOT create next occurrence (frontend does it via POST /api/todos)
     const listRes = await SELF.fetch('http://localhost/api/todos', {
       headers: authHeader(accessToken),
     });
-    const { todos } = await listRes.json() as { todos: Array<{ title: string; dueDate: string }> };
-    expect(todos).toHaveLength(1);
-    expect(todos[0].title).toBe('Daily task');
-    expect(todos[0].dueDate).toBe('2026-03-09');
+    const { todos } = await listRes.json() as { todos: Array<{ title: string }> };
+    expect(todos).toHaveLength(0);
   });
 });

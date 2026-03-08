@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 export const shareRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // GET /s/:seedId - Share URL endpoint
@@ -26,12 +30,13 @@ shareRoutes.get('/:seedId', async (c) => {
      WHERE seed_id = ? AND mode = 'limited' AND used_brought_items = 0 AND is_trial = 0`
   ).bind(seed.id).first<{ best_score: number | null }>();
 
-  const title = seed.is_daily
+  const title = escapeHtml(seed.is_daily
     ? `Tomado Daily Puzzle - ${seed.daily_date}`
-    : `Tomado Puzzle - ${seed.share_code}`;
-  const description = topScore?.best_score
+    : `Tomado Puzzle - ${seed.share_code}`);
+  const description = escapeHtml(topScore?.best_score
     ? `Top score: ${topScore.best_score} points. Can you beat it?`
-    : 'Try this puzzle and compete for the high score!';
+    : 'Try this puzzle and compete for the high score!');
+  const shareCode = escapeHtml(seed.share_code);
 
   const isCrawler = /bot|crawl|spider|facebook|twitter|slack|discord|telegram|line|whatsapp/i.test(ua);
 
@@ -44,7 +49,7 @@ shareRoutes.get('/:seedId', async (c) => {
   <meta property="og:title" content="${title}">
   <meta property="og:description" content="${description}">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://tomado.app/s/${seed.share_code}">
+  <meta property="og:url" content="https://tomado.app/s/${shareCode}">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="${title}">
   <meta name="twitter:description" content="${description}">
@@ -55,7 +60,8 @@ shareRoutes.get('/:seedId', async (c) => {
   }
 
   // For browsers: app intro page with deep link attempt
-  const deepLink = `tomado://puzzle/${seed.id}`;
+  // seed.id is always a UUID, safe for URL context
+  const deepLink = `tomado://puzzle/${encodeURIComponent(seed.id)}`;
   return c.html(`<!DOCTYPE html>
 <html>
 <head>
@@ -74,7 +80,7 @@ shareRoutes.get('/:seedId', async (c) => {
 </head>
 <body>
   <h1>Tomado Puzzle</h1>
-  <div class="code">${seed.share_code}</div>
+  <div class="code">${shareCode}</div>
   <p class="score">${description}</p>
   <a class="btn" href="${deepLink}">Open in App</a>
   <p style="margin-top: 40px; color: #999; font-size: 0.9rem;">

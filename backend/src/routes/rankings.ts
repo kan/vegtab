@@ -21,22 +21,29 @@ rankingRoutes.get('/:seedId', async (c) => {
   // Try KV cache
   const cached = await c.env.KV.get(cacheKey, 'json') as RankingData | null;
   if (cached) {
-    // Add user's rank info
-    const userRank = await getUserRank(c.env.DB, userId, seedId, mode);
+    // Derive user rank from cached entries to avoid DB queries
+    const cachedEntry = cached.entries.find(e => e.userId === userId);
+    const userRank = cachedEntry
+      ? { rank: cachedEntry.rank, score: cachedEntry.score }
+      : await getUserRank(c.env.DB, userId, seedId, mode);
     return c.json({ ranking: cached.entries, userRank });
   }
 
-  // Query D1 for ranking
+  // Query D1 for ranking — use subquery to get move_count from the best-score row
   const entries = await c.env.DB.prepare(
-    `SELECT ps.user_id, u.display_name, MAX(ps.score) as best_score, ps.move_count
-     FROM play_scores ps
-     JOIN users u ON u.id = ps.user_id
-     WHERE ps.seed_id = ? AND ps.mode = ?
-       AND ps.used_brought_items = 0 AND ps.is_trial = 0
-     GROUP BY ps.user_id
-     ORDER BY best_score DESC
+    `SELECT r.user_id, u.display_name, r.best_score, ps2.move_count
+     FROM (
+       SELECT user_id, MAX(score) as best_score
+       FROM play_scores
+       WHERE seed_id = ? AND mode = ? AND used_brought_items = 0 AND is_trial = 0
+       GROUP BY user_id
+     ) r
+     JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.score = r.best_score
+       AND ps2.seed_id = ? AND ps2.mode = ? AND ps2.used_brought_items = 0 AND ps2.is_trial = 0
+     JOIN users u ON u.id = r.user_id
+     ORDER BY r.best_score DESC
      LIMIT ?`
-  ).bind(seedId, mode, RANKING_LIMIT).all<{
+  ).bind(seedId, mode, seedId, mode, RANKING_LIMIT).all<{
     user_id: string; display_name: string | null; best_score: number; move_count: number;
   }>();
 
