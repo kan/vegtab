@@ -10,6 +10,7 @@ const router = createRouter({
     { path: '/todo', component: () => import('./views/TodoView.vue') },
     { path: '/puzzle', component: () => import('./views/PuzzleView.vue') },
     { path: '/puzzle/:seed', component: () => import('./views/PuzzleView.vue') },
+    { path: '/s/:code', component: () => import('./views/ShareRedirectView.vue') },
   ],
 });
 

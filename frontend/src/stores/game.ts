@@ -66,6 +66,10 @@ export const useGameStore = defineStore('game', () => {
   const playRecords = ref<PlayRecord[]>(loadJson('tomado_play_records', []));
   const dailyState = ref<DailyState>(loadDailyState());
   const initialized = ref(false);
+  // Map: engine seed number → { backendSeedId, shareCode }
+  const shareCodeMap = ref<Record<number, { seedId: string; shareCode: string }>>(
+    loadJson('tomado_share_codes', {})
+  );
 
   // Ensure daily state is fresh on store init
   ensureDailyState();
@@ -434,6 +438,27 @@ export const useGameStore = defineStore('game', () => {
     localStorage.setItem('tomado_daily_state', JSON.stringify(dailyState.value));
   }
 
+  function saveShareCodes() {
+    localStorage.setItem('tomado_share_codes', JSON.stringify(shareCodeMap.value));
+  }
+
+  /** Get or create a shareCode for a seed by registering it with the backend */
+  async function getShareCode(seed: number): Promise<string | null> {
+    const cached = shareCodeMap.value[seed];
+    if (cached) return cached.shareCode;
+    try {
+      const res = await api<{ seedId: string; seedValue: string; shareCode: string }>('/api/seeds/generate', {
+        method: 'POST',
+        body: JSON.stringify({ seedValue: String(seed) }),
+      });
+      shareCodeMap.value[seed] = { seedId: res.seedId, shareCode: res.shareCode };
+      saveShareCodes();
+      return res.shareCode;
+    } catch {
+      return null;
+    }
+  }
+
   return {
     displayName, effectiveName, setDisplayName,
     stamina, undoStock, items, unlockedSeeds, playRecords, dailyState,
@@ -450,6 +475,7 @@ export const useGameStore = defineStore('game', () => {
     getDailySeeds, hasPlayedDaily,
     ensureDailyState,
     init, syncProfile, initialized,
+    getShareCode, shareCodeMap,
   };
 });
 

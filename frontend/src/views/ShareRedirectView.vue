@@ -1,0 +1,82 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { api } from '@/api/client';
+import { useGameStore } from '@/stores/game';
+
+const route = useRoute();
+const router = useRouter();
+const gameStore = useGameStore();
+const error = ref(false);
+
+onMounted(async () => {
+  const code = (route.params.code as string).toUpperCase();
+  try {
+    // Ensure authenticated
+    await gameStore.init();
+    // Resolve share code → seed info
+    const res = await api<{
+      seedId: string;
+      seedValue: string;
+      shareCode: string;
+    }>(`/api/seeds/by-code/${code}`);
+    // Cache the mapping
+    const seed = Number(res.seedValue) || res.seedValue;
+    if (typeof seed === 'number') {
+      gameStore.shareCodeMap[seed] = { seedId: res.seedId, shareCode: res.shareCode };
+    }
+    // Navigate to puzzle with the seed value
+    router.replace(`/puzzle/${res.seedValue}`);
+  } catch {
+    error.value = true;
+  }
+});
+</script>
+
+<template>
+  <div class="share-redirect">
+    <div v-if="error" class="share-error">
+      <h2>Seed not found</h2>
+      <p>This share link may be invalid or expired.</p>
+      <button class="btn" @click="router.push('/')">Go to HOME</button>
+    </div>
+    <div v-else class="share-loading">
+      <p>Loading puzzle...</p>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.share-redirect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100dvh;
+  background: #f5f0e8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.share-error, .share-loading {
+  text-align: center;
+  padding: 32px;
+}
+.share-error h2 {
+  color: #c0392b;
+  margin-bottom: 8px;
+}
+.share-error p {
+  color: #666;
+  margin-bottom: 16px;
+}
+.btn {
+  padding: 8px 24px;
+  border: none;
+  border-radius: 8px;
+  background: #c0392b;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+.share-loading p {
+  color: #999;
+}
+</style>

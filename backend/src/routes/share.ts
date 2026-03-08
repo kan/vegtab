@@ -50,9 +50,11 @@ shareRoutes.get('/:seedId', async (c) => {
   <meta property="og:description" content="${description}">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://tomado.app/s/${shareCode}">
+  <meta property="og:image" content="https://tomado.app/ogp.png">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="${title}">
   <meta name="twitter:description" content="${description}">
+  <meta name="twitter:image" content="https://tomado.app/ogp.png">
   <title>${title}</title>
 </head>
 <body></body>
@@ -68,6 +70,7 @@ shareRoutes.get('/:seedId', async (c) => {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta property="og:title" content="${title}">
+  <meta property="og:image" content="https://tomado.app/ogp.png">
   <meta property="og:description" content="${description}">
   <title>${title}</title>
   <style>

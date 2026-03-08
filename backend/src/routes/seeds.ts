@@ -7,10 +7,22 @@ import { calculateCurrentStamina } from '../lib/stamina';
 export const seedRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // POST /api/seeds/generate - Generate a new seed (no stamina cost, trial state)
+// Accepts optional { seedValue } to register a frontend-generated seed
 seedRoutes.post('/generate', async (c) => {
   const userId = c.get('userId');
+  const body = await c.req.json().catch(() => ({})) as { seedValue?: string };
 
-  const seedValue = generateId();
+  const seedValue = body.seedValue || generateId();
+
+  // If seedValue already registered, return existing entry
+  const existing = await c.env.DB.prepare(
+    'SELECT id, seed_value, share_code FROM puzzle_seeds WHERE seed_value = ?'
+  ).bind(seedValue).first<{ id: string; seed_value: string; share_code: string }>();
+
+  if (existing) {
+    return c.json({ seedId: existing.id, seedValue: existing.seed_value, shareCode: existing.share_code });
+  }
+
   const shareCode = generateShareCode();
   const seedId = generateId();
 
@@ -202,10 +214,9 @@ seedRoutes.get('/:id', async (c) => {
 seedRoutes.get('/by-code/:code', async (c) => {
   const code = c.req.param('code').toUpperCase();
   const seed = await c.env.DB.prepare(
-    'SELECT id FROM puzzle_seeds WHERE share_code = ?'
-  ).bind(code).first<{ id: string }>();
+    'SELECT id, seed_value, share_code FROM puzzle_seeds WHERE share_code = ?'
+  ).bind(code).first<{ id: string; seed_value: string; share_code: string }>();
   if (!seed) return c.json({ error: 'Seed not found' }, 404);
 
-  // Redirect to seed detail
-  return c.redirect(`/api/seeds/${seed.id}`);
+  return c.json({ seedId: seed.id, seedValue: seed.seed_value, shareCode: seed.share_code });
 });

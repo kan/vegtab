@@ -8,6 +8,7 @@ import { ALL_ITEM_TYPES, ITEM_LABELS, STICKY_NOTE_COLORS } from '@/utils/constan
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
+import QrCode from '@/components/QrCode.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
 
 const isDev = import.meta.env.DEV;
@@ -203,25 +204,38 @@ watch(() => store.isGameOver || store.isMoveLimitReached, (ended) => {
     if (wasTrial) {
       viewPhase.value = 'unlock';
     }
+    // Eagerly fetch share code for score screen
+    gameStore.getShareCode(store.seed!).then(code => { shareCode.value = code; });
   }
 });
 
 // --- Share ---
+const shareToast = ref(false);
+const shareCode = ref<string | null>(null);
+const shareUrl = computed(() => shareCode.value ? `${location.origin}/s/${shareCode.value}` : null);
+
 async function shareScore() {
   if (store.seed === undefined) return;
+  // Get or create share code
+  if (!shareCode.value) {
+    shareCode.value = await gameStore.getShareCode(store.seed);
+  }
   const mode = store.mode === 'limited' ? 'LIMITED' : 'FREE';
-  const text = `Tomado Puzzle #${store.seed} | ${mode} ${store.moveCount}moves ${store.score.toLocaleString()}pts`;
+  const code = shareCode.value ?? `#${store.seed}`;
+  const url = shareCode.value ? `${location.origin}/s/${shareCode.value}` : '';
+  const text = `Tomado Puzzle ${code} | ${mode} ${store.moveCount}moves ${store.score.toLocaleString()}pts`;
+  const shareData: ShareData = { text };
+  if (url) shareData.url = url;
   if (navigator.share) {
     try {
-      await navigator.share({ text });
+      await navigator.share(shareData);
     } catch { /* user cancelled */ }
   } else {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(url ? `${text}\n${url}` : text);
     shareToast.value = true;
     setTimeout(() => { shareToast.value = false; }, 2000);
   }
 }
-const shareToast = ref(false);
 
 function restart() {
   if (store.seed !== undefined && !gameStore.canRetry(store.seed)) {
@@ -409,6 +423,10 @@ const BOARD_SIZE = 8;
         <p class="final-score">{{ store.score }} pts</p>
         <p class="move-info">{{ store.moveLimit }} moves completed</p>
         <p v-if="usedItems" class="ref-note">Reference record (items used)</p>
+        <div v-if="shareCode" class="share-info">
+          <QrCode :value="shareUrl!" :size="100" />
+          <span class="share-code-label">{{ shareCode }}</span>
+        </div>
         <div class="game-over-actions actions-col">
           <button class="btn" @click="restart">RETRY</button>
           <button class="btn btn-continue" @click="continueAsFree">CONTINUE (FREE)</button>
@@ -424,6 +442,10 @@ const BOARD_SIZE = 8;
         <h2>GAME OVER</h2>
         <p class="final-score">{{ store.score }} pts</p>
         <p v-if="usedItems" class="ref-note">Reference record (items used)</p>
+        <div v-if="shareCode" class="share-info">
+          <QrCode :value="shareUrl!" :size="100" />
+          <span class="share-code-label">{{ shareCode }}</span>
+        </div>
         <div class="game-over-actions actions-col">
           <button class="btn" @click="restart">RETRY</button>
           <button class="btn btn-share" @click="shareScore">SHARE</button>
@@ -678,6 +700,19 @@ const BOARD_SIZE = 8;
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 12px;
+}
+.share-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.share-code-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: #666;
 }
 .game-over-overlay {
   position: absolute;

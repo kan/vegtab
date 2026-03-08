@@ -109,6 +109,12 @@ const staminaDots = computed(() => {
 
 <template>
   <div class="home-view">
+    <!-- Alpha banner -->
+    <div class="alpha-banner">
+      <span class="alpha-tag">α</span>
+      Data may be reset during alpha testing
+    </div>
+
     <!-- Hero -->
     <div class="hero">
       <h1 class="app-title">Tomado</h1>
@@ -308,6 +314,29 @@ const staminaDots = computed(() => {
   padding: 16px;
   overflow-y: auto;
   gap: 16px;
+}
+
+/* Alpha banner */
+.alpha-banner {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffc107;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.alpha-tag {
+  background: #ffc107;
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 
 /* Hero */
