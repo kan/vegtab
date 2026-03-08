@@ -130,6 +130,27 @@ function addSubtask(todoId: string) {
   newSubtaskText.value = '';
 }
 
+// --- Delete confirmation ---
+const deleteTargetId = ref<string | null>(null);
+
+function confirmDelete(id: string) {
+  deleteTargetId.value = id;
+}
+
+function executeDelete() {
+  if (deleteTargetId.value) {
+    store.deleteTodo(deleteTargetId.value);
+    if (expandedTodo.value === deleteTargetId.value) expandedTodo.value = null;
+    deleteTargetId.value = null;
+  }
+}
+
+function clearAllDone() {
+  for (const todo of [...store.doneTodos]) {
+    store.deleteTodo(todo.id);
+  }
+}
+
 // --- Done section ---
 const showDone = ref(false);
 
@@ -248,7 +269,11 @@ function groupColor(groupId: string | null): string {
               <button class="subtask-add-btn" @click="addSubtask(todo.id)">+</button>
             </div>
           </div>
-          <button class="delete-btn" @click="store.deleteTodo(todo.id)">Delete task</button>
+          <button class="expanded-delete-btn" @click="confirmDelete(todo.id)">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2.5 4h9M5 4V2.5h4V4M3.5 4l.5 8h6l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -330,8 +355,6 @@ function groupColor(groupId: string | null): string {
                   <button class="subtask-add-btn" @click="addSubtask(todo.id)">+</button>
                 </div>
               </div>
-
-              <button class="delete-btn" @click="store.deleteTodo(todo.id)">Delete task</button>
             </div>
           </div>
         </template>
@@ -346,6 +369,9 @@ function groupColor(groupId: string | null): string {
           <span class="group-chevron">{{ showDone ? '\u25BC' : '\u25B6' }}</span>
         </div>
         <template v-if="showDone">
+          <div class="done-actions">
+            <button class="clear-done-btn" @click="clearAllDone">Clear All</button>
+          </div>
           <div
             v-for="todo in store.doneTodos"
             :key="todo.id"
@@ -356,7 +382,11 @@ function groupColor(groupId: string | null): string {
               <div class="todo-content">
                 <span class="todo-title done-title">{{ todo.title }}</span>
               </div>
-              <button class="delete-btn-inline" @click="store.deleteTodo(todo.id)">&times;</button>
+              <button class="trash-btn" @click="confirmDelete(todo.id)">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2.5 4h9M5 4V2.5h4V4M3.5 4l.5 8h6l.5-8" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+                </svg>
+              </button>
             </div>
           </div>
         </template>
@@ -414,8 +444,23 @@ function groupColor(groupId: string | null): string {
         </div>
 
         <div class="form-actions">
-          <button class="btn btn-cancel" @click="showForm = false">Cancel</button>
-          <button class="btn btn-save" @click="saveForm">{{ editingId ? 'Save' : 'Add' }}</button>
+          <button v-if="editingId" class="btn btn-delete" @click="showForm = false; confirmDelete(editingId!)">Delete</button>
+          <div class="form-actions-right">
+            <button class="btn btn-cancel" @click="showForm = false">Cancel</button>
+            <button class="btn btn-save" @click="saveForm">{{ editingId ? 'Save' : 'Add' }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete confirmation overlay -->
+    <div v-if="deleteTargetId" class="overlay" @click.self="deleteTargetId = null">
+      <div class="form-card delete-confirm-card">
+        <h2>Delete Task</h2>
+        <p class="delete-confirm-text">This task will be permanently deleted.</p>
+        <div class="form-actions">
+          <button class="btn btn-cancel" @click="deleteTargetId = null">Cancel</button>
+          <button class="btn btn-delete" @click="executeDelete">Delete</button>
         </div>
       </div>
     </div>
@@ -653,14 +698,29 @@ function groupColor(groupId: string | null): string {
 .done-toggle {
   opacity: 0.7;
 }
-.delete-btn-inline {
+.trash-btn {
   border: none;
   background: none;
   color: #ccc;
-  font-size: 18px;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 4px;
+  flex-shrink: 0;
 }
+.trash-btn:hover { color: #e06b6b; }
+.done-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 4px 6px;
+}
+.clear-done-btn {
+  border: none;
+  background: none;
+  color: #999;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.clear-done-btn:hover { color: #e06b6b; }
 
 /* Expanded */
 .todo-expanded {
@@ -743,13 +803,31 @@ function groupColor(groupId: string | null): string {
   font-size: 14px;
   cursor: pointer;
 }
-.delete-btn {
+.expanded-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   border: none;
   background: none;
-  color: #e06b6b;
-  font-size: 12px;
+  color: #ccc;
   cursor: pointer;
-  padding: 6px 0;
+  margin-left: auto;
+  margin-top: 4px;
+}
+.expanded-delete-btn:hover { color: #e06b6b; }
+.delete-confirm-card {
+  margin-top: 30vh;
+}
+.delete-confirm-text {
+  font-size: 14px;
+  color: #666;
+  margin: 8px 0 4px;
+}
+.btn-delete {
+  background: #e06b6b;
+  color: #fff;
 }
 
 /* Overlay & form */
@@ -862,8 +940,13 @@ function groupColor(groupId: string | null): string {
 .form-actions {
   display: flex;
   gap: 8px;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 16px;
+}
+.form-actions-right {
+  display: flex;
+  gap: 8px;
 }
 .btn {
   padding: 8px 20px;

@@ -19,16 +19,71 @@ tomado/
 ## 開発フェーズ
 Phase 1 → 2 → 3 → 4 の順で段階的に実装する。各Phaseの詳細は `docs/SPEC.md` §8 を参照。
 - Phase 1 (Core Engine): 完了
-- Phase 2 (Frontend UI): 完了（パズル・TODO・HOME・シード共有・リファクタリング済み。localStorageモック）
-- **現在の対象: Phase 3 (Backend API)** — Cloudflare Workers + D1/KV/R2 でバックエンド実装
+- Phase 2 (Frontend UI): 完了（パズル・TODO・HOME・シード共有・リファクタリング済み）
+- Phase 3 (Backend API): 実装中 — Cloudflare Workers + D1/KV/R2 でバックエンド実装、フロントエンド接続済み
+- Phase 4 (Native & Monetization): 未着手
 
 ## 技術スタック
 - **言語:** TypeScript (全パッケージ共通)
 - **パッケージ管理:** npm workspaces
 - **テスト:** Vitest
-- **フロントエンド (Phase 2):** Vue.js (Composition API), Pinia, VueUse
-- **バックエンド (Phase 3):** Cloudflare Workers, D1, KV, R2
+- **フロントエンド:** Vue.js (Composition API), Pinia, VueUse
+- **バックエンド:** Cloudflare Workers (Hono), D1 (SQLite), KV, R2
 - **ネイティブ (Phase 4):** Capacitor
+
+## 環境セットアップ
+
+### 初回セットアップ
+```bash
+npm install                    # ルートで全 workspace の依存をインストール
+```
+
+### Cloudflare リソース（初回のみ）
+```bash
+cd backend
+wrangler d1 create tomado-db                    # D1 データベース
+wrangler kv namespace create KV                 # KV namespace
+wrangler r2 bucket create tomado-replay-logs    # R2 バケット
+wrangler secret put JWT_SECRET                  # JWT シークレット（リモート用）
+```
+各コマンドの出力にある ID を `backend/wrangler.toml` に反映する。
+
+### ローカル開発用の設定
+- `backend/.dev.vars` に `JWT_SECRET=<任意の値>` を設定（`.gitignore` 済み）
+- ローカル D1 のマイグレーション適用:
+  ```bash
+  cd backend && npx wrangler d1 migrations apply tomado-db --local
+  ```
+
+## ローカル開発の起動
+
+```bash
+# ターミナル1: バックエンド（http://localhost:8787）
+cd backend && npx wrangler dev
+
+# ターミナル2: フロントエンド（http://localhost:5173）
+cd frontend && npm run dev
+```
+
+フロントエンドは `frontend/.env.development` で API ベース URL を `http://localhost:8787` に設定済み。
+
+## リモートデプロイ
+
+```bash
+# D1 マイグレーション（新しいマイグレーション追加時）
+cd backend && npx wrangler d1 migrations apply tomado-db --remote
+
+# Workers デプロイ
+cd backend && npx wrangler deploy
+```
+
+## テスト
+
+```bash
+npm test                       # ルートで全パッケージのテスト実行
+cd engine && npm test          # エンジンのみ（78テスト）
+cd backend && npm test         # バックエンドのみ（15テスト）
+```
 
 ## 開発ルール
 
@@ -43,25 +98,44 @@ Phase 1 → 2 → 3 → 4 の順で段階的に実装する。各Phaseの詳細�
 - 外部の乱数ライブラリは使わず、シード対応の擬似乱数生成器を自前実装する
 - `frontend/` と `backend/` の双方から利用される
 
+### backend/
+- Hono フレームワークでルーティング
+- 認証: JWT (jose) — アクセストークン(1h) + リフレッシュトークン(90d)
+- テスト: `@cloudflare/vitest-pool-workers` で Workers 環境をエミュレート
+- `backend/.dev.vars` にローカル用シークレットを設定（Git 管理外）
+
+### frontend/
+- API クライアント (`frontend/src/api/client.ts`) が認証・リトライを一元管理
+- optimistic local-first: localStorage をフォールバックとして維持しつつ API を呼ぶ
+- API 失敗時もローカルデータで動作継続
+
 ### テスト
 - フレームワーク: Vitest
 - 各機能に正常系・境界値・エッジケースのテストを記述
 - 特に「同一シード・同一操作で常に同一結果」の決定性テストを必須とする
 - `npm test` (ルート) で全パッケージのテストが実行できるようにする
 
-## 直近のタスク: Phase 3 (Backend API)
+## Phase 3 実装状況
 
-`docs/SPEC.md` §8 Phase 3 を参照。localStorageモックを正式なバックエンドに置き換える。
+### 完了
+- Cloudflare Workers プロジェクトセットアップ（Wrangler, D1, KV, R2）
+- D1 マイグレーション（11テーブル）
+- 認証 API（匿名ゲスト登録、JWT 発行・リフレッシュ）
+- ユーザープロフィール API（取得・表示名変更、スタミナ時間回復）
+- TODO API（CRUD、完了処理、繰り返しタスク再生成、ゲーム報酬連動）
+- TODO グループ API（CRUD、5個制限）
+- 日次進捗・アイテム入手権利 API
+- シード管理 API（生成・アンロック・デイリー・カレンダー・シェアコード）
+- スコア送信 API（R2 リプレイログ保存）
+- ランキング API（KV キャッシュ）
+- 共有 URL + OGP メタタグ
+- フロントエンド API クライアント層
+- stores の API 接続（game.ts, todo.ts）
 
-### 主な実装項目
-1. **Cloudflare Workers プロジェクトセットアップ** — Wrangler, D1, KV 設定
-2. **認証** — ユーザー識別（匿名 or OAuth）
-3. **ランキング API** — シード×モード別スコア登録・取得（D1）
-4. **プレイ記録 API** — スコア、手数、モードの永続化
-5. **TODO API** — グループ・サブタスク・繰り返しタスクの CRUD
-6. **シード共有** — 共有URL (`/s/{seed}`)、OGP メタタグ生成
-7. **スタミナ・アイテム管理** — サーバーサイドでの整合性保証
-8. **フロントエンド接続** — localStorage → API 呼び出しへの切り替え
+### 未完了・要改善
+- リプレイ検証（エンジンを使ったサーバーサイド再計算）
+- レートリミットミドルウェア
+- フロントエンドテスト
 
 ## よくある注意点
 - 初期盤面の自動消去ではスコア0、アイテム生成なし

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { ItemType } from '@tomado/engine';
 import { todayLocal } from '@/utils/date';
+import { api, register, isAuthenticated } from '@/api/client';
 
 export type { ItemType };
 
@@ -64,13 +65,65 @@ export const useGameStore = defineStore('game', () => {
   const trialSeeds = ref<number[]>(loadJson('tomado_trial_seeds', [])); // seeds with trial used
   const playRecords = ref<PlayRecord[]>(loadJson('tomado_play_records', []));
   const dailyState = ref<DailyState>(loadDailyState());
+  const initialized = ref(false);
 
   // Ensure daily state is fresh on store init
   ensureDailyState();
 
-  function setDisplayName(name: string) {
+  /** Initialize: ensure authenticated and sync with server */
+  async function init() {
+    if (initialized.value) return;
+    try {
+      if (!isAuthenticated()) {
+        await register();
+      }
+      await syncProfile();
+      initialized.value = true;
+    } catch (e) {
+      console.warn('Failed to initialize with server, using local data', e);
+      initialized.value = true;
+    }
+  }
+
+  /** Sync local state with server profile */
+  async function syncProfile() {
+    try {
+      const profile = await api<{
+        id: string;
+        displayName: string | null;
+        stamina: number;
+        undoStock: number;
+        items: Record<string, number>;
+      }>('/api/user/profile');
+
+      stamina.value = profile.stamina;
+      undoStock.value = profile.undoStock;
+      if (profile.displayName) displayName.value = profile.displayName;
+      // Merge items from server
+      for (const [key, val] of Object.entries(profile.items)) {
+        if (key in items.value) {
+          items.value[key as keyof ItemStock] = val;
+        }
+      }
+      lastStaminaRecoverAt.value = Date.now();
+      saveStamina();
+      saveItems();
+    } catch {
+      // Silently use local data on failure
+    }
+  }
+
+  async function setDisplayName(name: string) {
     displayName.value = name.slice(0, 20);
     localStorage.setItem('tomado_display_name', displayName.value);
+    try {
+      await api('/api/user/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ displayName: displayName.value || null }),
+      });
+    } catch {
+      // Local update still applied
+    }
   }
 
   const effectiveName = computed(() => displayName.value || 'Anonymous');
@@ -154,7 +207,7 @@ export const useGameStore = defineStore('game', () => {
     return !dailyState.value.itemSelected && availableItemChoices.value.length > 0;
   });
 
-  function selectItem(type: ItemType): boolean {
+  async function selectItem(type: ItemType): Promise<boolean> {
     ensureDailyState();
     if (dailyState.value.itemSelected) return false;
     if (!availableItemChoices.value.includes(type)) return false;
@@ -162,6 +215,14 @@ export const useGameStore = defineStore('game', () => {
     dailyState.value.itemSelected = true;
     saveItems();
     saveDailyState();
+    try {
+      await api('/api/daily-progress/claim-item', {
+        method: 'POST',
+        body: JSON.stringify({ itemType: type }),
+      });
+    } catch {
+      // Local update applied regardless
+    }
     return true;
   }
 
@@ -388,6 +449,7 @@ export const useGameStore = defineStore('game', () => {
     recordGameEnd, addPlayRecord, getRecordsForSeed, getBestScore,
     getDailySeeds, hasPlayedDaily,
     ensureDailyState,
+    init, syncProfile, initialized,
   };
 });
 
