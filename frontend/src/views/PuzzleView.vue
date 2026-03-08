@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { usePuzzleStore } from '@/stores/puzzle';
 import { useGameStore } from '@/stores/game';
 import type { ItemType } from '@tomado/engine';
@@ -12,6 +13,7 @@ import QrCode from '@/components/QrCode.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
 
 const isDev = import.meta.env.DEV;
+const { t } = useI18n();
 
 const store = usePuzzleStore();
 const gameStore = useGameStore();
@@ -316,30 +318,30 @@ const BOARD_SIZE = 8;
     <header class="puzzle-header">
       <div class="header-row">
         <div class="seed-label">
-          SEED: {{ store.seed }}
-          <button class="btn-ranking" @click="showRanking = true" title="Ranking">&#x1F3C6;</button>
+          {{ t('puzzle.seed', { seed: store.seed }) }}
+          <button class="btn-ranking" @click="showRanking = true" :title="t('ranking.title')">&#x1F3C6;</button>
         </div>
         <div class="score-area">
-          <div class="score-label">SCORE: {{ store.score }}</div>
-          <div v-if="myBest > 0" class="best-label">BEST: {{ myBest.toLocaleString() }}</div>
+          <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
+          <div v-if="myBest > 0" class="best-label">{{ t('puzzle.best', { score: myBest.toLocaleString() }) }}</div>
         </div>
       </div>
       <div class="header-row">
         <div class="move-label">
           <template v-if="store.mode === 'limited' && store.remainingMoves !== undefined">
-            MOVES: {{ store.remainingMoves }} / {{ store.moveLimit }}
+            {{ t('puzzle.movesRemaining', { remaining: store.remainingMoves, limit: store.moveLimit }) }}
           </template>
           <template v-else>
-            MOVE: {{ store.moveCount }}
-            <span v-if="store.limitedScore !== null" class="limited-score-ref">(LIMITED: {{ store.limitedScore }} pts)</span>
+            {{ t('puzzle.moveCount', { count: store.moveCount }) }}
+            <span v-if="store.limitedScore !== null" class="limited-score-ref">{{ t('puzzle.limitedScore', { score: store.limitedScore }) }}</span>
           </template>
         </div>
         <div class="header-right">
-          <span v-if="store.mode === 'limited'" class="mode-badge">LIMITED</span>
-          <span v-else class="mode-badge mode-free">FREE</span>
-          <span v-if="isTrial" class="trial-badge">TRIAL</span>
-          <span v-if="usedItems && viewPhase !== 'preparing'" class="ref-badge">REF</span>
-          <button v-if="store.canUndo" class="btn-undo" @click="store.undo()">UNDO</button>
+          <span v-if="store.mode === 'limited'" class="mode-badge">{{ t('puzzle.limited') }}</span>
+          <span v-else class="mode-badge mode-free">{{ t('puzzle.free') }}</span>
+          <span v-if="isTrial" class="trial-badge">{{ t('puzzle.trial') }}</span>
+          <span v-if="usedItems && viewPhase !== 'preparing'" class="ref-badge">{{ t('puzzle.ref') }}</span>
+          <button v-if="store.canUndo" class="btn-undo" @click="store.undo()">{{ t('puzzle.undoButton') }}</button>
         </div>
       </div>
     </header>
@@ -352,8 +354,8 @@ const BOARD_SIZE = 8;
     <!-- Item Placement Phase -->
     <div v-if="viewPhase === 'preparing'" class="game-over-overlay prep-overlay">
       <div class="prep-panel">
-        <h2 class="prep-title">Place Items</h2>
-        <p class="prep-desc">Select an item, then tap a cell to place it.<br>Placed items make this a reference record (no ranking).</p>
+        <h2 class="prep-title">{{ t('puzzle.placeItems') }}</h2>
+        <p class="prep-desc" v-html="t('puzzle.placeItemsDesc')" />
 
         <!-- Available items -->
         <div class="prep-items">
@@ -374,7 +376,7 @@ const BOARD_SIZE = 8;
           <div v-for="(p, i) in placedItems" :key="i" class="prep-placed-row">
             <ItemIcon :item="p.item" :size="20" />
             <span class="prep-placed-pos">({{ p.row + 1 }}, {{ p.col + 1 }})</span>
-            <button class="prep-remove-btn" @click="undoPlacement(p)">Remove</button>
+            <button class="prep-remove-btn" @click="undoPlacement(p)">{{ t('puzzle.remove') }}</button>
           </div>
         </div>
 
@@ -409,9 +411,9 @@ const BOARD_SIZE = 8;
 
         <div class="prep-actions">
           <button class="btn" @click="confirmStart">
-            {{ placedItems.length > 0 ? 'START (Reference)' : 'START' }}
+            {{ placedItems.length > 0 ? t('puzzle.startRef') : t('puzzle.start') }}
           </button>
-          <button class="btn btn-secondary" @click="skipItems">Skip</button>
+          <button class="btn btn-secondary" @click="skipItems">{{ t('common.skip') }}</button>
         </div>
       </div>
     </div>
@@ -419,19 +421,19 @@ const BOARD_SIZE = 8;
     <!-- LIMITED mode: moves exhausted → show score + continue option -->
     <div v-else-if="store.isMoveLimitReached" class="game-over-overlay">
       <div class="game-over-card">
-        <h2>TIME'S UP!</h2>
-        <p class="final-score">{{ store.score }} pts</p>
-        <p class="move-info">{{ store.moveLimit }} moves completed</p>
-        <p v-if="usedItems" class="ref-note">Reference record (items used)</p>
+        <h2>{{ t('puzzle.timesUp') }}</h2>
+        <p class="final-score">{{ t('puzzle.pts', { score: store.score }) }}</p>
+        <p class="move-info">{{ t('puzzle.movesCompleted', { count: store.moveLimit }) }}</p>
+        <p v-if="usedItems" class="ref-note">{{ t('puzzle.refNote') }}</p>
         <div v-if="shareCode" class="share-info">
           <QrCode :value="shareUrl!" :size="100" />
           <span class="share-code-label">{{ shareCode }}</span>
         </div>
         <div class="game-over-actions actions-col">
-          <button class="btn" @click="restart">RETRY</button>
-          <button class="btn btn-continue" @click="continueAsFree">CONTINUE (FREE)</button>
-          <button class="btn btn-share" @click="shareScore">SHARE</button>
-          <button class="btn btn-home" @click="router.push('/')">HOME</button>
+          <button class="btn" @click="restart">{{ t('common.retry') }}</button>
+          <button class="btn btn-continue" @click="continueAsFree">{{ t('puzzle.continueFree') }}</button>
+          <button class="btn btn-share" @click="shareScore">{{ t('common.share') }}</button>
+          <button class="btn btn-home" @click="router.push('/')">{{ t('common.home') }}</button>
         </div>
       </div>
     </div>
@@ -439,34 +441,34 @@ const BOARD_SIZE = 8;
     <!-- TRUE game over (stuck in free mode, or stuck before move limit) -->
     <div v-else-if="store.isGameOver" class="game-over-overlay">
       <div class="game-over-card">
-        <h2>GAME OVER</h2>
-        <p class="final-score">{{ store.score }} pts</p>
-        <p v-if="usedItems" class="ref-note">Reference record (items used)</p>
+        <h2>{{ t('puzzle.gameOver') }}</h2>
+        <p class="final-score">{{ t('puzzle.pts', { score: store.score }) }}</p>
+        <p v-if="usedItems" class="ref-note">{{ t('puzzle.refNote') }}</p>
         <div v-if="shareCode" class="share-info">
           <QrCode :value="shareUrl!" :size="100" />
           <span class="share-code-label">{{ shareCode }}</span>
         </div>
         <div class="game-over-actions actions-col">
-          <button class="btn" @click="restart">RETRY</button>
-          <button class="btn btn-share" @click="shareScore">SHARE</button>
-          <button class="btn btn-home" @click="router.push('/')">HOME</button>
+          <button class="btn" @click="restart">{{ t('common.retry') }}</button>
+          <button class="btn btn-share" @click="shareScore">{{ t('common.share') }}</button>
+          <button class="btn btn-home" @click="router.push('/')">{{ t('common.home') }}</button>
         </div>
       </div>
     </div>
 
     <footer class="puzzle-footer">
-      <button class="btn btn-small" @click="restart">RETRY</button>
-      <button v-if="isDev" class="btn btn-small btn-debug" @click="debugPanel?.show()">DEBUG</button>
+      <button class="btn btn-small" @click="restart">{{ t('common.retry') }}</button>
+      <button v-if="isDev" class="btn btn-small btn-debug" @click="debugPanel?.show()">{{ t('puzzle.debug') }}</button>
     </footer>
 
     <!-- Share toast -->
-    <div v-if="shareToast" class="share-toast">Copied to clipboard!</div>
+    <div v-if="shareToast" class="share-toast">{{ t('common.copiedToClipboard') }}</div>
 
     <!-- New seed confirmation modal -->
     <div v-if="viewPhase === 'newSeedConfirm'" class="game-over-overlay">
       <div class="game-over-card confirm-card">
-        <h2>New Puzzle</h2>
-        <p class="confirm-seed">Seed: {{ store.seed }}</p>
+        <h2>{{ t('home.newPuzzle') }}</h2>
+        <p class="confirm-seed">{{ t('puzzle.seed', { seed: store.seed }) }}</p>
 
         <!-- Top 3 ranking summary -->
         <div v-if="previewTop3.length > 0" class="confirm-ranking">
@@ -476,15 +478,15 @@ const BOARD_SIZE = 8;
             <span class="confirm-rank-score">{{ entry.score.toLocaleString() }}</span>
           </div>
         </div>
-        <p v-else class="confirm-no-records">No records yet</p>
+        <p v-else class="confirm-no-records">{{ t('puzzle.noRecords') }}</p>
 
         <p class="confirm-desc">
-          1 free trial play. Unlock (Stamina -1) after to save score &amp; retry.
+          {{ t('puzzle.trialInfo') }}
         </p>
         <div class="game-over-actions actions-col">
-          <button class="btn" @click="confirmNewSeed">PLAY</button>
-          <button class="btn btn-peek" @pointerdown.prevent="startPeek">Hold to View Board</button>
-          <button class="btn btn-secondary" @click="cancelNewSeed">Back to HOME</button>
+          <button class="btn" @click="confirmNewSeed">{{ t('common.play') }}</button>
+          <button class="btn btn-peek" @pointerdown.prevent="startPeek">{{ t('puzzle.holdToView') }}</button>
+          <button class="btn btn-secondary" @click="cancelNewSeed">{{ t('puzzle.backToHome') }}</button>
         </div>
       </div>
     </div>
@@ -492,11 +494,11 @@ const BOARD_SIZE = 8;
     <!-- Abandon confirmation modal -->
     <div v-if="viewPhase === 'abandonConfirm'" class="game-over-overlay">
       <div class="game-over-card">
-        <h2>Abandon Game?</h2>
-        <p>Current game will be lost. Start a new puzzle?</p>
+        <h2>{{ t('puzzle.abandonTitle') }}</h2>
+        <p>{{ t('puzzle.abandonMessage') }}</p>
         <div class="game-over-actions actions-col">
-          <button class="btn" @click="confirmAbandon">New Puzzle</button>
-          <button class="btn btn-secondary" @click="cancelAbandon">Continue Playing</button>
+          <button class="btn" @click="confirmAbandon">{{ t('home.newPuzzle') }}</button>
+          <button class="btn btn-secondary" @click="cancelAbandon">{{ t('puzzle.continuePlaying') }}</button>
         </div>
       </div>
     </div>
@@ -504,12 +506,12 @@ const BOARD_SIZE = 8;
     <!-- Unlock modal (trial ended or trial_used) -->
     <div v-if="viewPhase === 'unlock'" class="game-over-overlay">
       <div class="game-over-card unlock-card">
-        <h2>Unlock this Seed?</h2>
+        <h2>{{ t('puzzle.unlockTitle') }}</h2>
         <p class="unlock-desc">
-          Unlock to save your score to the ranking and enable unlimited retries.
+          {{ t('puzzle.unlockMessage') }}
         </p>
         <p class="unlock-stamina">
-          Stamina: {{ gameStore.currentStamina }} / 5
+          {{ t('puzzle.staminaDisplay', { current: gameStore.currentStamina, max: 5 }) }}
         </p>
         <div class="game-over-actions actions-col">
           <button
@@ -517,10 +519,10 @@ const BOARD_SIZE = 8;
             :disabled="gameStore.currentStamina <= 0"
             @click="doUnlock"
           >
-            UNLOCK (Stamina -1)
+            {{ t('puzzle.unlockButton') }}
           </button>
           <button class="btn btn-secondary" @click="giveUpTrial">
-            Give Up
+            {{ t('puzzle.giveUp') }}
           </button>
         </div>
       </div>

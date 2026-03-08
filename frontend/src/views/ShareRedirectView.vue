@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { api } from '@/api/client';
 import { useGameStore } from '@/stores/game';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const gameStore = useGameStore();
@@ -36,12 +38,12 @@ onMounted(async () => {
 <template>
   <div class="share-redirect">
     <div v-if="error" class="share-error">
-      <h2>Seed not found</h2>
-      <p>This share link may be invalid or expired.</p>
-      <button class="btn" @click="router.push('/')">Go to HOME</button>
+      <h2>{{ t('shareRedirect.notFound') }}</h2>
+      <p>{{ t('shareRedirect.notFoundMessage') }}</p>
+      <button class="btn" @click="router.push('/')">{{ t('shareRedirect.goHome') }}</button>
     </div>
     <div v-else class="share-loading">
-      <p>Loading puzzle...</p>
+      <p>{{ t('shareRedirect.loading') }}</p>
     </div>
   </div>
 </template>

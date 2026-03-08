@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
+import { setLocale, getLocale } from '@/i18n';
 import type { ItemType } from '@tomado/engine';
 import { useTodoStore } from '@/stores/todo';
 import { useCalendar } from '@/composables/useCalendar';
@@ -10,6 +12,7 @@ import { ALL_ITEM_TYPES, ITEM_INFO } from '@/utils/constants';
 import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
 
+const { t } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
 const todoStore = useTodoStore();
@@ -111,24 +114,27 @@ const staminaDots = computed(() => {
   <div class="home-view">
     <!-- Alpha banner -->
     <div class="alpha-banner">
-      <span class="alpha-tag">α</span>
-      Data may be reset during alpha testing
+      <span class="alpha-tag">{{ t('alpha.tag') }}</span>
+      {{ t('alpha.message') }}
+      <button class="lang-toggle" @click="setLocale(getLocale() === 'ja' ? 'en' : 'ja')">
+        {{ getLocale() === 'ja' ? 'EN' : 'JA' }}
+      </button>
     </div>
 
     <!-- Hero -->
     <div class="hero">
-      <h1 class="app-title">Tomado</h1>
-      <p class="app-subtitle">TODO x 3-Match Puzzle</p>
+      <h1 class="app-title">{{ t('common.appName') }}</h1>
+      <p class="app-subtitle">{{ t('home.subtitle') }}</p>
       <div class="user-name-row">
         <template v-if="editingName">
           <input
             v-model="nameInput"
             class="name-input"
             maxlength="20"
-            placeholder="Your name..."
+            :placeholder="t('home.namePlaceholder')"
             @keyup.enter="saveName"
           />
-          <button class="name-save-btn" @click="saveName">OK</button>
+          <button class="name-save-btn" @click="saveName">{{ t('common.ok') }}</button>
         </template>
         <template v-else>
           <span class="user-name" @click="editingName = true; nameInput = gameStore.displayName">
@@ -142,7 +148,7 @@ const staminaDots = computed(() => {
     <!-- Stats row -->
     <div class="stats-row">
       <div class="stat-card stamina-card">
-        <div class="stat-label">Stamina</div>
+        <div class="stat-label">{{ t('home.stamina') }}</div>
         <div class="stamina-dots">
           <span
             v-for="(filled, i) in staminaDots"
@@ -151,18 +157,18 @@ const staminaDots = computed(() => {
           />
         </div>
       </div>
-      <div class="stat-card">
-        <span class="stat-value">{{ gameStore.undoStock }}</span>
-        <span class="stat-label">Undo</span>
-      </div>
-      <div class="stat-card">
+      <div class="stat-card" style="cursor: pointer" @click="router.push('/todo')">
         <span class="stat-value">{{ todoStore.dailyCompleted }}</span>
-        <span class="stat-label">Today's TODO</span>
+        <span class="stat-label">{{ t('home.todayTodo') }}</span>
       </div>
     </div>
 
-    <!-- Item stock -->
-    <div v-if="totalItems > 0" class="item-stock-row">
+    <!-- Item stock (includes undo) -->
+    <div v-if="totalItems > 0 || gameStore.undoStock > 0" class="item-stock-row">
+      <div v-if="gameStore.undoStock > 0" class="item-stock-chip">
+        <span class="undo-icon">&#x21A9;</span>
+        <span class="item-stock-count">{{ gameStore.undoStock }}</span>
+      </div>
       <template v-for="type in ALL_ITEM_TYPES" :key="type">
         <div v-if="gameStore.items[type] > 0" class="item-stock-chip">
           <ItemIcon :item="type" :size="18" />
@@ -177,36 +183,36 @@ const staminaDots = computed(() => {
       class="item-reward-banner"
       @click="showItemModal = true"
     >
-      Item reward available! Tap to choose
+      {{ t('home.itemRewardAvailable') }}
     </button>
 
     <!-- Daily Puzzle -->
     <div class="section">
-      <h2 class="section-title">Today's Daily Puzzle</h2>
+      <h2 class="section-title">{{ t('home.dailyPuzzle') }}</h2>
       <div class="daily-card">
         <div class="daily-info" @click="playDaily">
           <span class="daily-date">{{ todayLocal() }}</span>
-          <span class="daily-seed">Seed: {{ todaySeed }}</span>
+          <span class="daily-seed">{{ t('home.seed', { seed: todaySeed }) }}</span>
         </div>
         <div class="daily-right">
           <div class="daily-score" v-if="todayBestScore > 0" @click="playDaily">
-            Best: {{ todayBestScore.toLocaleString() }}
+            {{ t('home.best', { score: todayBestScore.toLocaleString() }) }}
           </div>
-          <div class="daily-play" v-else @click="playDaily">PLAY</div>
-          <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" title="Ranking">&#x1F3C6;</button>
+          <div class="daily-play" v-else @click="playDaily">{{ t('common.play') }}</div>
+          <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('home.ranking')">&#x1F3C6;</button>
         </div>
       </div>
     </div>
 
     <!-- Actions -->
     <div class="section">
-      <h2 class="section-title">New Puzzle</h2>
+      <h2 class="section-title">{{ t('home.newPuzzle') }}</h2>
       <div class="actions">
         <button
           class="btn btn-generate"
           @click="newPuzzle"
         >
-          New Puzzle
+          {{ t('home.newPuzzle') }}
         </button>
       </div>
     </div>
@@ -214,7 +220,7 @@ const staminaDots = computed(() => {
     <!-- Calendar -->
     <div class="section">
       <button class="section-toggle" @click="showCalendar = !showCalendar">
-        <h2 class="section-title">Past Daily Seeds</h2>
+        <h2 class="section-title">{{ t('home.pastDailySeeds') }}</h2>
         <span class="toggle-arrow">{{ showCalendar ? '\u25B2' : '\u25BC' }}</span>
       </button>
       <div v-if="showCalendar" class="calendar">
@@ -224,7 +230,7 @@ const staminaDots = computed(() => {
           <button class="cal-nav" :disabled="cal.isCurrentMonth.value" @click="cal.nextMonth">&gt;</button>
         </div>
         <div class="calendar-weekdays">
-          <span v-for="d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']" :key="d" class="cal-weekday">{{ d }}</span>
+          <span v-for="d in ['sun','mon','tue','wed','thu','fri','sat']" :key="d" class="cal-weekday">{{ t(`weekdays.${d}`) }}</span>
         </div>
         <div class="calendar-grid">
           <div
@@ -254,7 +260,7 @@ const staminaDots = computed(() => {
     <!-- Generated Seeds -->
     <div v-if="generatedSeeds.length > 0" class="section">
       <button class="section-toggle" @click="showSeeds = !showSeeds">
-        <h2 class="section-title">My Seeds</h2>
+        <h2 class="section-title">{{ t('home.mySeeds') }}</h2>
         <span class="toggle-arrow">{{ showSeeds ? '\u25B2' : '\u25BC' }}</span>
       </button>
       <div v-if="showSeeds" class="seed-list">
@@ -264,13 +270,13 @@ const staminaDots = computed(() => {
           class="seed-row"
         >
           <div class="seed-row-info" @click="router.push(`/puzzle/${s.seed}`)">
-            <span class="seed-row-value">Seed: {{ s.seed }}</span>
+            <span class="seed-row-value">{{ t('home.seed', { seed: s.seed }) }}</span>
           </div>
           <div class="seed-row-scores">
             <span v-if="s.bestLimited > 0" class="seed-score limited" @click="router.push(`/puzzle/${s.seed}`)">{{ s.bestLimited.toLocaleString() }}</span>
-            <span v-if="s.bestFree > 0" class="seed-score free" @click="router.push(`/puzzle/${s.seed}`)">F: {{ s.bestFree.toLocaleString() }}</span>
-            <span v-if="s.bestLimited === 0 && s.bestFree === 0" class="seed-unplayed" @click="router.push(`/puzzle/${s.seed}`)">Unplayed</span>
-            <button class="btn-ranking-small" @click.stop="openRanking(s.seed)" title="Ranking">&#x1F3C6;</button>
+            <span v-if="s.bestFree > 0" class="seed-score free" @click="router.push(`/puzzle/${s.seed}`)">{{ t('home.freeScore', { score: s.bestFree.toLocaleString() }) }}</span>
+            <span v-if="s.bestLimited === 0 && s.bestFree === 0" class="seed-unplayed" @click="router.push(`/puzzle/${s.seed}`)">{{ t('home.unplayed') }}</span>
+            <button class="btn-ranking-small" @click.stop="openRanking(s.seed)" :title="t('home.ranking')">&#x1F3C6;</button>
           </div>
         </div>
       </div>
@@ -280,8 +286,8 @@ const staminaDots = computed(() => {
     <Teleport to="body">
       <div v-if="showItemModal" class="modal-overlay" @click.self="showItemModal = false">
         <div class="modal">
-          <h3 class="modal-title">Choose an Item</h3>
-          <p class="modal-desc">TODO {{ gameStore.dailyState.todoCompletedCount }} done today</p>
+          <h3 class="modal-title">{{ t('home.chooseItem') }}</h3>
+          <p class="modal-desc">{{ t('home.todoDoneToday', { count: gameStore.dailyState.todoCompletedCount }) }}</p>
           <div class="item-choices">
             <button
               v-for="type in gameStore.availableItemChoices"
@@ -297,7 +303,7 @@ const staminaDots = computed(() => {
               <span class="item-stock">x{{ gameStore.items[type] }}</span>
             </button>
           </div>
-          <button class="btn btn-cancel" @click="showItemModal = false">Later</button>
+          <button class="btn btn-cancel" @click="showItemModal = false">{{ t('home.later') }}</button>
         </div>
       </div>
     </Teleport>
@@ -337,6 +343,18 @@ const staminaDots = computed(() => {
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
+}
+.lang-toggle {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid #856404;
+  border-radius: 4px;
+  background: transparent;
+  color: #856404;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 /* Hero */
@@ -460,6 +478,12 @@ const staminaDots = computed(() => {
   font-size: 14px;
   font-weight: 700;
   color: #333;
+}
+.undo-icon {
+  font-size: 16px;
+  color: #c0392b;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* Item reward */

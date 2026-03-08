@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useTodoStore, GROUP_COLORS, type RepeatRule, type Todo } from '@/stores/todo';
 import { formatDateLocal } from '@/utils/date';
 
+const { t } = useI18n();
 const store = useTodoStore();
 
 // --- Add / Edit form ---
@@ -155,14 +157,14 @@ function clearAllDone() {
 const showDone = ref(false);
 
 // --- Display helpers ---
-const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DOW_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 
 function repeatLabel(r: RepeatRule | null): string {
   if (!r) return '';
   switch (r.type) {
-    case 'daily': return 'Daily';
-    case 'weekly': return `Weekly (${DOW_LABELS[r.dayOfWeek]})`;
-    case 'monthly': return `Monthly (${r.dayOfMonth}th)`;
+    case 'daily': return t('todo.daily');
+    case 'weekly': return t('todo.weeklyDay', { day: t(`weekdays.${DOW_KEYS[r.dayOfWeek]}`) });
+    case 'monthly': return t('todo.monthlyDay', { day: r.dayOfMonth });
   }
 }
 
@@ -170,10 +172,10 @@ const fmtLocal = formatDateLocal;
 
 function dueDateLabel(d: string): string {
   const today = fmtLocal(new Date());
-  if (d === today) return 'Today';
+  if (d === today) return t('todo.today');
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  if (d === fmtLocal(tomorrow)) return 'Tomorrow';
+  if (d === fmtLocal(tomorrow)) return t('todo.tomorrow');
   // Show month/day
   const parts = d.split('-');
   return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
@@ -204,17 +206,17 @@ function groupColor(groupId: string | null): string {
 <template>
   <div class="todo-view">
     <header class="todo-header">
-      <h1>TODO</h1>
+      <h1>{{ t('todo.title') }}</h1>
       <div class="daily-progress">
         <span class="daily-count">{{ store.dailyCompleted }}</span>
-        <span class="daily-label">done today</span>
+        <span class="daily-label">{{ t('todo.doneToday') }}</span>
       </div>
     </header>
 
     <!-- Quick add -->
     <div class="quick-actions">
-      <button class="add-btn" @click="openAddForm">+ New Task</button>
-      <button v-if="store.groups.length < 5" class="group-btn" @click="openGroupForm">+ Group</button>
+      <button class="add-btn" @click="openAddForm">{{ t('todo.newTask') }}</button>
+      <button v-if="store.groups.length < 5" class="group-btn" @click="openGroupForm">{{ t('todo.newGroup') }}</button>
     </div>
 
     <!-- Task list -->
@@ -265,7 +267,7 @@ function groupColor(groupId: string | null): string {
               <button class="subtask-delete" @click="store.deleteSubtask(todo.id, sub.id)">&times;</button>
             </div>
             <div v-if="todo.status === 'active'" class="subtask-add">
-              <input v-model="newSubtaskText" class="subtask-input" placeholder="Add subtask..." @keydown.enter="addSubtask(todo.id)" />
+              <input v-model="newSubtaskText" class="subtask-input" :placeholder="t('todo.addSubtask')" @keydown.enter="addSubtask(todo.id)" />
               <button class="subtask-add-btn" @click="addSubtask(todo.id)">+</button>
             </div>
           </div>
@@ -349,7 +351,7 @@ function groupColor(groupId: string | null): string {
                   <input
                     v-model="newSubtaskText"
                     class="subtask-input"
-                    placeholder="Add subtask..."
+                    :placeholder="t('todo.addSubtask')"
                     @keydown.enter="addSubtask(todo.id)"
                   />
                   <button class="subtask-add-btn" @click="addSubtask(todo.id)">+</button>
@@ -364,13 +366,13 @@ function groupColor(groupId: string | null): string {
       <div v-if="store.doneTodos.length > 0" class="done-section">
         <div class="group-header done-toggle" @click="showDone = !showDone">
           <span class="group-color-dot" style="background: #aaa" />
-          <span class="group-name">Done</span>
+          <span class="group-name">{{ t('todo.done') }}</span>
           <span class="group-count">{{ store.doneTodos.length }}</span>
           <span class="group-chevron">{{ showDone ? '\u25BC' : '\u25B6' }}</span>
         </div>
         <template v-if="showDone">
           <div class="done-actions">
-            <button class="clear-done-btn" @click="clearAllDone">Clear All</button>
+            <button class="clear-done-btn" @click="clearAllDone">{{ t('todo.clearAll') }}</button>
           </div>
           <div
             v-for="todo in store.doneTodos"
@@ -396,24 +398,24 @@ function groupColor(groupId: string | null): string {
     <!-- Add/Edit form overlay -->
     <div v-if="showForm" class="overlay" @click.self="showForm = false">
       <div class="form-card">
-        <h2>{{ editingId ? 'Edit Task' : 'New Task' }}</h2>
+        <h2>{{ editingId ? t('todo.editTask') : t('todo.newTaskTitle') }}</h2>
 
-        <label class="form-label">Title</label>
+        <label class="form-label">{{ t('todo.fieldTitle') }}</label>
         <input v-model="formTitle" class="form-input" placeholder="Task title..." autofocus />
 
-        <label class="form-label">Memo</label>
+        <label class="form-label">{{ t('todo.fieldMemo') }}</label>
         <textarea v-model="formMemo" class="form-textarea" placeholder="Notes..." rows="2" />
 
-        <label class="form-label">Due Date</label>
+        <label class="form-label">{{ t('todo.fieldDueDate') }}</label>
         <input v-model="formDueDate" class="form-input" type="date" />
 
-        <label class="form-label">Group</label>
+        <label class="form-label">{{ t('todo.fieldGroup') }}</label>
         <div class="form-group-select">
           <button
             class="group-chip"
             :class="{ selected: formGroupId === null }"
             @click="formGroupId = null"
-          >None</button>
+          >{{ t('common.none') }}</button>
           <button
             v-for="g in store.sortedGroups"
             :key="g.id"
@@ -424,30 +426,30 @@ function groupColor(groupId: string | null): string {
           >{{ g.name }}</button>
         </div>
 
-        <label class="form-label">Repeat</label>
+        <label class="form-label">{{ t('todo.fieldRepeat') }}</label>
         <select v-model="formRepeatType" class="form-select">
-          <option value="none">None</option>
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
+          <option value="none">{{ t('common.none') }}</option>
+          <option value="daily">{{ t('todo.repeatDaily') }}</option>
+          <option value="weekly">{{ t('todo.repeatWeekly') }}</option>
+          <option value="monthly">{{ t('todo.repeatMonthly') }}</option>
         </select>
         <div v-if="formRepeatType === 'weekly'" class="repeat-detail">
           <select v-model.number="formRepeatDow" class="form-select form-select-sm">
-            <option v-for="(label, i) in DOW_LABELS" :key="i" :value="i">{{ label }}</option>
+            <option v-for="(key, i) in DOW_KEYS" :key="i" :value="i">{{ t(`weekdays.${key}`) }}</option>
           </select>
         </div>
         <div v-if="formRepeatType === 'monthly'" class="repeat-detail">
           <select v-model.number="formRepeatDom" class="form-select form-select-sm">
             <option v-for="d in 31" :key="d" :value="d">{{ d }}</option>
           </select>
-          <span class="repeat-suffix">th of month</span>
+          <span class="repeat-suffix">{{ t('todo.ofMonth') }}</span>
         </div>
 
         <div class="form-actions">
-          <button v-if="editingId" class="btn btn-delete" @click="showForm = false; confirmDelete(editingId!)">Delete</button>
+          <button v-if="editingId" class="btn btn-delete" @click="showForm = false; confirmDelete(editingId!)">{{ t('common.delete') }}</button>
           <div class="form-actions-right">
-            <button class="btn btn-cancel" @click="showForm = false">Cancel</button>
-            <button class="btn btn-save" @click="saveForm">{{ editingId ? 'Save' : 'Add' }}</button>
+            <button class="btn btn-cancel" @click="showForm = false">{{ t('common.cancel') }}</button>
+            <button class="btn btn-save" @click="saveForm">{{ editingId ? t('common.save') : t('common.add') }}</button>
           </div>
         </div>
       </div>
@@ -456,11 +458,11 @@ function groupColor(groupId: string | null): string {
     <!-- Delete confirmation overlay -->
     <div v-if="deleteTargetId" class="overlay" @click.self="deleteTargetId = null">
       <div class="form-card delete-confirm-card">
-        <h2>Delete Task</h2>
-        <p class="delete-confirm-text">This task will be permanently deleted.</p>
+        <h2>{{ t('todo.deleteConfirmTitle') }}</h2>
+        <p class="delete-confirm-text">{{ t('todo.deleteConfirmMessage') }}</p>
         <div class="form-actions">
-          <button class="btn btn-cancel" @click="deleteTargetId = null">Cancel</button>
-          <button class="btn btn-delete" @click="executeDelete">Delete</button>
+          <button class="btn btn-cancel" @click="deleteTargetId = null">{{ t('common.cancel') }}</button>
+          <button class="btn btn-delete" @click="executeDelete">{{ t('common.delete') }}</button>
         </div>
       </div>
     </div>
@@ -468,11 +470,11 @@ function groupColor(groupId: string | null): string {
     <!-- Group form overlay -->
     <div v-if="showGroupForm" class="overlay" @click.self="showGroupForm = false">
       <div class="form-card">
-        <h2>New Group</h2>
-        <label class="form-label">Name</label>
+        <h2>{{ t('todo.newGroupTitle') }}</h2>
+        <label class="form-label">{{ t('todo.fieldName') }}</label>
         <input v-model="groupFormName" class="form-input" placeholder="Group name..." autofocus />
 
-        <label class="form-label">Color</label>
+        <label class="form-label">{{ t('todo.fieldColor') }}</label>
         <div class="color-picker">
           <button
             v-for="(c, i) in GROUP_COLORS"
@@ -485,8 +487,8 @@ function groupColor(groupId: string | null): string {
         </div>
 
         <div class="form-actions">
-          <button class="btn btn-cancel" @click="showGroupForm = false">Cancel</button>
-          <button class="btn btn-save" @click="saveGroup">Add</button>
+          <button class="btn btn-cancel" @click="showGroupForm = false">{{ t('common.cancel') }}</button>
+          <button class="btn btn-save" @click="saveGroup">{{ t('common.add') }}</button>
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
 import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type ItemType } from '@tomado/engine';
 import { useMagGlassSelection } from '@/composables/useMagGlassSelection';
@@ -11,6 +12,7 @@ const props = defineProps<{
   debugPanel?: InstanceType<typeof DebugPanel> | null;
 }>();
 
+const { t } = useI18n();
 const store = usePuzzleStore();
 const wrapperEl = ref<HTMLElement | null>(null);
 const boardEl = ref<HTMLElement | null>(null);
@@ -871,8 +873,8 @@ function tileTransition(r: number, c: number) {
           />
         </div>
         <div class="mag-status">
-          <span>Select {{ mag.magTargetsNeeded.value - mag.magSelectedCells.value.length }} cell{{ mag.magTargetsNeeded.value - mag.magSelectedCells.value.length !== 1 ? 's' : '' }}</span>
-          <button class="mag-cancel" @click="cancelMagSelection">Cancel</button>
+          <span>{{ t('board.selectCells', { count: mag.magTargetsNeeded.value - mag.magSelectedCells.value.length }) }}</span>
+          <button class="mag-cancel" @click="cancelMagSelection">{{ t('common.cancel') }}</button>
         </div>
       </template>
     </div>

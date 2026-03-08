@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useGameStore, type PlayRecord } from '@/stores/game';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   seed: number;
@@ -73,8 +76,8 @@ watch(() => props.open, (v) => {
     <div v-if="open" class="ranking-overlay" @click.self="emit('close')">
       <div class="ranking-modal">
         <div class="ranking-header">
-          <h2 class="ranking-title">Ranking</h2>
-          <span class="ranking-seed">Seed: {{ seed }}</span>
+          <h2 class="ranking-title">{{ t('ranking.title') }}</h2>
+          <span class="ranking-seed">{{ t('ranking.seed', { seed }) }}</span>
           <button class="ranking-close" @click="emit('close')">&times;</button>
         </div>
 
@@ -83,17 +86,17 @@ watch(() => props.open, (v) => {
           <button
             :class="['tab', { active: activeTab === 'limited' }]"
             @click="activeTab = 'limited'"
-          >LIMITED</button>
+          >{{ t('puzzle.limited') }}</button>
           <button
             :class="['tab', { active: activeTab === 'free' }]"
             @click="activeTab = 'free'"
-          >FREE</button>
+          >{{ t('puzzle.free') }}</button>
         </div>
 
         <!-- My rank highlight -->
         <div v-if="myBestRank !== null" class="my-rank-card">
           <div class="my-rank-left">
-            <span class="my-rank-label">Your Rank</span>
+            <span class="my-rank-label">{{ t('ranking.yourRank') }}</span>
             <span class="my-rank-num">{{ myBestRank }}<span class="my-rank-total"> / {{ totalEntries }}</span></span>
           </div>
           <div class="my-rank-right">
@@ -102,7 +105,7 @@ watch(() => props.open, (v) => {
           </div>
         </div>
         <div v-else class="my-rank-card my-rank-empty">
-          <span class="my-rank-label">No record yet</span>
+          <span class="my-rank-label">{{ t('ranking.noRecord') }}</span>
         </div>
 
         <!-- Ranking list -->
@@ -115,16 +118,16 @@ watch(() => props.open, (v) => {
             <span class="rank-num">{{ rankIcon(entry.rank) }}</span>
             <div class="rank-main">
               <span class="rank-name">{{ entry.playerName }}</span>
-              <span class="rank-meta">{{ entry.moves }} moves &middot; {{ formatDate(entry.playedAt) }}</span>
+              <span class="rank-meta">{{ t('ranking.moves', { count: entry.moves }) }} &middot; {{ formatDate(entry.playedAt) }}</span>
             </div>
             <div class="rank-right">
               <span class="rank-score">{{ entry.score.toLocaleString() }}</span>
-              <span v-if="entry.usedItems" class="rank-ref">REF</span>
+              <span v-if="entry.usedItems" class="rank-ref">{{ t('puzzle.ref') }}</span>
             </div>
           </div>
         </div>
         <div v-else class="ranking-empty">
-          No records yet
+          {{ t('ranking.noRecords') }}
         </div>
       </div>
     </div>
