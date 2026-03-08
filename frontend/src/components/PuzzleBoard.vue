@@ -5,6 +5,7 @@ import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAn
 import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type ItemType } from '@tomado/engine';
 import { useMagGlassSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
+import { playSE, vibrate } from '@/sound';
 import ItemIcon from './ItemIcon.vue';
 import type DebugPanel from './DebugPanel.vue';
 
@@ -74,6 +75,9 @@ const cellItemOverlay = reactive(new Map<string, string>());
 const dropOffsets = reactive<Record<string, number>>({});
 const dropTransitioning = ref(false);
 
+// --- Screen shake ---
+const shaking = ref(false);
+
 // --- Drag handling ---
 const drag = useDragHandler(cellSize, boardEl, commitSwap, handleTap);
 const { cellOffsets, getOff, setOff, clearOff } = drag;
@@ -87,7 +91,7 @@ function onPointerUpWithDebug(e: PointerEvent) {
 
 // --- Utilities ---
 function wait(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
-function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(r))); }
+function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))); }
 
 // --- Tap ---
 async function handleTap(pos: Position) {
@@ -293,6 +297,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   const fullX = (nb.col - pos.col) * cs, fullY = (nb.row - pos.row) * cs;
 
   // Slide
+  playSE('swap'); vibrate(10);
   setOff(pos.row, pos.col, fullX, fullY, true, 10);
   setOff(nb.row, nb.col, -fullX, -fullY, true, 0);
   await wait(ANIM.SWAP);
@@ -403,6 +408,7 @@ async function animateSingleEffect(itemType: ItemType, pos: Position, targets: P
 
 async function animateItemEffects(plan: ItemAnimPlan) {
   for (const effect of plan.effects) {
+    playSE('item_use'); vibrate(20);
     vbRemove(effect.itemPos);
     await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
     for (const t of effect.targets) vbRemove(t);
@@ -498,6 +504,7 @@ async function animateCoffee(pos: Position, targets: Position[]) {
 
 async function animateSynthesisEffects(plan: SynthesisAnimPlan) {
   for (const effect of plan.effects) {
+    playSE('item_use'); vibrate(30);
     // Remove both items from visual board
     vbRemove(effect.pos1);
     vbRemove(effect.pos2);
@@ -725,10 +732,17 @@ async function animateChainStep(chain: ChainAnimData) {
   const cs = cellSize.value;
 
   // Checkmarks
+  if (chain.chainIndex >= 2) {
+    playSE('chain'); vibrate(25);
+    shaking.value = true; setTimeout(() => { shaking.value = false; }, 300);
+  } else {
+    playSE('match'); vibrate(15);
+  }
   for (const p of chain.clearedPositions) matchedCells.add(pk(p.row, p.col));
   await wait(ANIM.MATCH_SHOW);
 
   // Fade out
+  playSE('clear');
   for (const p of chain.clearedPositions) clearingCells.add(pk(p.row, p.col));
   await wait(ANIM.CLEAR);
   matchedCells.clear();
@@ -767,7 +781,7 @@ function tileTransition(r: number, c: number) {
   <div ref="wrapperEl" class="board-wrapper">
     <div
       ref="boardEl"
-      class="puzzle-board"
+      :class="['puzzle-board', { shaking }]"
       :style="{ width: boardSize + 'px', height: boardSize + 'px' }"
       @pointerdown="drag.onPointerDown"
       @pointermove="drag.onPointerMove"
@@ -1067,5 +1081,18 @@ function tileTransition(r: number, c: number) {
   color: var(--info);
   font-size: 11px;
   cursor: pointer;
+}
+
+/* Screen shake */
+.shaking {
+  animation: board-shake 0.3s ease-out;
+}
+@keyframes board-shake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-2px, 1px); }
+  30% { transform: translate(2px, -1px); }
+  45% { transform: translate(-1px, 2px); }
+  60% { transform: translate(1px, -1px); }
+  75% { transform: translate(-1px, 0); }
 }
 </style>

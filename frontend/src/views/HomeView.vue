@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
 import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
+import { useSound } from '@/sound';
 import type { ItemType } from '@tomado/engine';
 import { useTodoStore } from '@/stores/todo';
 import { useCalendar } from '@/composables/useCalendar';
@@ -18,6 +19,10 @@ const router = useRouter();
 const gameStore = useGameStore();
 const todoStore = useTodoStore();
 const { isDark, toggle: doToggleTheme } = useTheme();
+const { seEnabled, bgmEnabled, vibrationEnabled, soundPromptNeeded, acceptSound, declineSound, toggleSE, toggleBGM, toggleVibration } = useSound();
+
+// Hamburger menu
+const menuOpen = ref(false);
 
 // Ranking modal
 const rankingSeed = ref(0);
@@ -307,15 +312,64 @@ const staminaDots = computed(() => {
       </div>
     </Teleport>
 
-    <!-- Settings row (bottom-right) -->
-    <div class="settings-row">
-      <button class="settings-btn" @click="doToggleTheme">
-        {{ isDark ? '☀️' : '🌙' }}
-      </button>
-      <button class="settings-btn" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
-        {{ locale === 'ja' ? 'EN' : 'JA' }}
-      </button>
-    </div>
+    <!-- Hamburger menu button -->
+    <button class="hamburger-btn" @click="menuOpen = !menuOpen" :title="t('home.settings')">
+      <span class="hamburger-icon">&#x2630;</span>
+    </button>
+
+    <!-- Settings menu overlay -->
+    <Teleport to="body">
+      <div v-if="menuOpen" class="menu-overlay" @click.self="menuOpen = false">
+        <div class="menu-panel">
+          <div class="menu-header">
+            <h3 class="menu-title">{{ t('home.settings') }}</h3>
+            <button class="menu-close" @click="menuOpen = false">&times;</button>
+          </div>
+          <div class="menu-items">
+            <button :class="['menu-item', { off: !seEnabled }]" @click="toggleSE">
+              <span class="menu-item-icon">{{ seEnabled ? '🔊' : '🔇' }}</span>
+              <span class="menu-item-label">{{ t('home.soundSE') }}</span>
+              <span :class="['menu-item-status', { on: seEnabled }]">{{ seEnabled ? 'ON' : 'OFF' }}</span>
+            </button>
+            <button :class="['menu-item', { off: !bgmEnabled }]" @click="toggleBGM">
+              <span class="menu-item-icon">🎵</span>
+              <span class="menu-item-label">{{ t('home.soundBGM') }}</span>
+              <span :class="['menu-item-status', { on: bgmEnabled }]">{{ bgmEnabled ? 'ON' : 'OFF' }}</span>
+            </button>
+            <button :class="['menu-item', { off: !vibrationEnabled }]" @click="toggleVibration">
+              <span class="menu-item-icon">📳</span>
+              <span class="menu-item-label">{{ t('home.soundVibration') }}</span>
+              <span :class="['menu-item-status', { on: vibrationEnabled }]">{{ vibrationEnabled ? 'ON' : 'OFF' }}</span>
+            </button>
+            <div class="menu-divider" />
+            <button class="menu-item" @click="doToggleTheme">
+              <span class="menu-item-icon">{{ isDark ? '☀️' : '🌙' }}</span>
+              <span class="menu-item-label">{{ t('home.darkMode') }}</span>
+              <span :class="['menu-item-status', { on: isDark }]">{{ isDark ? 'ON' : 'OFF' }}</span>
+            </button>
+            <button class="menu-item" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
+              <span class="menu-item-icon">🌐</span>
+              <span class="menu-item-label">{{ t('home.language') }}</span>
+              <span class="menu-item-status on">{{ locale === 'ja' ? '日本語' : 'English' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Sound prompt modal (first visit) -->
+    <Teleport to="body">
+      <div v-if="soundPromptNeeded" class="modal-overlay">
+        <div class="modal">
+          <h3 class="modal-title">{{ t('home.soundPromptTitle') }}</h3>
+          <p class="modal-desc">{{ t('home.soundPromptMessage') }}</p>
+          <div class="sound-prompt-actions">
+            <button class="btn btn-sound-yes" @click="acceptSound()">{{ t('home.soundPromptYes') }}</button>
+            <button class="btn btn-cancel" @click="declineSound()">{{ t('home.soundPromptNo') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <RankingModal :seed="rankingSeed" :open="showRanking" @close="showRanking = false" />
   </div>
@@ -353,23 +407,120 @@ const staminaDots = computed(() => {
   padding: 1px 6px;
   border-radius: 4px;
 }
-/* Settings row */
-.settings-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 4px 0;
-}
-.settings-btn {
-  padding: 4px 12px;
+/* Hamburger menu */
+.hamburger-btn {
+  position: fixed;
+  bottom: 70px;
+  right: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
   border: 1px solid var(--border);
-  border-radius: 6px;
   background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.hamburger-icon {
+  font-size: 20px;
   color: var(--text-secondary);
+  line-height: 1;
+}
+.menu-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.menu-panel {
+  background: var(--bg-card);
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+  max-width: 400px;
+  padding: 16px 16px 32px;
+  box-shadow: var(--shadow-modal);
+}
+.menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.menu-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+.menu-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+}
+.menu-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.menu-item:hover {
+  background: var(--bg-hover);
+}
+.menu-item.off {
+  opacity: 0.6;
+}
+.menu-item-icon {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+}
+.menu-item-label {
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.menu-item-status {
   font-size: 12px;
   font-weight: 600;
-  cursor: pointer;
-  box-shadow: var(--shadow-card);
+  color: var(--text-disabled);
+}
+.menu-item-status.on {
+  color: var(--brand);
+}
+.menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 12px;
+}
+.sound-prompt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.btn-sound-yes {
+  background: var(--brand);
+  color: #fff;
 }
 
 /* Hero */

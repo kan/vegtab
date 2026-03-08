@@ -6,6 +6,7 @@ import { usePuzzleStore } from '@/stores/puzzle';
 import { useGameStore } from '@/stores/game';
 import type { ItemType } from '@tomado/engine';
 import { ALL_ITEM_TYPES, ITEM_LABELS, STICKY_NOTE_COLORS } from '@/utils/constants';
+import { playSE, vibrate, startBGM, stopBGM, useSound } from '@/sound';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
@@ -63,6 +64,7 @@ const seedStatus = computed(() => {
 
 function beginGame(seed?: number) {
   store.startGame(seed);
+  startBGM();
   scoreRecorded.value = false;
   placedItems.value = [];
   selectedItem.value = null;
@@ -194,6 +196,12 @@ function skipItems() {
 // --- Record score when game ends ---
 watch(() => store.isGameOver || store.isMoveLimitReached, (ended) => {
   if (ended && !scoreRecorded.value && store.seed !== undefined) {
+    stopBGM();
+    if (store.isMoveLimitReached && !store.isGameOver) {
+      playSE('complete'); vibrate([30, 30, 60]);
+    } else {
+      playSE('game_over'); vibrate([50, 50, 100]);
+    }
     scoreRecorded.value = true;
     const wasTrial = gameStore.recordGameEnd({
       seed: store.seed,
@@ -295,6 +303,7 @@ function startPeek() {
 }
 
 onUnmounted(() => {
+  stopBGM();
   if (peekCleanup) {
     window.removeEventListener('pointerup', peekCleanup);
     window.removeEventListener('pointercancel', peekCleanup);
@@ -309,6 +318,8 @@ const myBest = computed(() => {
   if (store.seed === undefined) return 0;
   return gameStore.getBestScore(store.seed, store.mode);
 });
+
+const { seEnabled, bgmEnabled, toggleSE, toggleBGM } = useSound();
 
 const BOARD_SIZE = 8;
 </script>
@@ -341,7 +352,7 @@ const BOARD_SIZE = 8;
           <span v-else class="mode-badge mode-free">{{ t('puzzle.free') }}</span>
           <span v-if="isTrial" class="trial-badge">{{ t('puzzle.trial') }}</span>
           <span v-if="usedItems && viewPhase !== 'preparing'" class="ref-badge">{{ t('puzzle.ref') }}</span>
-          <button v-if="store.canUndo" class="btn-undo" @click="store.undo()">{{ t('puzzle.undoButton') }}</button>
+          <button v-if="store.canUndo" class="btn-undo" @click="playSE('undo'); store.undo()">{{ t('puzzle.undoButton') }}</button>
         </div>
       </div>
     </header>
@@ -395,14 +406,14 @@ const BOARD_SIZE = 8;
             >
               <template v-if="store.board?.[row - 1]?.[col - 1]">
                 <ItemIcon
-                  v-if="store.board[row - 1][col - 1].item"
-                  :item="store.board[row - 1][col - 1].item!"
+                  v-if="(store.board as any)[row - 1][col - 1].item"
+                  :item="(store.board as any)[row - 1][col - 1].item"
                   :size="20"
                 />
                 <div
                   v-else
                   class="prep-cell-color"
-                  :style="{ background: STICKY_NOTE_COLORS[store.board[row - 1][col - 1].color] ?? '#ccc' }"
+                  :style="{ background: STICKY_NOTE_COLORS[(store.board as any)[row - 1][col - 1].color] ?? '#ccc' }"
                 />
               </template>
             </div>
@@ -457,6 +468,14 @@ const BOARD_SIZE = 8;
     </div>
 
     <footer class="puzzle-footer">
+      <div class="footer-sound">
+        <button :class="['sound-toggle', { off: !seEnabled }]" @click="toggleSE" :title="t('home.soundSE')">
+          {{ seEnabled ? '🔊' : '🔇' }}
+        </button>
+        <button :class="['sound-toggle', { off: !bgmEnabled }]" @click="toggleBGM" :title="t('home.soundBGM')">
+          🎵
+        </button>
+      </div>
       <button class="btn btn-small" @click="restart">{{ t('common.retry') }}</button>
       <button v-if="isDev" class="btn btn-small btn-debug" @click="debugPanel?.show()">{{ t('puzzle.debug') }}</button>
     </footer>
@@ -647,7 +666,23 @@ const BOARD_SIZE = 8;
   display: flex;
   gap: 8px;
   justify-content: center;
+  align-items: center;
   padding: 12px 0 0;
+}
+.footer-sound {
+  display: flex;
+  gap: 4px;
+}
+.sound-toggle {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  font-size: 14px;
+  cursor: pointer;
+}
+.sound-toggle.off {
+  opacity: 0.4;
 }
 .btn {
   padding: 10px 24px;
