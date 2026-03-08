@@ -401,10 +401,10 @@ function groupColor(groupId: string | null): string {
         <h2>{{ editingId ? t('todo.editTask') : t('todo.newTaskTitle') }}</h2>
 
         <label class="form-label">{{ t('todo.fieldTitle') }}</label>
-        <input v-model="formTitle" class="form-input" placeholder="Task title..." autofocus />
+        <input v-model="formTitle" class="form-input" :placeholder="t('todo.taskTitlePlaceholder')" autofocus />
 
         <label class="form-label">{{ t('todo.fieldMemo') }}</label>
-        <textarea v-model="formMemo" class="form-textarea" placeholder="Notes..." rows="2" />
+        <textarea v-model="formMemo" class="form-textarea" :placeholder="t('todo.memoPlaceholder')" rows="2" />
 
         <label class="form-label">{{ t('todo.fieldDueDate') }}</label>
         <input v-model="formDueDate" class="form-input" type="date" />
@@ -472,7 +472,7 @@ function groupColor(groupId: string | null): string {
       <div class="form-card">
         <h2>{{ t('todo.newGroupTitle') }}</h2>
         <label class="form-label">{{ t('todo.fieldName') }}</label>
-        <input v-model="groupFormName" class="form-input" placeholder="Group name..." autofocus />
+        <input v-model="groupFormName" class="form-input" :placeholder="t('todo.groupNamePlaceholder')" autofocus />
 
         <label class="form-label">{{ t('todo.fieldColor') }}</label>
         <div class="color-picker">

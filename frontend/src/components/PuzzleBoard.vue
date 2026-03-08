@@ -873,7 +873,7 @@ function tileTransition(r: number, c: number) {
           />
         </div>
         <div class="mag-status">
-          <span>{{ t('board.selectCells', { count: mag.magTargetsNeeded.value - mag.magSelectedCells.value.length }) }}</span>
+          <span>{{ t('board.selectCells', mag.magTargetsNeeded.value - mag.magSelectedCells.value.length) }}</span>
           <button class="mag-cancel" @click="cancelMagSelection">{{ t('common.cancel') }}</button>
         </div>
       </template>

@@ -42,13 +42,13 @@ const placedItems = ref<{ row: number; col: number; item: ItemType }[]>([]);
 
 const availableItems = computed<{ type: ItemType; label: string }[]>(() => {
   return ALL_ITEM_TYPES
-    .filter(t => gameStore.items[t] > 0)
-    .filter(t => !placedItems.value.some(p => p.item === t)) // max 1 per type
-    .map(t => ({ type: t, label: ITEM_LABELS[t] }));
+    .filter(it => gameStore.items[it] > 0)
+    .filter(it => !placedItems.value.some(p => p.item === it)) // max 1 per type
+    .map(it => ({ type: it, label: ITEM_LABELS[it] }));
 });
 
 const hasAnyItems = computed(() => {
-  return ALL_ITEM_TYPES.some(t => gameStore.items[t] > 0);
+  return ALL_ITEM_TYPES.some(it => gameStore.items[it] > 0);
 });
 
 const usedItems = computed(() => placedItems.value.length > 0);
@@ -319,7 +319,7 @@ const BOARD_SIZE = 8;
       <div class="header-row">
         <div class="seed-label">
           {{ t('puzzle.seed', { seed: store.seed }) }}
-          <button class="btn-ranking" @click="showRanking = true" :title="t('ranking.title')">&#x1F3C6;</button>
+          <button class="btn-ranking" @click="showRanking = true" :title="t('common.ranking')">&#x1F3C6;</button>
         </div>
         <div class="score-area">
           <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
@@ -355,7 +355,7 @@ const BOARD_SIZE = 8;
     <div v-if="viewPhase === 'preparing'" class="game-over-overlay prep-overlay">
       <div class="prep-panel">
         <h2 class="prep-title">{{ t('puzzle.placeItems') }}</h2>
-        <p class="prep-desc" v-html="t('puzzle.placeItemsDesc')" />
+        <p class="prep-desc">{{ t('puzzle.placeItemsDesc1') }}<br>{{ t('puzzle.placeItemsDesc2') }}</p>
 
         <!-- Available items -->
         <div class="prep-items">
@@ -478,7 +478,7 @@ const BOARD_SIZE = 8;
             <span class="confirm-rank-score">{{ entry.score.toLocaleString() }}</span>
           </div>
         </div>
-        <p v-else class="confirm-no-records">{{ t('puzzle.noRecords') }}</p>
+        <p v-else class="confirm-no-records">{{ t('common.noRecords') }}</p>
 
         <p class="confirm-desc">
           {{ t('puzzle.trialInfo') }}

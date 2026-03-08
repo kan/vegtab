@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
-import { setLocale, getLocale } from '@/i18n';
+import { setLocale } from '@/i18n';
 import type { ItemType } from '@tomado/engine';
 import { useTodoStore } from '@/stores/todo';
 import { useCalendar } from '@/composables/useCalendar';
@@ -12,7 +12,7 @@ import { ALL_ITEM_TYPES, ITEM_INFO } from '@/utils/constants';
 import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
 const todoStore = useTodoStore();
@@ -116,8 +116,8 @@ const staminaDots = computed(() => {
     <div class="alpha-banner">
       <span class="alpha-tag">{{ t('alpha.tag') }}</span>
       {{ t('alpha.message') }}
-      <button class="lang-toggle" @click="setLocale(getLocale() === 'ja' ? 'en' : 'ja')">
-        {{ getLocale() === 'ja' ? 'EN' : 'JA' }}
+      <button class="lang-toggle" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
+        {{ locale === 'ja' ? 'EN' : 'JA' }}
       </button>
     </div>
 
@@ -192,14 +192,14 @@ const staminaDots = computed(() => {
       <div class="daily-card">
         <div class="daily-info" @click="playDaily">
           <span class="daily-date">{{ todayLocal() }}</span>
-          <span class="daily-seed">{{ t('home.seed', { seed: todaySeed }) }}</span>
+          <span class="daily-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
         </div>
         <div class="daily-right">
           <div class="daily-score" v-if="todayBestScore > 0" @click="playDaily">
             {{ t('home.best', { score: todayBestScore.toLocaleString() }) }}
           </div>
           <div class="daily-play" v-else @click="playDaily">{{ t('common.play') }}</div>
-          <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('home.ranking')">&#x1F3C6;</button>
+          <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('common.ranking')">&#x1F3C6;</button>
         </div>
       </div>
     </div>
@@ -270,13 +270,13 @@ const staminaDots = computed(() => {
           class="seed-row"
         >
           <div class="seed-row-info" @click="router.push(`/puzzle/${s.seed}`)">
-            <span class="seed-row-value">{{ t('home.seed', { seed: s.seed }) }}</span>
+            <span class="seed-row-value">{{ t('common.seed', { seed: s.seed }) }}</span>
           </div>
           <div class="seed-row-scores">
             <span v-if="s.bestLimited > 0" class="seed-score limited" @click="router.push(`/puzzle/${s.seed}`)">{{ s.bestLimited.toLocaleString() }}</span>
             <span v-if="s.bestFree > 0" class="seed-score free" @click="router.push(`/puzzle/${s.seed}`)">{{ t('home.freeScore', { score: s.bestFree.toLocaleString() }) }}</span>
             <span v-if="s.bestLimited === 0 && s.bestFree === 0" class="seed-unplayed" @click="router.push(`/puzzle/${s.seed}`)">{{ t('home.unplayed') }}</span>
-            <button class="btn-ranking-small" @click.stop="openRanking(s.seed)" :title="t('home.ranking')">&#x1F3C6;</button>
+            <button class="btn-ranking-small" @click.stop="openRanking(s.seed)" :title="t('common.ranking')">&#x1F3C6;</button>
           </div>
         </div>
       </div>

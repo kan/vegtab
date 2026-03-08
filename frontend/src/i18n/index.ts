@@ -21,6 +21,3 @@ export function setLocale(locale: 'en' | 'ja') {
   localStorage.setItem('tomado_locale', locale);
 }
 
-export function getLocale(): string {
-  return i18n.global.locale.value;
-}

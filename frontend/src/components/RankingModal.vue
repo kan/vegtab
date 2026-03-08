@@ -76,8 +76,8 @@ watch(() => props.open, (v) => {
     <div v-if="open" class="ranking-overlay" @click.self="emit('close')">
       <div class="ranking-modal">
         <div class="ranking-header">
-          <h2 class="ranking-title">{{ t('ranking.title') }}</h2>
-          <span class="ranking-seed">{{ t('ranking.seed', { seed }) }}</span>
+          <h2 class="ranking-title">{{ t('common.ranking') }}</h2>
+          <span class="ranking-seed">{{ t('common.seed', { seed }) }}</span>
           <button class="ranking-close" @click="emit('close')">&times;</button>
         </div>
 
@@ -127,7 +127,7 @@ watch(() => props.open, (v) => {
           </div>
         </div>
         <div v-else class="ranking-empty">
-          {{ t('ranking.noRecords') }}
+          {{ t('common.noRecords') }}
         </div>
       </div>
     </div>
