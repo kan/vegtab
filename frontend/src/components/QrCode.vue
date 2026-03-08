@@ -20,7 +20,7 @@ async function render() {
 }
 
 onMounted(render);
-watch(() => props.value, render);
+watch(() => [props.value, props.size], render);
 </script>
 
 <template>

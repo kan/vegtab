@@ -205,7 +205,7 @@ watch(() => store.isGameOver || store.isMoveLimitReached, (ended) => {
       viewPhase.value = 'unlock';
     }
     // Eagerly fetch share code for score screen
-    gameStore.getShareCode(store.seed!).then(code => { shareCode.value = code; });
+    gameStore.getShareCode(store.seed!).then(code => { shareCode.value = code; }).catch(() => {});
   }
 });
 
@@ -222,7 +222,7 @@ async function shareScore() {
   }
   const mode = store.mode === 'limited' ? 'LIMITED' : 'FREE';
   const code = shareCode.value ?? `#${store.seed}`;
-  const url = shareCode.value ? `${location.origin}/s/${shareCode.value}` : '';
+  const url = shareUrl.value ?? '';
   const text = `Tomado Puzzle ${code} | ${mode} ${store.moveCount}moves ${store.score.toLocaleString()}pts`;
   const shareData: ShareData = { text };
   if (url) shareData.url = url;

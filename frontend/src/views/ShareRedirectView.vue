@@ -20,10 +20,10 @@ onMounted(async () => {
       seedValue: string;
       shareCode: string;
     }>(`/api/seeds/by-code/${code}`);
-    // Cache the mapping
-    const seed = Number(res.seedValue) || res.seedValue;
-    if (typeof seed === 'number') {
-      gameStore.shareCodeMap[seed] = { seedId: res.seedId, shareCode: res.shareCode };
+    // Cache the mapping (persist to localStorage)
+    const n = Number(res.seedValue);
+    if (!Number.isNaN(n)) {
+      gameStore.cacheShareCode(n, res.seedId, res.shareCode);
     }
     // Navigate to puzzle with the seed value
     router.replace(`/puzzle/${res.seedValue}`);

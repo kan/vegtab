@@ -442,21 +442,34 @@ export const useGameStore = defineStore('game', () => {
     localStorage.setItem('tomado_share_codes', JSON.stringify(shareCodeMap.value));
   }
 
+  /** Cache a share code mapping and persist to localStorage */
+  function cacheShareCode(seed: number, seedId: string, shareCode: string) {
+    shareCodeMap.value[seed] = { seedId, shareCode };
+    saveShareCodes();
+  }
+
   /** Get or create a shareCode for a seed by registering it with the backend */
+  const pendingShareCodes = new Map<number, Promise<string | null>>();
   async function getShareCode(seed: number): Promise<string | null> {
     const cached = shareCodeMap.value[seed];
     if (cached) return cached.shareCode;
-    try {
-      const res = await api<{ seedId: string; seedValue: string; shareCode: string }>('/api/seeds/generate', {
-        method: 'POST',
-        body: JSON.stringify({ seedValue: String(seed) }),
-      });
-      shareCodeMap.value[seed] = { seedId: res.seedId, shareCode: res.shareCode };
-      saveShareCodes();
-      return res.shareCode;
-    } catch {
-      return null;
-    }
+    const inflight = pendingShareCodes.get(seed);
+    if (inflight) return inflight;
+    const p = (async () => {
+      try {
+        const res = await api<{ seedId: string; seedValue: string; shareCode: string }>('/api/seeds/generate', {
+          method: 'POST',
+          body: JSON.stringify({ seedValue: String(seed) }),
+        });
+        cacheShareCode(seed, res.seedId, res.shareCode);
+        return res.shareCode;
+      } catch {
+        return null;
+      }
+    })();
+    pendingShareCodes.set(seed, p);
+    p.finally(() => pendingShareCodes.delete(seed));
+    return p;
   }
 
   return {
@@ -475,7 +488,7 @@ export const useGameStore = defineStore('game', () => {
     getDailySeeds, hasPlayedDaily,
     ensureDailyState,
     init, syncProfile, initialized,
-    getShareCode, shareCodeMap,
+    getShareCode, cacheShareCode,
   };
 });
 
