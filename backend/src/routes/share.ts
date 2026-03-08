@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 import { generateOgpSvg } from '../lib/qr';
+import { getBaseUrl } from '../lib/env';
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -40,7 +41,7 @@ shareRoutes.get('/:seedId/ogp.svg', async (c) => {
     ? `Top score: ${bestScore} points`
     : 'Try this puzzle!';
 
-  const baseUrl = c.env.FRONTEND_URL !== '*' ? c.env.FRONTEND_URL : 'https://tomado.app';
+  const baseUrl = getBaseUrl(c.env);
   const shareUrl = `${baseUrl}/s/${seed.share_code}`;
   const svg = generateOgpSvg(seed.share_code, shareUrl, description);
 
@@ -69,7 +70,7 @@ shareRoutes.get('/:seedId', async (c) => {
     ? `Top score: ${bestScore} points. Can you beat it?`
     : 'Try this puzzle and compete for the high score!');
   const shareCode = escapeHtml(seed.share_code);
-  const baseUrl = c.env.FRONTEND_URL !== '*' ? c.env.FRONTEND_URL : 'https://tomado.app';
+  const baseUrl = getBaseUrl(c.env);
   const ogpImageUrl = `${baseUrl}/s/${shareCode}/ogp.svg`;
 
   const isCrawler = /bot|crawl|spider|facebook|twitter|slack|discord|telegram|line|whatsapp/i.test(ua);
@@ -94,6 +95,6 @@ shareRoutes.get('/:seedId', async (c) => {
 </html>`);
   }
 
-  // For browsers: redirect to puzzle page directly
-  return c.redirect(`/puzzle/${encodeURIComponent(seed.seed_value)}`, 302);
+  // For browsers: redirect to puzzle page on frontend origin
+  return c.redirect(`${baseUrl}/puzzle/${encodeURIComponent(seed.seed_value)}`, 302);
 });

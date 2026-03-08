@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Bindings, Variables } from './types';
+import { getAllowedOrigins } from './lib/env';
 import { authRoutes } from './routes/auth';
 import { userRoutes } from './routes/user';
 import { todoRoutes } from './routes/todos';
@@ -17,9 +18,8 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 // CORS
 app.use('/api/*', cors({
   origin: (origin: string, c) => {
-    const frontendUrl = (c.env as Record<string, string>).FRONTEND_URL;
-    if (!frontendUrl || frontendUrl === '*') return '*';
-    const allowed = frontendUrl.split(',').map((u: string) => u.trim());
+    const allowed = getAllowedOrigins((c.env as Bindings));
+    if (!allowed) return '*';
     return allowed.includes(origin) ? origin : allowed[0];
   },
   allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
