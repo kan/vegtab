@@ -17,10 +17,11 @@ tomado/
 ```
 
 ## 開発フェーズ
-Phase 1 → 2 → 3 → 4 の順で段階的に実装する。各Phaseの詳細は `docs/SPEC.md` §8 を参照。
+Phase 1 → 2 → 3 → 3.5 → 4 の順で段階的に実装する。各Phaseの詳細は `docs/SPEC.md` §8 を参照。
 - Phase 1 (Core Engine): 完了
-- Phase 2 (Frontend UI): 完了（パズル・TODO・HOME・シード共有・リファクタリング済み）
-- Phase 3 (Backend API): 実装中 — Cloudflare Workers + D1/KV/R2 でバックエンド実装、フロントエンド接続済み
+- Phase 2 (Frontend UI): 完了
+- Phase 3 (Backend API): 完了（API実装・フロントエンド接続済み）
+- **現在の対象: Phase 3.5 (プレリリース準備)** — 共有URL完成・α版表示・i18n・ダークモード・エフェクト・デプロイ
 - Phase 4 (Native & Monetization): 未着手
 
 ## 技術スタック
@@ -115,27 +116,61 @@ cd backend && npm test         # バックエンドのみ（15テスト）
 - 特に「同一シード・同一操作で常に同一結果」の決定性テストを必須とする
 - `npm test` (ルート) で全パッケージのテストが実行できるようにする
 
-## Phase 3 実装状況
+## Phase 3 実装状況: 完了
 
-### 完了
 - Cloudflare Workers プロジェクトセットアップ（Wrangler, D1, KV, R2）
-- D1 マイグレーション（11テーブル）
-- 認証 API（匿名ゲスト登録、JWT 発行・リフレッシュ）
-- ユーザープロフィール API（取得・表示名変更、スタミナ時間回復）
-- TODO API（CRUD、完了処理、繰り返しタスク再生成、ゲーム報酬連動）
-- TODO グループ API（CRUD、5個制限）
-- 日次進捗・アイテム入手権利 API
-- シード管理 API（生成・アンロック・デイリー・カレンダー・シェアコード）
-- スコア送信 API（R2 リプレイログ保存）
-- ランキング API（KV キャッシュ）
-- 共有 URL + OGP メタタグ
-- フロントエンド API クライアント層
-- stores の API 接続（game.ts, todo.ts）
+- D1 マイグレーション（11テーブル）、認証・ユーザー・TODO・グループ・シード・スコア・ランキング・日次進捗・共有URL の全API
+- フロントエンド API クライアント層、stores の API 接続（game.ts, todo.ts）
+- テスト: 15テスト（auth, todos, seeds）
 
-### 未完了・要改善
+### Phase 3 残件（Phase 3.5 で対応）
 - リプレイ検証（エンジンを使ったサーバーサイド再計算）
 - レートリミットミドルウェア
 - フロントエンドテスト
+
+## Phase 3.5 実装計画（プレリリース準備）
+
+### Step 1: 共有URL完成
+- [ ] フロントエンド共有ボタン — Web Share API + クリップボードコピー
+- [ ] `/s/:code` ルート — shareCode → seedId 解決 → `/puzzle/:seed` リダイレクト
+- [ ] QRコード表示 — スコア画面・シード詳細
+- [ ] OGP改善 — og:image 追加
+
+### Step 2: α版バナー
+- [ ] HOME上部にα版バナー表示
+- [ ] アプリバージョン表示
+
+### Step 3: i18n
+- [ ] vue-i18n セットアップ + locale自動検出
+- [ ] 英語/日本語リソースファイル作成（200+文字列）
+- [ ] 全画面のテキストを `$t()` に置換（HomeView, PuzzleView, TodoView, BottomNav, RankingModal, constants）
+- [ ] 言語切替UI
+
+### Step 4: ダークモード
+- [ ] CSS Custom Properties でテーマ色定義（theme.css）
+- [ ] テーマ状態管理（useTheme composable, localStorage永続化, prefers-color-scheme検出）
+- [ ] 全コンポーネント（9ファイル、120+箇所）の色を CSS変数に置換
+- [ ] 付箋5色のダークバリアント
+- [ ] テーマ切替UI
+
+### Step 5: エフェクト・サウンド・バイブレーション
+- [ ] サウンドマネージャ（Web Audio API）
+- [ ] SE 8種 + BGM（素材準備が必要）
+- [ ] バイブレーション（navigator.vibrate）
+- [ ] エフェクト調整（スクリーンシェイク、パーティクル）
+- [ ] サウンド・振動設定UI
+
+### Step 6: デプロイ
+- [ ] フロントエンド本番ビルド + Cloudflare Pages デプロイ
+- [ ] バックエンド本番 Workers デプロイ + D1マイグレーション
+- [ ] CORS本番ドメイン制限
+- [ ] 環境変数（VITE_API_BASE）設定
+
+### Step 7: リリース確認
+- [ ] E2Eスモークテスト
+- [ ] 共有URL/OGP確認
+- [ ] モバイルブラウザテスト
+- [ ] ダークモード・日本語表示確認
 
 ## よくある注意点
 - 初期盤面の自動消去ではスコア0、アイテム生成なし
