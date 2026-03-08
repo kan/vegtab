@@ -21,8 +21,8 @@ Phase 1 → 2 → 3 → 3.5 → 4 の順で段階的に実装する。各Phase�
 - Phase 1 (Core Engine): 完了
 - Phase 2 (Frontend UI): 完了
 - Phase 3 (Backend API): 完了（API実装・フロントエンド接続済み）
-- **現在の対象: Phase 3.5 (プレリリース準備)** — 共有URL完成・α版表示・i18n・ダークモード・エフェクト・デプロイ
-- Phase 4 (Native & Monetization): 未着手
+- Phase 3.5 (プレリリース準備): 完了 — α版公開済み (`https://3tomado.app`)
+- **現在: フィールドテスト → Phase 4 (Native & Monetization)**
 
 ## 技術スタック
 - **言語:** TypeScript (全パッケージ共通)
@@ -68,15 +68,21 @@ cd frontend && npm run dev
 
 フロントエンドは `frontend/.env.development` で API ベース URL を `http://localhost:8787` に設定済み。
 
-## リモートデプロイ
+## デプロイ
 
 ```bash
-# D1 マイグレーション（新しいマイグレーション追加時）
-cd backend && npx wrangler d1 migrations apply tomado-db --remote
+# 全体デプロイ（バックエンド → フロントエンド）
+npm run deploy
 
-# Workers デプロイ
-cd backend && npx wrangler deploy
+# 個別デプロイ
+npm run deploy:backend    # Workers API (--env production)
+npm run deploy:frontend   # Pages SPA (vue-tsc → vite build → pages deploy)
+
+# DBマイグレーション（新しいマイグレーション追加時、デプロイ前に実行）
+npm run db:migrate:prod -w backend
 ```
+
+本番URL: `https://3tomado.app`
 
 ## テスト
 
@@ -128,49 +134,20 @@ cd backend && npm test         # バックエンドのみ（15テスト）
 - レートリミットミドルウェア
 - フロントエンドテスト
 
-## Phase 3.5 実装計画（プレリリース準備）
+## Phase 3.5 実装状況: 完了
 
-### Step 1: 共有URL完成
-- [ ] フロントエンド共有ボタン — Web Share API + クリップボードコピー
-- [ ] `/s/:code` ルート — shareCode → seedId 解決 → `/puzzle/:seed` リダイレクト
-- [ ] QRコード表示 — スコア画面・シード詳細
-- [ ] OGP改善 — og:image 追加
+- 共有URL完成（Web Share API、`/s/:code` ルート、QRコード、動的OGP SVG）
+- α版バナー表示
+- i18n（vue-i18n、日英リソース、200+文字列、言語切替UI）
+- ダークモード（CSS変数、auto検出、付箋ダークバリアント）
+- SE/BGM/バイブレーション（Web Audio API合成音、A-A-Bセクション BGM）
+- Cloudflareデプロイ（Workers + Pages、カスタムドメイン `3tomado.app`、CORS制限）
+- E2Eスモークテスト通過
 
-### Step 2: α版バナー
-- [ ] HOME上部にα版バナー表示
-- [ ] アプリバージョン表示
-
-### Step 3: i18n
-- [ ] vue-i18n セットアップ + locale自動検出
-- [ ] 英語/日本語リソースファイル作成（200+文字列）
-- [ ] 全画面のテキストを `$t()` に置換（HomeView, PuzzleView, TodoView, BottomNav, RankingModal, constants）
-- [ ] 言語切替UI
-
-### Step 4: ダークモード
-- [ ] CSS Custom Properties でテーマ色定義（theme.css）
-- [ ] テーマ状態管理（useTheme composable, localStorage永続化, prefers-color-scheme検出）
-- [ ] 全コンポーネント（9ファイル、120+箇所）の色を CSS変数に置換
-- [ ] 付箋5色のダークバリアント
-- [ ] テーマ切替UI
-
-### Step 5: エフェクト・サウンド・バイブレーション
-- [ ] サウンドマネージャ（Web Audio API）
-- [ ] SE 8種 + BGM（素材準備が必要）
-- [ ] バイブレーション（navigator.vibrate）
-- [ ] エフェクト調整（スクリーンシェイク、パーティクル）
-- [ ] サウンド・振動設定UI
-
-### Step 6: デプロイ
-- [ ] フロントエンド本番ビルド + Cloudflare Pages デプロイ
-- [ ] バックエンド本番 Workers デプロイ + D1マイグレーション
-- [ ] CORS本番ドメイン制限
-- [ ] 環境変数（VITE_API_BASE）設定
-
-### Step 7: リリース確認
-- [ ] E2Eスモークテスト
-- [ ] 共有URL/OGP確認
-- [ ] モバイルブラウザテスト
-- [ ] ダークモード・日本語表示確認
+### Phase 3 残件（未実装）
+- リプレイ検証（エンジンを使ったサーバーサイド再計算）
+- レートリミットミドルウェア
+- フロントエンドテスト
 
 ## よくある注意点
 - 初期盤面の自動消去ではスコア0、アイテム生成なし
