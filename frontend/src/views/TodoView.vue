@@ -365,7 +365,7 @@ function groupColor(groupId: string | null): string {
       <!-- Done section -->
       <div v-if="store.doneTodos.length > 0" class="done-section">
         <div class="group-header done-toggle" @click="showDone = !showDone">
-          <span class="group-color-dot" style="background: #aaa" />
+          <span class="group-color-dot" style="background: var(--text-disabled)" />
           <span class="group-name">{{ t('todo.done') }}</span>
           <span class="group-count">{{ store.doneTodos.length }}</span>
           <span class="group-chevron">{{ showDone ? '\u25BC' : '\u25B6' }}</span>

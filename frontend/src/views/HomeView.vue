@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
 import { setLocale } from '@/i18n';
-import { toggleTheme, getTheme } from '@/theme';
+import { useTheme } from '@/theme';
 import type { ItemType } from '@tomado/engine';
 import { useTodoStore } from '@/stores/todo';
 import { useCalendar } from '@/composables/useCalendar';
@@ -17,12 +17,7 @@ const { t, locale } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
 const todoStore = useTodoStore();
-const isDark = ref(getTheme() === 'dark');
-
-function doToggleTheme() {
-  const next = toggleTheme();
-  isDark.value = next === 'dark';
-}
+const { isDark, toggle: doToggleTheme } = useTheme();
 
 // Ranking modal
 const rankingSeed = ref(0);
@@ -509,7 +504,7 @@ const staminaDots = computed(() => {
 
 /* Item reward */
 .item-reward-banner {
-  background: linear-gradient(135deg, var(--warning), #e67e22);
+  background: linear-gradient(135deg, var(--warning), var(--warning-deep));
   color: #fff;
   border: none;
   border-radius: 10px;
