@@ -1,0 +1,125 @@
+:root {
+  /* Page */
+  --bg-page: #f5f0e8;
+  --bg-card: #fff;
+  --bg-card-alt: #f8f5f0;
+  --bg-input: #fff;
+  --bg-hover: #f0ebe3;
+
+  /* Text */
+  --text-primary: #333;
+  --text-secondary: #555;
+  --text-tertiary: #888;
+  --text-muted: #999;
+  --text-disabled: #bbb;
+  --text-faint: #ccc;
+
+  /* Borders */
+  --border: #ddd;
+  --border-alt: #e8e0d4;
+
+  /* Shadows */
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+
+  /* Brand & accent */
+  --brand: #c0392b;
+  --brand-light: #fce0e0;
+  --success: #27ae60;
+  --success-light: #ddf2dd;
+  --warning: #f39c12;
+  --info: #3498db;
+  --purple: #8e44ad;
+  --slate: #2c3e50;
+  --secondary: #7f8c8d;
+
+  /* Puzzle board */
+  --board-bg: #d4c9b8;
+  --board-nav-border: #d4c9b8;
+
+  /* Alpha banner */
+  --alpha-bg: #fff3cd;
+  --alpha-border: #ffc107;
+  --alpha-text: #856404;
+  --alpha-tag-bg: #ffc107;
+
+  /* Ranking */
+  --rank-me-bg: #e8f4fd;
+  --rank-me-border: #b8d9f0;
+  --rank-highlight-bg: #fdf6d0;
+
+  /* Calendar */
+  --cal-played: #ddf2dd;
+  --cal-today: #fce0e0;
+
+  /* Check */
+  --check-color: #7bc67e;
+  --check-bg: #e8f8e8;
+
+  /* Delete / danger */
+  --danger: #e06b6b;
+}
+
+[data-theme="dark"] {
+  /* Page */
+  --bg-page: #181820;
+  --bg-card: #23232f;
+  --bg-card-alt: #2a2a38;
+  --bg-input: #2a2a38;
+  --bg-hover: #32323f;
+
+  /* Text */
+  --text-primary: #e2e2e8;
+  --text-secondary: #b0b0bc;
+  --text-tertiary: #888894;
+  --text-muted: #6a6a78;
+  --text-disabled: #555560;
+  --text-faint: #44444f;
+
+  /* Borders */
+  --border: #3a3a48;
+  --border-alt: #3a3a48;
+
+  /* Shadows */
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.3);
+  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --overlay-bg: rgba(0, 0, 0, 0.7);
+
+  /* Brand & accent — slightly brighter for contrast */
+  --brand: #e04a3c;
+  --brand-light: #3d2020;
+  --success: #2ecc71;
+  --success-light: #1a3322;
+  --warning: #f5a623;
+  --info: #5dade2;
+  --purple: #a569bd;
+  --slate: #4a6a8a;
+  --secondary: #8e9eaa;
+
+  /* Puzzle board */
+  --board-bg: #2e2e3c;
+  --board-nav-border: #3a3a48;
+
+  /* Alpha banner */
+  --alpha-bg: #33301a;
+  --alpha-border: #7a6a20;
+  --alpha-text: #d4c070;
+  --alpha-tag-bg: #7a6a20;
+
+  /* Ranking */
+  --rank-me-bg: #1a2a3a;
+  --rank-me-border: #2a4a6a;
+  --rank-highlight-bg: #2a2820;
+
+  /* Calendar */
+  --cal-played: #1a3322;
+  --cal-today: #3d2020;
+
+  /* Check */
+  --check-color: #5aad5e;
+  --check-bg: #1a3322;
+
+  /* Delete / danger */
+  --danger: #d05050;
+}

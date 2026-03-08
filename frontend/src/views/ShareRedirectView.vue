@@ -54,7 +54,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   height: 100dvh;
-  background: #f5f0e8;
+  background: var(--bg-page);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 .share-error, .share-loading {
@@ -62,23 +62,23 @@ onMounted(async () => {
   padding: 32px;
 }
 .share-error h2 {
-  color: #c0392b;
+  color: var(--brand);
   margin-bottom: 8px;
 }
 .share-error p {
-  color: #666;
+  color: var(--text-secondary);
   margin-bottom: 16px;
 }
 .btn {
   padding: 8px 24px;
   border: none;
   border-radius: 8px;
-  background: #c0392b;
+  background: var(--brand);
   color: #fff;
   font-weight: 600;
   cursor: pointer;
 }
 .share-loading p {
-  color: #999;
+  color: var(--text-muted);
 }
 </style>

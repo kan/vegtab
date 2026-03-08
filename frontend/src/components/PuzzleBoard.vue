@@ -892,7 +892,7 @@ function tileTransition(r: number, c: number) {
 .puzzle-board {
   touch-action: none;
   user-select: none;
-  background: #d4c9b8;
+  background: var(--board-bg);
   border-radius: 8px;
   overflow: hidden;
   margin: 0 auto;
@@ -949,7 +949,7 @@ function tileTransition(r: number, c: number) {
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.6);
+  background: color-mix(in srgb, var(--bg-card) 60%, transparent);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   animation: item-spawn 0.35s ease-out both;
 }
@@ -1056,15 +1056,15 @@ function tileTransition(r: number, c: number) {
   align-items: center;
   gap: 10px;
   font-size: 12px;
-  color: #5b9bd5;
+  color: var(--info);
   font-weight: 600;
 }
 .mag-cancel {
   padding: 2px 10px;
-  border: 1px solid #5b9bd5;
+  border: 1px solid var(--info);
   border-radius: 4px;
-  background: #fff;
-  color: #5b9bd5;
+  background: var(--bg-card);
+  color: var(--info);
   font-size: 11px;
   cursor: pointer;
 }

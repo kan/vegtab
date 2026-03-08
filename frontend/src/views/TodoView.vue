@@ -512,7 +512,7 @@ function groupColor(groupId: string | null): string {
 }
 .todo-header h1 {
   font-size: 24px;
-  color: #333;
+  color: var(--text-primary);
 }
 .daily-progress {
   display: flex;
@@ -522,11 +522,11 @@ function groupColor(groupId: string | null): string {
 .daily-count {
   font-size: 20px;
   font-weight: 700;
-  color: #c0392b;
+  color: var(--brand);
 }
 .daily-label {
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 /* Quick actions */
@@ -540,7 +540,7 @@ function groupColor(groupId: string | null): string {
   padding: 10px;
   border: none;
   border-radius: 8px;
-  background: #c0392b;
+  background: var(--brand);
   color: #fff;
   font-weight: 600;
   font-size: 14px;
@@ -548,10 +548,10 @@ function groupColor(groupId: string | null): string {
 }
 .group-btn {
   padding: 10px 14px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
-  color: #666;
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
 }
@@ -578,36 +578,36 @@ function groupColor(groupId: string | null): string {
 .group-name {
   font-size: 13px;
   font-weight: 600;
-  color: #555;
+  color: var(--text-secondary);
   flex: 1;
 }
 .group-count {
   font-size: 11px;
-  color: #999;
-  background: #eee;
+  color: var(--text-muted);
+  background: var(--bg-hover);
   padding: 1px 6px;
   border-radius: 8px;
 }
 .group-chevron {
   font-size: 9px;
-  color: #999;
+  color: var(--text-muted);
 }
 .group-delete-btn {
   border: none;
   background: none;
-  color: #ccc;
+  color: var(--text-faint);
   font-size: 16px;
   cursor: pointer;
   padding: 0 4px;
 }
-.group-delete-btn:hover { color: #e06b6b; }
+.group-delete-btn:hover { color: var(--danger); }
 
 /* Todo item */
 .todo-item {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 8px;
   margin-bottom: 4px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 .todo-row {
@@ -619,14 +619,14 @@ function groupColor(groupId: string | null): string {
 .check-btn {
   width: 22px;
   height: 22px;
-  border: 2px solid #ccc;
+  border: 2px solid var(--text-faint);
   border-radius: 50%;
   background: none;
   cursor: pointer;
   flex-shrink: 0;
   transition: border-color 0.15s;
 }
-.check-btn:hover:not(:disabled) { border-color: #7bc67e; }
+.check-btn:hover:not(:disabled) { border-color: var(--check-color); }
 .check-disabled {
   opacity: 0.3;
   cursor: default;
@@ -637,7 +637,7 @@ function groupColor(groupId: string | null): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #7bc67e;
+  color: var(--check-color);
   font-weight: 700;
   font-size: 14px;
   flex-shrink: 0;
@@ -649,7 +649,7 @@ function groupColor(groupId: string | null): string {
 }
 .todo-title {
   font-size: 14px;
-  color: #333;
+  color: var(--text-primary);
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -657,7 +657,7 @@ function groupColor(groupId: string | null): string {
 }
 .done-title {
   text-decoration: line-through;
-  color: #999;
+  color: var(--text-muted);
 }
 .todo-meta {
   display: flex;
@@ -666,29 +666,29 @@ function groupColor(groupId: string | null): string {
 }
 .todo-due {
   font-size: 11px;
-  color: #888;
+  color: var(--text-tertiary);
 }
 .todo-due.overdue {
-  color: #c0392b;
+  color: var(--brand);
   font-weight: 600;
 }
 .todo-repeat {
   font-size: 11px;
-  color: #4088c4;
+  color: var(--info);
 }
 .todo-subtask-count {
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
 }
 .edit-btn {
   border: none;
   background: none;
-  color: #bbb;
+  color: var(--text-disabled);
   cursor: pointer;
   padding: 4px;
   flex-shrink: 0;
 }
-.edit-btn:hover { color: #666; }
+.edit-btn:hover { color: var(--text-secondary); }
 
 /* Todo done */
 .todo-done {
@@ -703,12 +703,12 @@ function groupColor(groupId: string | null): string {
 .trash-btn {
   border: none;
   background: none;
-  color: #ccc;
+  color: var(--text-faint);
   cursor: pointer;
   padding: 4px;
   flex-shrink: 0;
 }
-.trash-btn:hover { color: #e06b6b; }
+.trash-btn:hover { color: var(--danger); }
 .done-actions {
   display: flex;
   justify-content: flex-end;
@@ -717,21 +717,21 @@ function groupColor(groupId: string | null): string {
 .clear-done-btn {
   border: none;
   background: none;
-  color: #999;
+  color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
   text-decoration: underline;
 }
-.clear-done-btn:hover { color: #e06b6b; }
+.clear-done-btn:hover { color: var(--danger); }
 
 /* Expanded */
 .todo-expanded {
   padding: 0 12px 10px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--border);
 }
 .todo-memo {
   font-size: 12px;
-  color: #777;
+  color: var(--text-tertiary);
   padding: 8px 0;
   white-space: pre-wrap;
   line-height: 1.5;
@@ -748,7 +748,7 @@ function groupColor(groupId: string | null): string {
 .subtask-check {
   width: 18px;
   height: 18px;
-  border: 1.5px solid #ccc;
+  border: 1.5px solid var(--text-faint);
   border-radius: 3px;
   background: none;
   cursor: pointer;
@@ -757,28 +757,28 @@ function groupColor(groupId: string | null): string {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  color: #7bc67e;
+  color: var(--check-color);
 }
 .subtask-check.checked {
-  border-color: #7bc67e;
-  background: #e8f8e8;
+  border-color: var(--check-color);
+  background: var(--check-bg);
 }
 .subtask-checkmark {
   font-weight: 700;
 }
 .subtask-text {
   font-size: 13px;
-  color: #555;
+  color: var(--text-secondary);
   flex: 1;
 }
 .subtask-done {
   text-decoration: line-through;
-  color: #aaa;
+  color: var(--text-disabled);
 }
 .subtask-delete {
   border: none;
   background: none;
-  color: #ccc;
+  color: var(--text-faint);
   font-size: 14px;
   cursor: pointer;
 }
@@ -790,18 +790,19 @@ function groupColor(groupId: string | null): string {
 .subtask-input {
   flex: 1;
   padding: 5px 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border);
   border-radius: 4px;
   font-size: 12px;
-  background: #fafafa;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 .subtask-add-btn {
   width: 26px;
   height: 26px;
   border: none;
   border-radius: 4px;
-  background: #eee;
-  color: #666;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
   font-size: 14px;
   cursor: pointer;
 }
@@ -813,22 +814,22 @@ function groupColor(groupId: string | null): string {
   height: 30px;
   border: none;
   background: none;
-  color: #ccc;
+  color: var(--text-faint);
   cursor: pointer;
   margin-left: auto;
   margin-top: 4px;
 }
-.expanded-delete-btn:hover { color: #e06b6b; }
+.expanded-delete-btn:hover { color: var(--danger); }
 .delete-confirm-card {
   margin-top: 30vh;
 }
 .delete-confirm-text {
   font-size: 14px;
-  color: #666;
+  color: var(--text-secondary);
   margin: 8px 0 4px;
 }
 .btn-delete {
-  background: #e06b6b;
+  background: var(--danger);
   color: #fff;
 }
 
@@ -836,7 +837,7 @@ function groupColor(groupId: string | null): string {
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,0.4);
+  background: var(--overlay-bg);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -844,24 +845,24 @@ function groupColor(groupId: string | null): string {
   z-index: 20;
 }
 .form-card {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 12px;
   padding: 20px;
   width: 90%;
   max-width: 360px;
   max-height: 80vh;
   overflow-y: auto;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-modal);
 }
 .form-card h2 {
   font-size: 18px;
-  color: #333;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 .form-label {
   display: block;
   font-size: 11px;
-  color: #888;
+  color: var(--text-tertiary);
   text-transform: uppercase;
   margin: 10px 0 4px;
   font-weight: 600;
@@ -869,28 +870,33 @@ function groupColor(groupId: string | null): string {
 .form-input {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 14px;
   box-sizing: border-box;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 .form-textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 13px;
   resize: vertical;
   box-sizing: border-box;
   font-family: inherit;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 .form-select {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 14px;
-  background: #fff;
+  background: var(--bg-input);
+  color: var(--text-primary);
   box-sizing: border-box;
 }
 .form-select-sm {
@@ -903,16 +909,16 @@ function groupColor(groupId: string | null): string {
 }
 .group-chip {
   padding: 5px 12px;
-  border: 2px solid #ddd;
+  border: 2px solid var(--border);
   border-radius: 16px;
-  background: #fff;
+  background: var(--bg-card);
   font-size: 12px;
   cursor: pointer;
-  color: #555;
+  color: var(--text-secondary);
 }
 .group-chip.selected {
-  border-color: var(--chip-color, #c0392b);
-  background: color-mix(in srgb, var(--chip-color, #c0392b) 10%, white);
+  border-color: var(--chip-color, var(--brand));
+  background: color-mix(in srgb, var(--chip-color, var(--brand)) 10%, var(--bg-card));
   font-weight: 600;
 }
 .repeat-detail {
@@ -923,7 +929,7 @@ function groupColor(groupId: string | null): string {
 }
 .repeat-suffix {
   font-size: 12px;
-  color: #888;
+  color: var(--text-tertiary);
 }
 .color-picker {
   display: flex;
@@ -937,7 +943,7 @@ function groupColor(groupId: string | null): string {
   cursor: pointer;
 }
 .color-swatch.selected {
-  border-color: #333;
+  border-color: var(--text-primary);
 }
 .form-actions {
   display: flex;
@@ -959,11 +965,11 @@ function groupColor(groupId: string | null): string {
   cursor: pointer;
 }
 .btn-cancel {
-  background: #eee;
-  color: #666;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 .btn-save {
-  background: #c0392b;
+  background: var(--brand);
   color: #fff;
 }
 </style>

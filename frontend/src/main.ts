@@ -2,7 +2,11 @@ import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import { createRouter, createWebHistory } from 'vue-router';
 import { i18n } from './i18n';
+import { initTheme } from './theme';
+import './theme.css';
 import App from './App.vue';
+
+initTheme();
 
 const router = createRouter({
   history: createWebHistory(),

@@ -138,14 +138,14 @@ watch(() => props.open, (v) => {
 .ranking-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
 .ranking-modal {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 20px;
   width: 360px;
@@ -153,7 +153,7 @@ watch(() => props.open, (v) => {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-modal);
 }
 .ranking-header {
   display: flex;
@@ -164,20 +164,20 @@ watch(() => props.open, (v) => {
 .ranking-title {
   font-size: 18px;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
   margin: 0;
 }
 .ranking-seed {
   flex: 1;
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
   font-family: monospace;
 }
 .ranking-close {
   background: none;
   border: none;
   font-size: 24px;
-  color: #999;
+  color: var(--text-muted);
   cursor: pointer;
   line-height: 1;
   padding: 0 4px;
@@ -197,17 +197,17 @@ watch(() => props.open, (v) => {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  background: #f0ebe3;
-  color: #999;
+  background: var(--bg-hover);
+  color: var(--text-muted);
   letter-spacing: 0.5px;
   transition: all 0.15s;
 }
 .tab.active {
-  background: #c0392b;
+  background: var(--brand);
   color: #fff;
 }
 .tab.active:nth-child(2) {
-  background: #27ae60;
+  background: var(--success);
 }
 
 /* My rank card */
@@ -215,14 +215,14 @@ watch(() => props.open, (v) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fdf6d0;
+  background: var(--rank-highlight-bg);
   border-radius: 10px;
   padding: 12px 16px;
   margin-bottom: 12px;
 }
 .my-rank-card.my-rank-empty {
   justify-content: center;
-  background: #f8f5f0;
+  background: var(--bg-card-alt);
 }
 .my-rank-left {
   display: flex;
@@ -231,7 +231,7 @@ watch(() => props.open, (v) => {
 }
 .my-rank-label {
   font-size: 10px;
-  color: #999;
+  color: var(--text-muted);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -239,12 +239,12 @@ watch(() => props.open, (v) => {
 .my-rank-num {
   font-size: 28px;
   font-weight: 700;
-  color: #c0392b;
+  color: var(--brand);
 }
 .my-rank-total {
   font-size: 14px;
   font-weight: 400;
-  color: #999;
+  color: var(--text-muted);
 }
 .my-rank-right {
   text-align: right;
@@ -255,11 +255,11 @@ watch(() => props.open, (v) => {
 .my-rank-score {
   font-size: 20px;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
 }
 .my-rank-name {
   font-size: 12px;
-  color: #888;
+  color: var(--text-tertiary);
 }
 
 /* List */
@@ -275,7 +275,7 @@ watch(() => props.open, (v) => {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: #f8f5f0;
+  background: var(--bg-card-alt);
   border-radius: 6px;
   font-size: 13px;
 }
@@ -283,13 +283,13 @@ watch(() => props.open, (v) => {
   opacity: 0.5;
 }
 .ranking-row.me {
-  background: #e8f4fd;
-  border: 1px solid #b8d9f0;
+  background: var(--rank-me-bg);
+  border: 1px solid var(--rank-me-border);
 }
 .rank-num {
   width: 32px;
   font-weight: 700;
-  color: #666;
+  color: var(--text-secondary);
   flex-shrink: 0;
   font-size: 14px;
 }
@@ -302,7 +302,7 @@ watch(() => props.open, (v) => {
 }
 .rank-name {
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
   font-size: 13px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -310,7 +310,7 @@ watch(() => props.open, (v) => {
 }
 .rank-meta {
   font-size: 10px;
-  color: #bbb;
+  color: var(--text-disabled);
 }
 .rank-right {
   text-align: right;
@@ -318,19 +318,19 @@ watch(() => props.open, (v) => {
 }
 .rank-score {
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
   font-size: 14px;
 }
 .rank-ref {
   display: block;
   font-size: 9px;
   font-weight: 700;
-  color: #f39c12;
+  color: var(--warning);
 }
 .ranking-empty {
   text-align: center;
   padding: 32px;
-  color: #bbb;
+  color: var(--text-disabled);
   font-size: 14px;
 }
 </style>

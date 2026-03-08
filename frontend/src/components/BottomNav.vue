@@ -28,8 +28,8 @@ const tabs = [
 <style scoped>
 .bottom-nav {
   display: flex;
-  border-top: 1px solid #d4c9b8;
-  background: #fff;
+  border-top: 1px solid var(--board-nav-border);
+  background: var(--bg-card);
   padding: 4px 0;
   flex-shrink: 0;
 }
@@ -42,13 +42,13 @@ const tabs = [
   padding: 8px 0;
   border: none;
   background: none;
-  color: #999;
+  color: var(--text-muted);
   font-size: 10px;
   cursor: pointer;
   transition: color 0.15s;
 }
 .nav-btn.active {
-  color: #c0392b;
+  color: var(--brand);
 }
 .nav-icon {
   font-size: 20px;

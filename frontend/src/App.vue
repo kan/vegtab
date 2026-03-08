@@ -31,6 +31,6 @@ onMounted(async () => {
   height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
-  background: #f5f0e8;
+  background: var(--bg-page);
 }
 </style>

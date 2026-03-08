@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
 import { setLocale } from '@/i18n';
+import { toggleTheme, getTheme } from '@/theme';
 import type { ItemType } from '@tomado/engine';
 import { useTodoStore } from '@/stores/todo';
 import { useCalendar } from '@/composables/useCalendar';
@@ -16,6 +17,12 @@ const { t, locale } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
 const todoStore = useTodoStore();
+const isDark = ref(getTheme() === 'dark');
+
+function doToggleTheme() {
+  const next = toggleTheme();
+  isDark.value = next === 'dark';
+}
 
 // Ranking modal
 const rankingSeed = ref(0);
@@ -116,9 +123,6 @@ const staminaDots = computed(() => {
     <div class="alpha-banner">
       <span class="alpha-tag">{{ t('alpha.tag') }}</span>
       {{ t('alpha.message') }}
-      <button class="lang-toggle" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
-        {{ locale === 'ja' ? 'EN' : 'JA' }}
-      </button>
     </div>
 
     <!-- Hero -->
@@ -308,6 +312,16 @@ const staminaDots = computed(() => {
       </div>
     </Teleport>
 
+    <!-- Settings row (bottom-right) -->
+    <div class="settings-row">
+      <button class="settings-btn" @click="doToggleTheme">
+        {{ isDark ? '☀️' : '🌙' }}
+      </button>
+      <button class="settings-btn" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
+        {{ locale === 'ja' ? 'EN' : 'JA' }}
+      </button>
+    </div>
+
     <RankingModal :seed="rankingSeed" :open="showRanking" @close="showRanking = false" />
   </div>
 </template>
@@ -324,9 +338,9 @@ const staminaDots = computed(() => {
 
 /* Alpha banner */
 .alpha-banner {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffc107;
+  background: var(--alpha-bg);
+  color: var(--alpha-text);
+  border: 1px solid var(--alpha-border);
   border-radius: 8px;
   padding: 6px 12px;
   font-size: 12px;
@@ -337,24 +351,30 @@ const staminaDots = computed(() => {
   gap: 6px;
 }
 .alpha-tag {
-  background: #ffc107;
+  background: var(--alpha-tag-bg);
   color: #fff;
   font-weight: 700;
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 4px;
 }
-.lang-toggle {
-  margin-left: auto;
-  padding: 2px 8px;
-  border: 1px solid #856404;
-  border-radius: 4px;
-  background: transparent;
-  color: #856404;
-  font-size: 11px;
-  font-weight: 700;
+/* Settings row */
+.settings-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 4px 0;
+}
+.settings-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  flex-shrink: 0;
+  box-shadow: var(--shadow-card);
 }
 
 /* Hero */
@@ -364,13 +384,13 @@ const staminaDots = computed(() => {
 }
 .app-title {
   font-size: 36px;
-  color: #c0392b;
+  color: var(--brand);
   font-weight: 800;
   letter-spacing: -1px;
 }
 .app-subtitle {
   font-size: 13px;
-  color: #888;
+  color: var(--text-tertiary);
   margin-top: 4px;
 }
 .user-name-row {
@@ -382,29 +402,30 @@ const staminaDots = computed(() => {
 }
 .user-name {
   font-size: 14px;
-  color: #555;
+  color: var(--text-secondary);
   font-weight: 600;
   cursor: pointer;
 }
 .name-edit-icon {
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
   margin-left: 2px;
 }
 .name-input {
   padding: 6px 10px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 14px;
   width: 160px;
   text-align: center;
-  background: #fff;
+  background: var(--bg-input);
+  color: var(--text-primary);
 }
 .name-save-btn {
   padding: 6px 12px;
   border: none;
   border-radius: 6px;
-  background: #c0392b;
+  background: var(--brand);
   color: #fff;
   font-weight: 600;
   font-size: 13px;
@@ -418,21 +439,21 @@ const staminaDots = computed(() => {
 }
 .stat-card {
   flex: 1;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 10px;
   padding: 12px 8px;
   text-align: center;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
 }
 .stat-value {
   display: block;
   font-size: 24px;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
 }
 .stat-label {
   font-size: 10px;
-  color: #999;
+  color: var(--text-muted);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -451,12 +472,12 @@ const staminaDots = computed(() => {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid #c0392b;
+  border: 2px solid var(--brand);
   background: transparent;
   transition: background 0.2s;
 }
 .stamina-dot.filled {
-  background: #c0392b;
+  background: var(--brand);
 }
 
 /* Item stock row */
@@ -469,26 +490,26 @@ const staminaDots = computed(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 8px;
   padding: 6px 10px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
 }
 .item-stock-count {
   font-size: 14px;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
 }
 .undo-icon {
   font-size: 16px;
-  color: #c0392b;
+  color: var(--brand);
   font-weight: 700;
   line-height: 1;
 }
 
 /* Item reward */
 .item-reward-banner {
-  background: linear-gradient(135deg, #f39c12, #e67e22);
+  background: linear-gradient(135deg, var(--warning), #e67e22);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -512,7 +533,7 @@ const staminaDots = computed(() => {
 }
 .section-title {
   font-size: 13px;
-  color: #666;
+  color: var(--text-secondary);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -529,7 +550,7 @@ const staminaDots = computed(() => {
 }
 .toggle-arrow {
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
 }
 
 /* Ranking button */
@@ -544,13 +565,13 @@ const staminaDots = computed(() => {
 
 /* Daily card */
 .daily-card {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 10px;
   padding: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
   cursor: pointer;
   transition: transform 0.1s;
 }
@@ -572,19 +593,19 @@ const staminaDots = computed(() => {
 .daily-date {
   font-size: 14px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
 }
 .daily-seed {
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
 }
 .daily-score {
   font-size: 16px;
   font-weight: 700;
-  color: #c0392b;
+  color: var(--brand);
 }
 .daily-play {
-  background: #c0392b;
+  background: var(--brand);
   color: #fff;
   padding: 8px 20px;
   border-radius: 6px;
@@ -605,16 +626,16 @@ const staminaDots = computed(() => {
   font-weight: 600;
   font-size: 15px;
   cursor: pointer;
-  background: #fff;
-  color: #333;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
 }
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 .btn-generate {
-  background: #2c3e50;
+  background: var(--slate);
   color: #fff;
   display: flex;
   flex-direction: column;
@@ -632,10 +653,10 @@ const staminaDots = computed(() => {
 }
 /* Calendar */
 .calendar {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 10px;
   padding: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
 }
 .calendar-header {
   display: flex;
@@ -647,7 +668,7 @@ const staminaDots = computed(() => {
   background: none;
   border: none;
   font-size: 18px;
-  color: #666;
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 4px 8px;
 }
@@ -658,7 +679,7 @@ const staminaDots = computed(() => {
 .cal-month {
   font-weight: 600;
   font-size: 14px;
-  color: #333;
+  color: var(--text-primary);
 }
 .calendar-weekdays {
   display: grid;
@@ -669,7 +690,7 @@ const staminaDots = computed(() => {
 .cal-weekday {
   text-align: center;
   font-size: 10px;
-  color: #999;
+  color: var(--text-muted);
   font-weight: 600;
 }
 .calendar-grid {
@@ -696,29 +717,29 @@ const staminaDots = computed(() => {
   cursor: not-allowed;
 }
 .cal-cell.today {
-  background: #fce0e0;
+  background: var(--cal-today);
   font-weight: 700;
 }
 .cal-cell.played {
-  background: #ddf2dd;
+  background: var(--cal-played);
 }
 .cal-cell:not(.empty):not(.future):hover {
-  background: #f0ebe3;
+  background: var(--bg-hover);
 }
 .cal-day {
   font-size: 13px;
-  color: #333;
+  color: var(--text-primary);
 }
 .cal-score {
   font-size: 7px;
-  color: #c0392b;
+  color: var(--brand);
   font-weight: 600;
   position: absolute;
   bottom: 1px;
 }
 .cal-check {
   font-size: 9px;
-  color: #5aad5e;
+  color: var(--check-color);
   position: absolute;
   bottom: 2px;
 }
@@ -730,13 +751,13 @@ const staminaDots = computed(() => {
   gap: 4px;
 }
 .seed-row {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 8px;
   padding: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-card);
 }
 .seed-row-info {
   flex: 1;
@@ -745,7 +766,7 @@ const staminaDots = computed(() => {
 .seed-row-value {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-primary);
 }
 .seed-row-scores {
   display: flex;
@@ -757,14 +778,14 @@ const staminaDots = computed(() => {
   font-weight: 700;
 }
 .seed-score.limited {
-  color: #c0392b;
+  color: var(--brand);
 }
 .seed-score.free {
-  color: #888;
+  color: var(--text-tertiary);
 }
 .seed-unplayed {
   font-size: 12px;
-  color: #bbb;
+  color: var(--text-disabled);
 }
 
 /* Modal */
@@ -774,14 +795,14 @@ const staminaDots = computed(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay-bg);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
 .modal {
-  background: #fff;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 24px;
   width: 320px;
@@ -790,12 +811,12 @@ const staminaDots = computed(() => {
 .modal-title {
   font-size: 18px;
   font-weight: 700;
-  color: #333;
+  color: var(--text-primary);
   margin: 0 0 4px;
 }
 .modal-desc {
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
   margin: 0 0 16px;
 }
 .item-choices {
@@ -809,14 +830,14 @@ const staminaDots = computed(() => {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: #f8f5f0;
-  border: 1px solid #e8e0d4;
+  background: var(--bg-card-alt);
+  border: 1px solid var(--border-alt);
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s;
 }
 .item-choice:hover {
-  background: #f0ebe3;
+  background: var(--bg-hover);
 }
 .item-info {
   flex: 1;
@@ -827,20 +848,20 @@ const staminaDots = computed(() => {
 .item-name {
   font-weight: 600;
   font-size: 14px;
-  color: #333;
+  color: var(--text-primary);
 }
 .item-desc {
   font-size: 11px;
-  color: #999;
+  color: var(--text-muted);
 }
 .item-stock {
   font-size: 12px;
-  color: #999;
+  color: var(--text-muted);
 }
 .btn-cancel {
   width: 100%;
   text-align: center;
-  color: #999;
+  color: var(--text-muted);
   background: none;
   box-shadow: none;
 }
