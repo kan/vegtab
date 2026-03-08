@@ -80,14 +80,127 @@ cd backend && npm test     # バックエンドAPI（15テスト）
 
 ## デプロイ
 
+### 前提条件
+
+- `wrangler` が認証済み（`npx wrangler login`）
+- D1 / KV / R2 が作成済み（`backend/wrangler.toml` にID記載）
+- 本番 JWT シークレット設定済み
+
+### 初回セットアップ
+
 ```bash
-cd backend
+# 1. 本番 D1 マイグレーション実行
+npm run db:migrate:prod -w backend
 
-# D1 マイグレーション適用（新規マイグレーション時のみ）
-npx wrangler d1 migrations apply tomado-db --remote
+# 2. JWT シークレットを設定（対話式）
+npx -w backend wrangler secret put JWT_SECRET --env production
 
-# Workers デプロイ
-npx wrangler deploy
+# 3. Cloudflare Pages プロジェクト作成
+npx -w backend wrangler pages project create tomado
+```
+
+### リリース手順
+
+```bash
+# 全体デプロイ（バックエンド → フロントエンド）
+npm run deploy
+
+# 個別デプロイ
+npm run deploy:backend    # Workers API (--env production)
+npm run deploy:frontend   # Pages SPA (vue-tsc → vite build → pages deploy)
+```
+
+新しいマイグレーションがある場合は、デプロイ前に実行:
+
+```bash
+npm run db:migrate:prod -w backend
+```
+
+### 環境変数
+
+| 変数 | 場所 | 説明 |
+|------|------|------|
+| `FRONTEND_URL` | Workers vars | CORS許可オリジン。カンマ区切りで複数指定可。`*` で全許可 |
+| `ENVIRONMENT` | Workers vars | `development` / `production` |
+| `JWT_SECRET` | Workers secret | JWT署名キー（`wrangler secret put` で設定） |
+| `VITE_API_BASE` | `frontend/.env.production` | バックエンドAPIのベースURL |
+
+## カスタムドメイン設定
+
+`tomado.app` のようなカスタムドメインを設定する手順。
+
+### 1. ドメイン取得 & Cloudflare DNS
+
+1. レジストラで `tomado.app` を取得
+2. Cloudflare ダッシュボード → **Add a site** → `tomado.app` を追加
+3. レジストラのネームサーバーを Cloudflare 指定のものに変更
+4. DNS 反映を待つ（通常 数分〜数時間）
+
+### 2. フロントエンド — Cloudflare Pages にカスタムドメイン
+
+1. Cloudflare ダッシュボード → **Workers & Pages** → `tomado` プロジェクト
+2. **Custom domains** タブ → **Set up a custom domain**
+3. `tomado.app` を入力 → **Activate domain**
+4. DNS CNAME が自動追加され、SSL証明書も自動発行される
+
+### 3. バックエンド — Workers ルーティング
+
+APIとフロントエンドを同一ドメインで運用する場合と、サブドメイン分離する場合の2パターン。
+
+**方法A: 同一ドメイン（推奨）**
+
+Workers が `/api/*` と `/s/*` を処理し、それ以外は Pages がSPAを配信。
+
+`backend/wrangler.toml` の `[env.production]` に追加:
+
+```toml
+routes = [
+  { pattern = "tomado.app/api/*", zone_name = "tomado.app" },
+  { pattern = "tomado.app/s/*", zone_name = "tomado.app" },
+]
+```
+
+`frontend/.env.production`:
+```
+VITE_API_BASE=https://tomado.app
+```
+
+**方法B: サブドメイン分離 `api.tomado.app`**
+
+```toml
+routes = [
+  { pattern = "api.tomado.app/*", zone_name = "tomado.app" },
+]
+```
+
+`frontend/.env.production`:
+```
+VITE_API_BASE=https://api.tomado.app
+```
+
+### 4. 設定ファイル更新チェックリスト
+
+| ファイル | 更新内容 |
+|----------|----------|
+| `backend/wrangler.toml` | `[env.production]` に `routes` 追加、`FRONTEND_URL` をカスタムドメインに |
+| `frontend/.env.production` | `VITE_API_BASE` を本番URLに変更 |
+
+```bash
+# 変更後に再デプロイ
+npm run deploy
+```
+
+### 5. 動作確認
+
+```bash
+# ヘルスチェック
+curl https://tomado.app/api/health
+
+# OGP (クローラーとして)
+curl -A "Twitterbot" https://tomado.app/s/TEST123
+
+# ブラウザでアクセス
+open https://tomado.app
 ```
 
 ## アーキテクチャ
