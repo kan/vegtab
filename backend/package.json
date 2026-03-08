@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:prod": "wrangler deploy --env production",
+    "db:migrate": "wrangler d1 migrations apply tomado-db --local",
+    "db:migrate:prod": "wrangler d1 migrations apply tomado-db --env production --remote",
     "test": "vitest run"
   },
   "dependencies": {

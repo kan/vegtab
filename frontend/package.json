@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
-    "build": "vite build",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "deploy:pages": "wrangler pages deploy dist --project-name tomado",
     "test": "vitest run"
   },
   "devDependencies": {
@@ -16,7 +18,9 @@
     "pinia": "^3.0.4",
     "qrcode": "^1.5.4",
     "typescript": "^5.9.3",
+    "vue-tsc": "^2.2.10",
     "vite": "^7.3.1",
+    "wrangler": "^4.71.0",
     "vue": "^3.5.29",
     "vue-router": "^5.0.3"
   },

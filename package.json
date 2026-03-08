@@ -4,7 +4,11 @@
   "private": true,
   "description": "TODO × 3-match puzzle gamification app",
   "scripts": {
-    "test": "npm test --workspaces --if-present"
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build -w frontend",
+    "deploy:backend": "npm run deploy:prod -w backend",
+    "deploy:frontend": "npm run build -w frontend && npm run deploy:pages -w frontend",
+    "deploy": "npm run deploy:backend && npm run deploy:frontend"
   },
   "workspaces": [
     "engine",

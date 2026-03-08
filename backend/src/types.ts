@@ -6,6 +6,7 @@ export type Bindings = {
   R2: R2Bucket;
   ENVIRONMENT: string;
   JWT_SECRET: string;
+  FRONTEND_URL: string;
 };
 
 export type Variables = {

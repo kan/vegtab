@@ -40,7 +40,8 @@ shareRoutes.get('/:seedId/ogp.svg', async (c) => {
     ? `Top score: ${bestScore} points`
     : 'Try this puzzle!';
 
-  const shareUrl = `https://tomado.app/s/${seed.share_code}`;
+  const baseUrl = c.env.FRONTEND_URL !== '*' ? c.env.FRONTEND_URL : 'https://tomado.app';
+  const shareUrl = `${baseUrl}/s/${seed.share_code}`;
   const svg = generateOgpSvg(seed.share_code, shareUrl, description);
 
   return c.body(svg, 200, {
@@ -68,7 +69,8 @@ shareRoutes.get('/:seedId', async (c) => {
     ? `Top score: ${bestScore} points. Can you beat it?`
     : 'Try this puzzle and compete for the high score!');
   const shareCode = escapeHtml(seed.share_code);
-  const ogpImageUrl = `https://tomado.app/s/${shareCode}/ogp.svg`;
+  const baseUrl = c.env.FRONTEND_URL !== '*' ? c.env.FRONTEND_URL : 'https://tomado.app';
+  const ogpImageUrl = `${baseUrl}/s/${shareCode}/ogp.svg`;
 
   const isCrawler = /bot|crawl|spider|facebook|twitter|slack|discord|telegram|line|whatsapp/i.test(ua);
 
@@ -80,7 +82,7 @@ shareRoutes.get('/:seedId', async (c) => {
   <meta property="og:title" content="${title}">
   <meta property="og:description" content="${description}">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://tomado.app/s/${shareCode}">
+  <meta property="og:url" content="${baseUrl}/s/${shareCode}">
   <meta property="og:image" content="${ogpImageUrl}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${title}">

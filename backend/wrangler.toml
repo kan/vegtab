@@ -4,6 +4,7 @@ compatibility_date = "2024-12-01"
 
 [vars]
 ENVIRONMENT = "development"
+FRONTEND_URL = "*"
 
 [[d1_databases]]
 binding = "DB"
@@ -16,5 +17,23 @@ binding = "KV"
 id = "f35acac0b7e144588ec0509e6b3fa4fa"
 
 [[r2_buckets]]
+binding = "R2"
+bucket_name = "tomado-replay-logs"
+
+# --- Production environment ---
+[env.production]
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://tomado.app" }
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "tomado-db"
+database_id = "05a51653-f823-4d9b-8dfb-921d4c8d0a36"
+migrations_dir = "migrations"
+
+[[env.production.kv_namespaces]]
+binding = "KV"
+id = "f35acac0b7e144588ec0509e6b3fa4fa"
+
+[[env.production.r2_buckets]]
 binding = "R2"
 bucket_name = "tomado-replay-logs"

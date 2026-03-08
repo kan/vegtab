@@ -16,7 +16,12 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // CORS
 app.use('/api/*', cors({
-  origin: '*',
+  origin: (origin: string, c) => {
+    const frontendUrl = (c.env as Record<string, string>).FRONTEND_URL;
+    if (!frontendUrl || frontendUrl === '*') return '*';
+    const allowed = frontendUrl.split(',').map((u: string) => u.trim());
+    return allowed.includes(origin) ? origin : allowed[0];
+  },
   allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
 }));
