@@ -1,4 +1,4 @@
-import { ref, readonly, type Ref } from 'vue';
+import { ref, readonly } from 'vue';
 
 // --- Types ---
 export type SEType =
@@ -36,7 +36,6 @@ function saveBool(key: string, v: boolean) {
 
 export function initSound() {
   vibrationEnabled.value = loadBool(KEYS.vibration, true);
-  // If SE key has never been set, user hasn't chosen yet → show prompt
   if (!hasKey(KEYS.se)) {
     soundPromptNeeded.value = true;
     seEnabled.value = false;
@@ -48,28 +47,25 @@ export function initSound() {
   }
 }
 
-/** User accepts sound — enable SE (BGM stays off by default, user can turn on) */
-export function acceptSound() {
-  ensureAudioContext();
-  seEnabled.value = true;
+function respondToPrompt(enableSE: boolean) {
+  if (enableSE) ensureAudioContext();
+  seEnabled.value = enableSE;
   bgmEnabled.value = false;
-  saveBool(KEYS.se, true);
+  saveBool(KEYS.se, enableSE);
   saveBool(KEYS.bgm, false);
   soundPromptNeeded.value = false;
 }
 
+/** User accepts sound — enable SE (BGM stays off by default, user can turn on) */
+export function acceptSound() { respondToPrompt(true); }
+
 /** User declines sound — disable both */
-export function declineSound() {
-  seEnabled.value = false;
-  bgmEnabled.value = false;
-  saveBool(KEYS.se, false);
-  saveBool(KEYS.bgm, false);
-  soundPromptNeeded.value = false;
-}
+export function declineSound() { respondToPrompt(false); }
 
 // --- AudioContext (lazy, resume on user gesture) ---
 let ctx: AudioContext | null = null;
 
+/** Create or resume AudioContext. Returns ctx even if suspended — scheduled nodes will queue. */
 function getCtx(): AudioContext | null {
   if (!ctx) {
     try { ctx = new AudioContext(); } catch { return null; }
@@ -77,18 +73,11 @@ function getCtx(): AudioContext | null {
   if (ctx.state === 'suspended') {
     ctx.resume().catch(() => {});
   }
-  return ctx.state === 'running' ? ctx : null;
+  return ctx;
 }
 
 /** Ensure AudioContext is resumed — call from a user gesture handler */
-export function ensureAudioContext() {
-  if (!ctx) {
-    try { ctx = new AudioContext(); } catch { return; }
-  }
-  if (ctx.state === 'suspended') {
-    ctx.resume().catch(() => {});
-  }
-}
+export function ensureAudioContext() { getCtx(); }
 
 // --- SE Synthesis ---
 
@@ -113,64 +102,63 @@ function playTone(
   osc.stop(c.currentTime + duration);
 }
 
+// Cached noise buffer (reused across playNoise calls)
+let noiseBuffer: AudioBuffer | null = null;
+
 function playNoise(duration: number, volume = 0.08) {
   const c = getCtx();
   if (!c) return;
-  const bufferSize = c.sampleRate * duration;
-  const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  // Create and cache a 0.5s noise buffer on first use
+  if (!noiseBuffer || noiseBuffer.sampleRate !== c.sampleRate) {
+    const len = Math.ceil(c.sampleRate * 0.5);
+    noiseBuffer = c.createBuffer(1, len, c.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  }
   const src = c.createBufferSource();
-  src.buffer = buffer;
+  src.buffer = noiseBuffer;
   const gain = c.createGain();
   gain.gain.setValueAtTime(volume, c.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
   src.connect(gain).connect(c.destination);
-  src.start();
+  src.start(c.currentTime);
+  src.stop(c.currentTime + duration);
 }
 
 const SE: Record<SEType, () => void> = {
   swap() {
-    // Quick two-note slide (low→high)
     playTone(330, 0.08, 'square', 0.1);
     setTimeout(() => playTone(440, 0.08, 'square', 0.1), 40);
   },
   match() {
-    // Bright ping
     playTone(880, 0.15, 'sine', 0.12);
     playTone(1320, 0.12, 'sine', 0.08);
   },
   chain() {
-    // Rising arpeggio
     playTone(660, 0.1, 'sine', 0.1);
     setTimeout(() => playTone(880, 0.1, 'sine', 0.1), 60);
     setTimeout(() => playTone(1100, 0.15, 'sine', 0.12), 120);
   },
   clear() {
-    // Soft whoosh
     playNoise(0.12, 0.06);
     playTone(520, 0.1, 'triangle', 0.06);
   },
   game_over() {
-    // Descending sad tones
     playTone(440, 0.2, 'triangle', 0.12);
     setTimeout(() => playTone(370, 0.2, 'triangle', 0.12), 150);
     setTimeout(() => playTone(330, 0.3, 'triangle', 0.1), 300);
     setTimeout(() => playTone(262, 0.4, 'triangle', 0.1), 450);
   },
   item_use() {
-    // Sparkle effect
     playTone(1200, 0.1, 'sine', 0.1);
     setTimeout(() => playTone(1500, 0.08, 'sine', 0.08), 50);
     setTimeout(() => playTone(1800, 0.12, 'sine', 0.06), 100);
   },
   undo() {
-    // Reverse swoosh (high→low)
     playTone(600, 0.1, 'square', 0.08);
     setTimeout(() => playTone(400, 0.12, 'square', 0.08), 60);
   },
   complete() {
-    // Triumphant fanfare
     playTone(523, 0.15, 'sine', 0.12);
     setTimeout(() => playTone(659, 0.15, 'sine', 0.12), 120);
     setTimeout(() => playTone(784, 0.15, 'sine', 0.12), 240);
@@ -180,7 +168,7 @@ const SE: Record<SEType, () => void> = {
 
 export function playSE(name: SEType) {
   if (!seEnabled.value) return;
-  ensureAudioContext();
+  if (!ctx || ctx.state === 'suspended') ensureAudioContext();
   try { SE[name](); } catch { /* ignore audio errors */ }
 }
 
@@ -188,42 +176,68 @@ export function playSE(name: SEType) {
 let bgmGain: GainNode | null = null;
 let bgmTimeout: ReturnType<typeof setTimeout> | null = null;
 let bgmPlaying = false;
+let bgmScheduledOscs: OscillatorNode[] = [];
 
 // Upbeat melody + chord pattern (BPM ~140, 8th-note = ~214ms)
 const BPM = 140;
-const EIGHTH = (60 / BPM) * 0.5; // ~0.214s
+const EIGHTH = (60 / BPM) * 0.5;
 
 // Section A: upbeat theme
 const MELODY_A: [number, number][] = [
-  [523, 1], [659, 1], [784, 1], [659, 1],   // C E G E
-  [698, 1], [784, 1], [880, 2],              // F G A—
-  [784, 1], [659, 1], [523, 1], [659, 1],   // G E C E
-  [587, 1], [523, 1], [440, 2],              // D C A—
+  [523, 1], [659, 1], [784, 1], [659, 1],
+  [698, 1], [784, 1], [880, 2],
+  [784, 1], [659, 1], [523, 1], [659, 1],
+  [587, 1], [523, 1], [440, 2],
 ];
 const BASS_A: [number, number][] = [
-  [262, 2], [262, 2], [262, 2], [262, 2],   // C
-  [349, 2], [349, 2], [349, 2], [349, 2],   // F
-  [392, 2], [392, 2], [392, 2], [392, 2],   // G
-  [330, 2], [330, 2], [220, 2], [220, 2],   // E, A
+  [262, 2], [262, 2], [262, 2], [262, 2],
+  [349, 2], [349, 2], [349, 2], [349, 2],
+  [392, 2], [392, 2], [392, 2], [392, 2],
+  [330, 2], [330, 2], [220, 2], [220, 2],
 ];
 
 // Section B: variation / development
 const MELODY_B: [number, number][] = [
-  [880, 1], [784, 1], [659, 1], [784, 1],   // A G E G
-  [880, 1], [1047, 1], [880, 2],             // A C' A—
-  [784, 1], [698, 1], [659, 1], [523, 1],   // G F E C
-  [587, 2], [523, 2],                         // D— C—
+  [880, 1], [784, 1], [659, 1], [784, 1],
+  [880, 1], [1047, 1], [880, 2],
+  [784, 1], [698, 1], [659, 1], [523, 1],
+  [587, 2], [523, 2],
 ];
 const BASS_B: [number, number][] = [
-  [349, 2], [349, 2], [349, 2], [349, 2],   // F
-  [262, 2], [262, 2], [262, 2], [262, 2],   // C
-  [392, 2], [392, 2], [392, 2], [392, 2],   // G
-  [262, 2], [262, 2], [262, 2], [262, 2],   // C
+  [349, 2], [349, 2], [349, 2], [349, 2],
+  [262, 2], [262, 2], [262, 2], [262, 2],
+  [392, 2], [392, 2], [392, 2], [392, 2],
+  [262, 2], [262, 2], [262, 2], [262, 2],
 ];
 
 // Full pattern: A → A → B
 const BGM_MELODY = [...MELODY_A, ...MELODY_A, ...MELODY_B];
 const BGM_BASS = [...BASS_A, ...BASS_A, ...BASS_B];
+const BGM_LOOP_DUR = BGM_MELODY.reduce((s, [, d]) => s + d, 0) * EIGHTH;
+
+function scheduleVoice(
+  notes: [number, number][],
+  oscType: OscillatorType,
+  volume: number,
+  decayFactor: number,
+  startTime: number,
+  c: AudioContext,
+) {
+  let t = startTime;
+  for (const [freq, dur] of notes) {
+    const osc = c.createOscillator();
+    const g = c.createGain();
+    osc.type = oscType;
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(volume, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur * EIGHTH * decayFactor);
+    osc.connect(g).connect(bgmGain!);
+    osc.start(t);
+    osc.stop(t + dur * EIGHTH);
+    bgmScheduledOscs.push(osc);
+    t += dur * EIGHTH;
+  }
+}
 
 function scheduleBgmLoop() {
   if (!bgmPlaying || !bgmGain || !ctx) return;
@@ -232,39 +246,11 @@ function scheduleBgmLoop() {
   const now = c.currentTime;
   const vol = 0.05;
 
-  // Schedule melody
-  let t = now;
-  for (const [freq, dur] of BGM_MELODY) {
-    const osc = c.createOscillator();
-    const g = c.createGain();
-    osc.type = 'square';
-    osc.frequency.value = freq;
-    g.gain.setValueAtTime(vol * 0.7, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur * EIGHTH * 0.9);
-    osc.connect(g).connect(bgmGain!);
-    osc.start(t);
-    osc.stop(t + dur * EIGHTH);
-    t += dur * EIGHTH;
-  }
+  bgmScheduledOscs = [];
+  scheduleVoice(BGM_MELODY, 'square', vol * 0.7, 0.9, now, c);
+  scheduleVoice(BGM_BASS, 'triangle', vol, 0.85, now, c);
 
-  // Schedule bass
-  let tb = now;
-  for (const [freq, dur] of BGM_BASS) {
-    const osc = c.createOscillator();
-    const g = c.createGain();
-    osc.type = 'triangle';
-    osc.frequency.value = freq;
-    g.gain.setValueAtTime(vol, tb);
-    g.gain.exponentialRampToValueAtTime(0.001, tb + dur * EIGHTH * 0.85);
-    osc.connect(g).connect(bgmGain!);
-    osc.start(tb);
-    osc.stop(tb + dur * EIGHTH);
-    tb += dur * EIGHTH;
-  }
-
-  // Loop duration
-  const loopDur = BGM_MELODY.reduce((s, [, d]) => s + d, 0) * EIGHTH;
-  bgmTimeout = setTimeout(scheduleBgmLoop, loopDur * 1000 - 50);
+  bgmTimeout = setTimeout(scheduleBgmLoop, BGM_LOOP_DUR * 1000 - 50);
 }
 
 export function startBGM() {
@@ -285,6 +271,10 @@ export function startBGM() {
 export function stopBGM() {
   bgmPlaying = false;
   if (bgmTimeout) { clearTimeout(bgmTimeout); bgmTimeout = null; }
+  for (const osc of bgmScheduledOscs) {
+    try { osc.stop(0); } catch { /* already stopped */ }
+  }
+  bgmScheduledOscs = [];
   if (bgmGain) {
     try { bgmGain.disconnect(); } catch { /* ignore */ }
     bgmGain = null;
