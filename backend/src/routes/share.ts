@@ -69,11 +69,12 @@ shareRoutes.get('/:seedId', async (c) => {
   const description = escapeHtml(bestScore
     ? `Top score: ${bestScore} points. Can you beat it?`
     : 'Try this puzzle and compete for the high score!');
-  const shareCode = escapeHtml(seed.share_code);
+  const shareCode = seed.share_code;
+  const safeShareCode = escapeHtml(shareCode);
   const baseUrl = getBaseUrl(c.env);
-  const ogpImageUrl = `${baseUrl}/s/${shareCode}/ogp.svg`;
+  const ogpImageUrl = `${baseUrl}/s/${encodeURIComponent(shareCode)}/ogp.svg`;
 
-  const isCrawler = /bot|crawl|spider|facebook|twitter|slack|discord|telegram|line|whatsapp/i.test(ua);
+  const isCrawler = /bot|crawl|spider|facebook|twitter|slack|discord|telegram|Line\/|whatsapp/i.test(ua);
 
   if (isCrawler) {
     return c.html(`<!DOCTYPE html>
@@ -83,7 +84,7 @@ shareRoutes.get('/:seedId', async (c) => {
   <meta property="og:title" content="${title}">
   <meta property="og:description" content="${description}">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="${baseUrl}/s/${shareCode}">
+  <meta property="og:url" content="${baseUrl}/s/${safeShareCode}">
   <meta property="og:image" content="${ogpImageUrl}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${title}">

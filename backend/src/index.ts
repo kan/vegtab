@@ -18,9 +18,9 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 // CORS
 app.use('/api/*', cors({
   origin: (origin: string, c) => {
-    const allowed = getAllowedOrigins((c.env as Bindings));
+    const allowed = getAllowedOrigins(c.env as Bindings);
     if (!allowed) return '*';
-    return allowed.includes(origin) ? origin : allowed[0];
+    return allowed.includes(origin) ? origin : '';
   },
   allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],

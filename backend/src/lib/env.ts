@@ -6,7 +6,7 @@ const DEFAULT_BASE_URL = 'https://3tomado.app';
 export function getBaseUrl(env: Bindings): string {
   const raw = env.FRONTEND_URL;
   if (!raw || raw === '*') return DEFAULT_BASE_URL;
-  const first = raw.split(',')[0].trim();
+  const first = raw.split(',')[0].trim().replace(/\/+$/, '');
   return first || DEFAULT_BASE_URL;
 }
 
