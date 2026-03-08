@@ -31,19 +31,16 @@ const showRanking = ref(false);
 // Share code input
 const showShareCodeInput = ref(false);
 const shareCodeInput = ref('');
-const shareCodeError = ref(false);
 
 function openShareCodeInput() {
   menuOpen.value = false;
   shareCodeInput.value = '';
-  shareCodeError.value = false;
   showShareCodeInput.value = true;
 }
 
 async function submitShareCode() {
   const code = shareCodeInput.value.trim().toUpperCase();
   if (!code) return;
-  shareCodeError.value = false;
   router.push(`/s/${code}`);
   showShareCodeInput.value = false;
 }

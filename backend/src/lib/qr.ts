@@ -248,22 +248,30 @@ export function generateQrMatrix(text: string): number[][] {
   return m.modules;
 }
 
-export function generateQrSvg(text: string, size = 200, margin = 2): string {
-  const matrix = generateQrMatrix(text);
+function renderQrRects(matrix: number[][], offsetX: number, offsetY: number, scale: number, margin: number): string {
+  const parts: string[] = [];
   const moduleCount = matrix.length;
-  const totalModules = moduleCount + margin * 2;
-  const scale = size / totalModules;
-
-  let paths = '';
   for (let r = 0; r < moduleCount; r++) {
     for (let c = 0; c < moduleCount; c++) {
       if (matrix[r][c]) {
-        const x = (c + margin) * scale;
-        const y = (r + margin) * scale;
-        paths += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${scale.toFixed(2)}" height="${scale.toFixed(2)}"/>`;
+        const x = offsetX + (c + margin) * scale;
+        const y = offsetY + (r + margin) * scale;
+        parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${scale.toFixed(1)}" height="${scale.toFixed(1)}"/>`);
       }
     }
   }
+  return parts.join('');
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export function generateQrSvg(text: string, size = 200, margin = 2): string {
+  const matrix = generateQrMatrix(text);
+  const totalModules = matrix.length + margin * 2;
+  const scale = size / totalModules;
+  const paths = renderQrRects(matrix, 0, 0, scale, margin);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
 <rect width="${size}" height="${size}" fill="#fff"/>
@@ -278,34 +286,19 @@ export function generateOgpSvg(shareCode: string, shareUrl: string, description:
   const qrSize = 240;
   const qrMargin = 2;
 
-  // Generate QR matrix
   const matrix = generateQrMatrix(shareUrl);
-  const moduleCount = matrix.length;
-  const totalModules = moduleCount + qrMargin * 2;
+  const totalModules = matrix.length + qrMargin * 2;
   const scale = qrSize / totalModules;
 
-  // Position QR code in right area
   const qrX = width - qrSize - 80;
   const qrY = (height - qrSize) / 2;
-
-  let qrPaths = '';
-  for (let r = 0; r < moduleCount; r++) {
-    for (let c = 0; c < moduleCount; c++) {
-      if (matrix[r][c]) {
-        const x = qrX + (c + qrMargin) * scale;
-        const y = qrY + (r + qrMargin) * scale;
-        qrPaths += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${scale.toFixed(1)}" height="${scale.toFixed(1)}"/>`;
-      }
-    }
-  }
-
-  const escapeSvg = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const qrPaths = renderQrRects(matrix, qrX, qrY, scale, qrMargin);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
 <rect width="${width}" height="${height}" fill="#f5f0e8"/>
 <text x="80" y="200" font-family="sans-serif" font-size="64" font-weight="800" fill="#4CAF50">Tomado</text>
-<text x="80" y="280" font-family="sans-serif" font-size="36" font-weight="700" fill="#333" letter-spacing="0.15em">${escapeSvg(shareCode)}</text>
-<text x="80" y="340" font-family="sans-serif" font-size="22" fill="#666">${escapeSvg(description)}</text>
+<text x="80" y="280" font-family="sans-serif" font-size="36" font-weight="700" fill="#333" letter-spacing="0.15em">${escapeXml(shareCode)}</text>
+<text x="80" y="340" font-family="sans-serif" font-size="22" fill="#666">${escapeXml(description)}</text>
 <text x="80" y="500" font-family="sans-serif" font-size="18" fill="#999">TODO x 3-Match Puzzle</text>
 <rect x="${qrX}" y="${qrY}" width="${qrSize}" height="${qrSize}" rx="8" fill="#fff"/>
 <g fill="#333">${qrPaths}</g>

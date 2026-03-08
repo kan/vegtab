@@ -25,12 +25,10 @@ function goToPuzzle() {
 onMounted(async () => {
   const code = (route.params.code as string).toUpperCase();
   try {
-    await gameStore.init();
-    const res = await api<{
-      seedId: string;
-      seedValue: string;
-      shareCode: string;
-    }>(`/api/seeds/by-code/${code}`);
+    const [, res] = await Promise.all([
+      gameStore.init(),
+      api<{ seedId: string; seedValue: string; shareCode: string }>(`/api/seeds/by-code/${code}`),
+    ]);
     const n = Number(res.seedValue);
     if (!Number.isNaN(n)) {
       gameStore.cacheShareCode(n, res.seedId, res.shareCode);
