@@ -22,7 +22,11 @@ bucket_name = "tomado-replay-logs"
 
 # --- Production environment ---
 [env.production]
-vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://tomado.app" }
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://3tomado.app" }
+routes = [
+  { pattern = "3tomado.app/api/*", zone_name = "3tomado.app" },
+  { pattern = "3tomado.app/s/*", zone_name = "3tomado.app" },
+]
 
 [[env.production.d1_databases]]
 binding = "DB"

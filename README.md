@@ -127,12 +127,12 @@ npm run db:migrate:prod -w backend
 
 ## カスタムドメイン設定
 
-`tomado.app` のようなカスタムドメインを設定する手順。
+`3tomado.app` のようなカスタムドメインを設定する手順。
 
 ### 1. ドメイン取得 & Cloudflare DNS
 
-1. レジストラで `tomado.app` を取得
-2. Cloudflare ダッシュボード → **Add a site** → `tomado.app` を追加
+1. レジストラで `3tomado.app` を取得
+2. Cloudflare ダッシュボード → **Add a site** → `3tomado.app` を追加
 3. レジストラのネームサーバーを Cloudflare 指定のものに変更
 4. DNS 反映を待つ（通常 数分〜数時間）
 
@@ -140,7 +140,7 @@ npm run db:migrate:prod -w backend
 
 1. Cloudflare ダッシュボード → **Workers & Pages** → `tomado` プロジェクト
 2. **Custom domains** タブ → **Set up a custom domain**
-3. `tomado.app` を入力 → **Activate domain**
+3. `3tomado.app` を入力 → **Activate domain**
 4. DNS CNAME が自動追加され、SSL証明書も自動発行される
 
 ### 3. バックエンド — Workers ルーティング
@@ -155,27 +155,27 @@ Workers が `/api/*` と `/s/*` を処理し、それ以外は Pages がSPAを�
 
 ```toml
 routes = [
-  { pattern = "tomado.app/api/*", zone_name = "tomado.app" },
-  { pattern = "tomado.app/s/*", zone_name = "tomado.app" },
+  { pattern = "3tomado.app/api/*", zone_name = "3tomado.app" },
+  { pattern = "3tomado.app/s/*", zone_name = "3tomado.app" },
 ]
 ```
 
 `frontend/.env.production`:
 ```
-VITE_API_BASE=https://tomado.app
+VITE_API_BASE=https://3tomado.app
 ```
 
-**方法B: サブドメイン分離 `api.tomado.app`**
+**方法B: サブドメイン分離 `api.3tomado.app`**
 
 ```toml
 routes = [
-  { pattern = "api.tomado.app/*", zone_name = "tomado.app" },
+  { pattern = "api.3tomado.app/*", zone_name = "3tomado.app" },
 ]
 ```
 
 `frontend/.env.production`:
 ```
-VITE_API_BASE=https://api.tomado.app
+VITE_API_BASE=https://api.3tomado.app
 ```
 
 ### 4. 設定ファイル更新チェックリスト
@@ -194,13 +194,13 @@ npm run deploy
 
 ```bash
 # ヘルスチェック
-curl https://tomado.app/api/health
+curl https://3tomado.app/api/health
 
 # OGP (クローラーとして)
-curl -A "Twitterbot" https://tomado.app/s/TEST123
+curl -A "Twitterbot" https://3tomado.app/s/TEST123
 
 # ブラウザでアクセス
-open https://tomado.app
+open https://3tomado.app
 ```
 
 ## アーキテクチャ
