@@ -96,7 +96,7 @@ npm run db:migrate:prod -w backend
 npx -w backend wrangler secret put JWT_SECRET --env production
 
 # 3. Cloudflare Pages プロジェクト作成
-npx -w backend wrangler pages project create tomado
+npx wrangler pages project create tomado
 ```
 
 ### リリース手順
