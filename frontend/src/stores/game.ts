@@ -14,24 +14,16 @@ export interface PlayRecord {
   playerName: string;
 }
 
-interface DailyState {
-  date: string; // 'YYYY-MM-DD'
-}
-
 // --- Store ---
 
 export const useGameStore = defineStore('game', () => {
   const displayName = ref(loadStr('tomado_display_name', ''));
   const playRecords = ref<PlayRecord[]>(loadJson('tomado_play_records', []));
-  const dailyState = ref<DailyState>(loadDailyState());
   const initialized = ref(false);
   // Map: engine seed number → { backendSeedId, shareCode }
   const shareCodeMap = ref<Record<number, { seedId: string; shareCode: string }>>(
     loadJson('tomado_share_codes', {})
   );
-
-  // Ensure daily state is fresh on store init
-  ensureDailyState();
 
   /** Initialize: ensure authenticated and sync with server */
   async function init() {
@@ -98,11 +90,6 @@ export const useGameStore = defineStore('game', () => {
 
   // --- Play records ---
 
-  /** Record a game result. */
-  function recordGameEnd(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
-    addPlayRecord(record);
-  }
-
   function addPlayRecord(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
     playRecords.value.push({
       ...record,
@@ -140,26 +127,10 @@ export const useGameStore = defineStore('game', () => {
     return playRecords.value.some(r => r.seed === seed);
   }
 
-  // --- Daily state management ---
-
-  function ensureDailyState() {
-    const today = todayLocal();
-    if (dailyState.value.date !== today) {
-      dailyState.value = {
-        date: today,
-      };
-      saveDailyState();
-    }
-  }
-
   // --- Persistence ---
 
   function saveRecords() {
     localStorage.setItem('tomado_play_records', JSON.stringify(playRecords.value));
-  }
-
-  function saveDailyState() {
-    localStorage.setItem('tomado_daily_state', JSON.stringify(dailyState.value));
   }
 
   function saveShareCodes() {
@@ -198,12 +169,11 @@ export const useGameStore = defineStore('game', () => {
 
   return {
     displayName, effectiveName, setDisplayName,
-    playRecords, dailyState,
+    playRecords,
     generateDailySeed, randomSeed,
     isTodaysDailySeed,
-    recordGameEnd, addPlayRecord, getRecordsForSeed, getBestScore,
+    addPlayRecord, getRecordsForSeed, getBestScore,
     getDailySeeds, hasPlayedDaily,
-    ensureDailyState,
     init, syncProfile, initialized,
     getShareCode, cacheShareCode,
   };
@@ -228,16 +198,3 @@ function loadJson<T>(key: string, fallback: T): T {
   }
 }
 
-function loadDailyState(): DailyState {
-  const today = todayLocal();
-  try {
-    const raw = localStorage.getItem('tomado_daily_state');
-    if (raw) {
-      const data = JSON.parse(raw);
-      if (data.date === today) return { date: data.date };
-    }
-  } catch { /* ignore */ }
-  return {
-    date: today,
-  };
-}

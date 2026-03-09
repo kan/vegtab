@@ -22,7 +22,7 @@ export default {
     message: 'α版のためデータがリセットされる場合があります',
   },
   home: {
-    subtitle: 'TODO × 3マッチパズル',
+    subtitle: 'デイリー3マッチパズル',
     namePlaceholder: 'あなたの名前...',
     dailyPuzzle: '今日のデイリーパズル',
     best: 'ベスト: {score}',

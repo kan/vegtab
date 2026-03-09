@@ -22,7 +22,7 @@ export default {
     message: 'Data may be reset during alpha testing',
   },
   home: {
-    subtitle: 'TODO x 3-Match Puzzle',
+    subtitle: 'Daily 3-Match Puzzle',
     namePlaceholder: 'Your name...',
     dailyPuzzle: "Today's Daily Puzzle",
     best: 'Best: {score}',

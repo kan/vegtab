@@ -87,7 +87,7 @@ watch(() => store.isGameOver, (ended) => {
     stopBGM();
     playSE('game_over'); vibrate([50, 50, 100]);
     scoreRecorded.value = true;
-    gameStore.recordGameEnd({
+    gameStore.addPlayRecord({
       seed: store.seed,
       mode: 'limited',
       score: store.score,
