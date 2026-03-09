@@ -1,23 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
 import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { useSound } from '@/sound';
-import type { ItemType } from '@tomado/engine';
-import { useTodoStore } from '@/stores/todo';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayLocal } from '@/utils/date';
-import { ALL_ITEM_TYPES, ITEM_INFO } from '@/utils/constants';
-import ItemIcon from '@/components/ItemIcon.vue';
 import RankingModal from '@/components/RankingModal.vue';
 
 const { t, locale } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
-const todoStore = useTodoStore();
 const { isDark, toggle: doToggleTheme } = useTheme();
 const { seEnabled, bgmEnabled, vibrationEnabled, soundPromptNeeded, acceptSound, declineSound, toggleSE, toggleBGM, toggleVibration } = useSound();
 
@@ -54,17 +49,6 @@ function openRanking(seed: number) {
 const cal = useCalendar();
 const showCalendar = ref(false);
 
-// Item selection modal
-const showItemModal = ref(false);
-
-// Stamina tick
-let staminaTimer: ReturnType<typeof setInterval>;
-onMounted(() => {
-  gameStore.tickStamina();
-  staminaTimer = setInterval(() => gameStore.tickStamina(), 60_000);
-});
-onUnmounted(() => clearInterval(staminaTimer));
-
 // --- Daily seed ---
 const today = todayLocal();
 const todaySeed = computed(() => gameStore.generateDailySeed(today));
@@ -93,31 +77,6 @@ function isFuture(dateStr: string): boolean {
   return dateStr > today;
 }
 
-// --- Item selection ---
-
-
-function pickItem(type: ItemType) {
-  gameStore.selectItem(type);
-  showItemModal.value = false;
-}
-
-// --- Item stock ---
-const totalItems = computed(() =>
-  ALL_ITEM_TYPES.reduce((sum, t) => sum + gameStore.items[t], 0)
-);
-
-// --- Generated seeds ---
-const generatedSeeds = computed(() =>
-  [...gameStore.unlockedSeeds]
-    .sort((a, b) => b.unlockedAt - a.unlockedAt)
-    .map(s => ({
-      ...s,
-      bestLimited: gameStore.getBestScore(s.seed, 'limited'),
-      bestFree: gameStore.getBestScore(s.seed, 'free'),
-    }))
-);
-const showSeeds = ref(false);
-
 // --- User name ---
 const editingName = ref(false);
 const nameInput = ref(gameStore.displayName);
@@ -126,12 +85,6 @@ function saveName() {
   gameStore.setDisplayName(nameInput.value.trim());
   editingName.value = false;
 }
-
-// --- Stamina display ---
-const staminaDots = computed(() => {
-  const current = gameStore.currentStamina;
-  return Array.from({ length: 5 }, (_, i) => i < current);
-});
 </script>
 
 <template>
@@ -168,47 +121,6 @@ const staminaDots = computed(() => {
         </template>
       </div>
     </div>
-
-    <!-- Stats row -->
-    <div class="stats-row">
-      <div class="stat-card stamina-card">
-        <div class="stat-label">{{ t('home.stamina') }}</div>
-        <div class="stamina-dots">
-          <span
-            v-for="(filled, i) in staminaDots"
-            :key="i"
-            :class="['stamina-dot', { filled }]"
-          />
-        </div>
-      </div>
-      <div class="stat-card" style="cursor: pointer" @click="router.push('/todo')">
-        <span class="stat-value">{{ todoStore.dailyCompleted }}</span>
-        <span class="stat-label">{{ t('home.todayTodo') }}</span>
-      </div>
-    </div>
-
-    <!-- Item stock (includes undo) -->
-    <div v-if="totalItems > 0 || gameStore.undoStock > 0" class="item-stock-row">
-      <div v-if="gameStore.undoStock > 0" class="item-stock-chip">
-        <span class="undo-icon">&#x21A9;</span>
-        <span class="item-stock-count">{{ gameStore.undoStock }}</span>
-      </div>
-      <template v-for="type in ALL_ITEM_TYPES" :key="type">
-        <div v-if="gameStore.items[type] > 0" class="item-stock-chip">
-          <ItemIcon :item="type" :size="18" />
-          <span class="item-stock-count">{{ gameStore.items[type] }}</span>
-        </div>
-      </template>
-    </div>
-
-    <!-- Item reward banner -->
-    <button
-      v-if="gameStore.canSelectItem"
-      class="item-reward-banner"
-      @click="showItemModal = true"
-    >
-      {{ t('home.itemRewardAvailable') }}
-    </button>
 
     <!-- Daily Puzzle -->
     <div class="section">
@@ -280,57 +192,6 @@ const staminaDots = computed(() => {
         </div>
       </div>
     </div>
-
-    <!-- Generated Seeds -->
-    <div v-if="generatedSeeds.length > 0" class="section">
-      <button class="section-toggle" @click="showSeeds = !showSeeds">
-        <h2 class="section-title">{{ t('home.mySeeds') }}</h2>
-        <span class="toggle-arrow">{{ showSeeds ? '\u25B2' : '\u25BC' }}</span>
-      </button>
-      <div v-if="showSeeds" class="seed-list">
-        <div
-          v-for="s in generatedSeeds"
-          :key="s.seed"
-          class="seed-row"
-        >
-          <div class="seed-row-info" @click="router.push(`/puzzle/${s.seed}`)">
-            <span class="seed-row-value">{{ t('common.seed', { seed: s.seed }) }}</span>
-          </div>
-          <div class="seed-row-scores">
-            <span v-if="s.bestLimited > 0" class="seed-score limited" @click="router.push(`/puzzle/${s.seed}`)">{{ s.bestLimited.toLocaleString() }}</span>
-            <span v-if="s.bestFree > 0" class="seed-score free" @click="router.push(`/puzzle/${s.seed}`)">{{ t('home.freeScore', { score: s.bestFree.toLocaleString() }) }}</span>
-            <span v-if="s.bestLimited === 0 && s.bestFree === 0" class="seed-unplayed" @click="router.push(`/puzzle/${s.seed}`)">{{ t('home.unplayed') }}</span>
-            <button class="btn-ranking-small" @click.stop="openRanking(s.seed)" :title="t('common.ranking')">&#x1F3C6;</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Item Selection Modal -->
-    <Teleport to="body">
-      <div v-if="showItemModal" class="modal-overlay" @click.self="showItemModal = false">
-        <div class="modal">
-          <h3 class="modal-title">{{ t('home.chooseItem') }}</h3>
-          <p class="modal-desc">{{ t('home.todoDoneToday', { count: gameStore.dailyState.todoCompletedCount }) }}</p>
-          <div class="item-choices">
-            <button
-              v-for="type in gameStore.availableItemChoices"
-              :key="type"
-              class="item-choice"
-              @click="pickItem(type)"
-            >
-              <ItemIcon :item="type" :size="32" />
-              <div class="item-info">
-                <span class="item-name">{{ ITEM_INFO[type].label }}</span>
-                <span class="item-desc">{{ ITEM_INFO[type].desc }}</span>
-              </div>
-              <span class="item-stock">x{{ gameStore.items[type] }}</span>
-            </button>
-          </div>
-          <button class="btn btn-cancel" @click="showItemModal = false">{{ t('home.later') }}</button>
-        </div>
-      </div>
-    </Teleport>
 
     <!-- Hamburger menu button -->
     <button class="hamburger-btn" @click="menuOpen = !menuOpen" :title="t('home.settings')">
@@ -667,99 +528,6 @@ const staminaDots = computed(() => {
   cursor: pointer;
 }
 
-/* Stats */
-.stats-row {
-  display: flex;
-  gap: 8px;
-}
-.stat-card {
-  flex: 1;
-  background: var(--bg-card);
-  border-radius: 10px;
-  padding: 12px 8px;
-  text-align: center;
-  box-shadow: var(--shadow-card);
-}
-.stat-value {
-  display: block;
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.stat-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.stamina-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-.stamina-dots {
-  display: flex;
-  gap: 4px;
-}
-.stamina-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--brand);
-  background: transparent;
-  transition: background 0.2s;
-}
-.stamina-dot.filled {
-  background: var(--brand);
-}
-
-/* Item stock row */
-.item-stock-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.item-stock-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--bg-card);
-  border-radius: 8px;
-  padding: 6px 10px;
-  box-shadow: var(--shadow-card);
-}
-.item-stock-count {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.undo-icon {
-  font-size: 16px;
-  color: var(--brand);
-  font-weight: 700;
-  line-height: 1;
-}
-
-/* Item reward */
-.item-reward-banner {
-  background: linear-gradient(135deg, var(--warning), var(--warning-deep));
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  padding: 12px 16px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  text-align: center;
-  animation: pulse 2s infinite;
-}
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.02); }
-}
-
 /* Sections */
 .section {
   display: flex;
@@ -877,15 +645,7 @@ const staminaDots = computed(() => {
   align-items: center;
   gap: 2px;
 }
-.btn-sub {
-  font-size: 10px;
-  font-weight: 400;
-  opacity: 0.7;
-}
-.btn-small {
-  padding: 10px 16px;
-  font-size: 14px;
-}
+
 /* Calendar */
 .calendar {
   background: var(--bg-card);
@@ -979,50 +739,6 @@ const staminaDots = computed(() => {
   bottom: 2px;
 }
 
-/* Seed list */
-.seed-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.seed-row {
-  background: var(--bg-card);
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  box-shadow: var(--shadow-card);
-}
-.seed-row-info {
-  flex: 1;
-  cursor: pointer;
-}
-.seed-row-value {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.seed-row-scores {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.seed-score {
-  font-size: 13px;
-  font-weight: 700;
-}
-.seed-score.limited {
-  color: var(--brand);
-}
-.seed-score.free {
-  color: var(--text-tertiary);
-}
-.seed-unplayed {
-  font-size: 12px;
-  color: var(--text-disabled);
-}
-
 /* Modal */
 .modal-overlay {
   position: fixed;
@@ -1053,51 +769,5 @@ const staminaDots = computed(() => {
   font-size: 12px;
   color: var(--text-muted);
   margin: 0 0 16px;
-}
-.item-choices {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.item-choice {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: var(--bg-card-alt);
-  border: 1px solid var(--border-alt);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.item-choice:hover {
-  background: var(--bg-hover);
-}
-.item-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.item-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--text-primary);
-}
-.item-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.item-stock {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.btn-cancel {
-  width: 100%;
-  text-align: center;
-  color: var(--text-muted);
-  background: none;
-  box-shadow: none;
 }
 </style>

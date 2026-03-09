@@ -42,7 +42,7 @@ export type ChainStep = {
 };
 
 /** ゲームモード */
-export type GameMode = 'limited' | 'free';
+export type GameMode = 'limited';
 
 /** ゲーム状態 */
 export type GameState = {
@@ -50,11 +50,9 @@ export type GameState = {
   score: number;
   rngState: number;
   moveCount: number;
-  undoUsed: boolean;
   isGameOver: boolean;
   mode: GameMode;
   moveLimit?: number;
-  previousState?: GameState;
 };
 
 export const BOARD_SIZE = 8;

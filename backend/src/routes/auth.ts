@@ -29,11 +29,9 @@ authRoutes.post('/register', zValidator('json', registerSchema), async (c) => {
     userId = existing.id;
   } else {
     userId = generateId();
-    const now = new Date().toISOString();
     await c.env.DB.prepare(
-      `INSERT INTO users (id, device_id, stamina, last_stamina_recover_at, undo_stock)
-       VALUES (?, ?, 5, ?, 0)`
-    ).bind(userId, deviceId, now).run();
+      'INSERT INTO users (id, device_id) VALUES (?, ?)'
+    ).bind(userId, deviceId).run();
   }
 
   const [accessToken, refreshToken] = await Promise.all([

@@ -49,14 +49,14 @@ export function hasActivatableItems(board: (Cell | null)[][]): boolean {
 /** ゲーム終了判定（モード対応） */
 export function isGameOver(
   board: (Cell | null)[][],
-  mode: GameMode = 'free',
+  mode: GameMode = 'limited',
   moveCount: number = 0,
   moveLimit?: number,
 ): boolean {
   // 手数制限モード: 規定手数到達
-  if (mode === 'limited' && moveLimit !== undefined && moveCount >= moveLimit) {
+  if (moveLimit !== undefined && moveCount >= moveLimit) {
     return true;
   }
-  // 詰み判定（両モード共通）
+  // 詰み判定
   return !hasValidSwap(board) && !hasActivatableItems(board);
 }

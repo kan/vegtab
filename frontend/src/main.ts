@@ -14,7 +14,6 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: () => import('./views/HomeView.vue') },
-    { path: '/todo', component: () => import('./views/TodoView.vue') },
     { path: '/puzzle', component: () => import('./views/PuzzleView.vue') },
     { path: '/puzzle/:seed', component: () => import('./views/PuzzleView.vue') },
     { path: '/s/:code', component: () => import('./views/ShareRedirectView.vue') },

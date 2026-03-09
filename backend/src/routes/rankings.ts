@@ -6,13 +6,13 @@ const RANKING_LIMIT = 100;
 
 export const rankingRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
-// GET /api/rankings/:seedId?mode=limited|free
+// GET /api/rankings/:seedId?mode=limited
 rankingRoutes.get('/:seedId', async (c) => {
   const userId = c.get('userId');
   const seedId = c.req.param('seedId');
   const mode = c.req.query('mode') ?? 'limited';
 
-  if (mode !== 'limited' && mode !== 'free') {
+  if (mode !== 'limited') {
     return c.json({ error: 'Invalid mode' }, 400);
   }
 
@@ -35,11 +35,11 @@ rankingRoutes.get('/:seedId', async (c) => {
      FROM (
        SELECT user_id, MAX(score) as best_score
        FROM play_scores
-       WHERE seed_id = ? AND mode = ? AND used_brought_items = 0 AND is_trial = 0
+       WHERE seed_id = ? AND mode = ?
        GROUP BY user_id
      ) r
      JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.score = r.best_score
-       AND ps2.seed_id = ? AND ps2.mode = ? AND ps2.used_brought_items = 0 AND ps2.is_trial = 0
+       AND ps2.seed_id = ? AND ps2.mode = ?
      JOIN users u ON u.id = r.user_id
      ORDER BY r.best_score DESC
      LIMIT ?`
@@ -83,15 +83,14 @@ async function getUserRank(
 ): Promise<{ rank: number; score: number } | null> {
   const userBest = await db.prepare(
     `SELECT MAX(score) as best_score FROM play_scores
-     WHERE user_id = ? AND seed_id = ? AND mode = ?
-       AND used_brought_items = 0 AND is_trial = 0`
+     WHERE user_id = ? AND seed_id = ? AND mode = ?`
   ).bind(userId, seedId, mode).first<{ best_score: number | null }>();
 
   if (!userBest?.best_score) return null;
 
   const rankResult = await db.prepare(
     `SELECT COUNT(DISTINCT user_id) + 1 as rank FROM play_scores
-     WHERE seed_id = ? AND mode = ? AND used_brought_items = 0 AND is_trial = 0
+     WHERE seed_id = ? AND mode = ?
      AND score > ?`
   ).bind(seedId, mode, userBest.best_score).first<{ rank: number }>();
   if (!rankResult) return null;

@@ -1,14 +1,14 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
-  initializeGame, processAction, processMagnifyingSynthesis, undoAction, cloneGameState,
+  initializeGame, processAction, processMagnifyingSynthesis,
   cloneBoard, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
   calculateStepScore, calculateRemainingItemBonus,
   determineItemFromMatches, isGameOver as checkGameOver,
   isValidPosition, getItemTargets, findCoffeeTargetColor,
   getSynthesisEffect, getSynthesisTargets,
   getCoffeeTargets, getScissorsTargets, getCutterTargets, getClipTargets,
-  type GameState, type GameMode, type Action, type Position, type Direction,
+  type GameState, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match,
   BOARD_SIZE,
 } from '@tomado/engine';
@@ -184,12 +184,10 @@ function buildItemPlan(
   rngState: number,
   baseScore: number,
   moveCount: number,
-  undoUsed: boolean,
   itemPos: Position,
   itemType: ItemType,
   targetColor: number | undefined,
-  prevState: GameState,
-  gameMode: GameMode = 'limited',
+  gameMode: 'limited',
   gameMoveLimit?: number,
 ): ItemAnimPlan {
   const boardBefore = cloneBoard(board);
@@ -240,17 +238,16 @@ function buildItemPlan(
       const newMoveCount = moveCount + 1;
       const gameOver = checkGameOver(board, gameMode, newMoveCount, gameMoveLimit);
       let finalScore = totalScore;
-      if (gameOver && gameMode === 'limited') finalScore += calculateRemainingItemBonus(board);
+      if (gameOver) finalScore += calculateRemainingItemBonus(board);
       return {
         board: cloneBoard(board),
         score: finalScore,
         rngState: rng,
         moveCount: newMoveCount,
-        undoUsed,
+
         isGameOver: gameOver,
         mode: gameMode,
         moveLimit: gameMoveLimit,
-        previousState: prevState,
       };
     })(),
   };
@@ -302,28 +299,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     if (!gameState.value || gameState.value.mode !== 'limited' || !gameState.value.moveLimit) return undefined;
     return gameState.value.moveLimit - gameState.value.moveCount;
   });
-  const canUndo = computed(() =>
-    gameState.value !== null &&
-    !gameState.value.undoUsed &&
-    gameState.value.previousState !== undefined
-  );
 
-  /** Score recorded when limited mode moves ran out (before continuing as free) */
-  const limitedScore = ref<number | null>(null);
-
-  /** Whether the game ended due to move limit (not stuck) */
-  const isMoveLimitReached = computed(() => {
-    if (!gameState.value) return false;
-    return gameState.value.isGameOver
-      && gameState.value.mode === 'limited'
-      && gameState.value.moveLimit !== undefined
-      && gameState.value.moveCount >= gameState.value.moveLimit;
-  });
-
-  function startGame(newSeed?: number, gameMode: GameMode = 'limited', gameMoveLimit?: number) {
-    limitedScore.value = null;
+  function startGame(newSeed?: number) {
     seed.value = newSeed ?? Math.floor(Math.random() * 0x7FFFFFFF);
-    gameState.value = initializeGame(seed.value, gameMode, gameMoveLimit);
+    gameState.value = initializeGame(seed.value);
   }
 
   function swap(pos: Position, dir: Direction) {
@@ -410,11 +389,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         score,
         rngState: finalRng,
         moveCount: newMoveCount,
-        undoUsed: state.undoUsed,
+
         isGameOver: gameOver,
         mode: state.mode,
         moveLimit: state.moveLimit,
-        previousState: cloneGameState(state),
       },
     };
   }
@@ -511,19 +489,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         score,
         rngState: finalRng,
         moveCount: newMoveCount,
-        undoUsed: state.undoUsed,
+
         isGameOver: gameOver,
         mode: state.mode,
         moveLimit: state.moveLimit,
-        previousState: cloneGameState(state),
       },
     };
-  }
-
-  function undo() {
-    if (!gameState.value) return;
-    const result = undoAction(gameState.value);
-    if (result) gameState.value = result;
   }
 
   function computeSwapPlan(pos: Position, dir: Direction): SwapAnimPlan | null {
@@ -581,9 +552,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       boardAfterSwap, chains,
       finalState: {
         board: cloneBoard(board), score: finalScore, rngState: rng,
-        moveCount: newMoveCount, undoUsed: state.undoUsed,
+        moveCount: newMoveCount,
         isGameOver: gameOver, mode: state.mode, moveLimit: state.moveLimit,
-        previousState: cloneGameState(state),
       },
     };
   }
@@ -603,8 +573,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     return buildItemPlan(
       board, state.rngState, state.score, state.moveCount,
-      state.undoUsed, pos, cell.item, targetColor, cloneGameState(state),
-      state.mode, state.moveLimit,
+      pos, cell.item, targetColor,
+      'limited', state.moveLimit,
     );
   }
 
@@ -617,7 +587,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const cell1 = state.board[pos.row][pos.col];
     const cell2 = state.board[target.row][target.col];
     if (!cell1 || !cell2) return null;
-    if (cell1.item && cell2.item) return null; // synthesis → instant
+    if (cell1.item && cell2.item) return null; // synthesis -> instant
     if (!cell1.item && !cell2.item) return null;
 
     const board = cloneBoard(state.board);
@@ -634,8 +604,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     const plan = buildItemPlan(
       board, state.rngState, state.score, state.moveCount,
-      state.undoUsed, newItemPos, itemCell.item!, targetColor, cloneGameState(state),
-      state.mode, state.moveLimit,
+      newItemPos, itemCell.item!, targetColor,
+      'limited', state.moveLimit,
     );
     return { boardAfterSwap, plan };
   }
@@ -830,11 +800,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           score,
           rngState: finalRng,
           moveCount: newMoveCount,
-          undoUsed: state.undoUsed,
+  
           isGameOver: gameOver,
           mode: state.mode,
           moveLimit: state.moveLimit,
-          previousState: cloneGameState(state),
         };
       })(),
     };
@@ -844,17 +813,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     gameState.value = state;
   }
 
-  function continueAsFree() {
-    if (!gameState.value || !isMoveLimitReached.value) return;
-    limitedScore.value = gameState.value.score;
-    gameState.value = {
-      ...gameState.value,
-      mode: 'free',
-      moveLimit: undefined,
-      isGameOver: false,
-    };
-  }
-
+  /** Debug-only: place an item on the board */
   function placeItem(pos: Position, item: ItemType) {
     if (!gameState.value) return;
     const cell = gameState.value.board[pos.row]?.[pos.col];
@@ -864,10 +823,9 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   return {
     gameState, seed,
-    board, score, moveCount, isGameOver, canUndo,
+    board, score, moveCount, isGameOver,
     mode, moveLimit, remainingMoves,
-    limitedScore, isMoveLimitReached,
-    startGame, swap, tap, undo, continueAsFree,
+    startGame, swap, tap,
     activateMagnifyingGlass, applyMagnifyingSynthesis,
     computeMagGlassPlan, computeMagSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,

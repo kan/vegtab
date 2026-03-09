@@ -2,11 +2,10 @@ import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 import { generateId, generateShareCode } from '../lib/id';
 import { todayUTC } from '../lib/date';
-import { calculateCurrentStamina } from '../lib/stamina';
 
 export const seedRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
-// POST /api/seeds/generate - Generate a new seed (no stamina cost, trial state)
+// POST /api/seeds/generate - Generate a new seed
 // Accepts optional { seedValue } to register a frontend-generated seed
 seedRoutes.post('/generate', async (c) => {
   const userId = c.get('userId');
@@ -31,54 +30,6 @@ seedRoutes.post('/generate', async (c) => {
   ).bind(seedId, seedValue, shareCode, userId).run();
 
   return c.json({ seedId, seedValue, shareCode }, 201);
-});
-
-// POST /api/seeds/:id/unlock - Unlock a seed (costs 1 stamina)
-seedRoutes.post('/:id/unlock', async (c) => {
-  const userId = c.get('userId');
-  const seedId = c.req.param('id');
-
-  // Check seed exists
-  const seed = await c.env.DB.prepare(
-    'SELECT id, is_daily, daily_date FROM puzzle_seeds WHERE id = ?'
-  ).bind(seedId).first<{ id: string; is_daily: number; daily_date: string | null }>();
-  if (!seed) return c.json({ error: 'Seed not found' }, 404);
-
-  // Check not already unlocked
-  const existing = await c.env.DB.prepare(
-    'SELECT id FROM user_unlocked_seeds WHERE user_id = ? AND seed_id = ?'
-  ).bind(userId, seedId).first();
-  if (existing) return c.json({ error: 'Already unlocked' }, 400);
-
-  // Today's daily seed is implicitly unlocked
-  if (seed.is_daily && seed.daily_date === todayUTC()) {
-    return c.json({ error: 'Daily seed is already unlocked for today' }, 400);
-  }
-
-  // Check & consume stamina
-  const user = await c.env.DB.prepare(
-    'SELECT stamina, last_stamina_recover_at FROM users WHERE id = ?'
-  ).bind(userId).first<{ stamina: number; last_stamina_recover_at: string }>();
-  if (!user) return c.json({ error: 'User not found' }, 404);
-
-  const { stamina, lastRecoverAt } = calculateCurrentStamina({
-    stamina: user.stamina,
-    lastStaminaRecoverAt: user.last_stamina_recover_at,
-  });
-
-  if (stamina < 1) return c.json({ error: 'Not enough stamina' }, 400);
-
-  // Deduct stamina and unlock
-  await c.env.DB.batch([
-    c.env.DB.prepare(
-      "UPDATE users SET stamina = ?, last_stamina_recover_at = ?, updated_at = datetime('now') WHERE id = ?"
-    ).bind(stamina - 1, lastRecoverAt, userId),
-    c.env.DB.prepare(
-      'INSERT INTO user_unlocked_seeds (id, user_id, seed_id) VALUES (?, ?, ?)'
-    ).bind(generateId(), userId, seedId),
-  ]);
-
-  return c.json({ success: true, remainingStamina: stamina - 1 });
 });
 
 // GET /api/seeds/daily - Get today's daily seed
@@ -126,20 +77,22 @@ seedRoutes.get('/daily/calendar', async (c) => {
     id: string; seed_value: string; share_code: string; daily_date: string;
   }>();
 
-  // Check which seeds the user has unlocked or played
+  // Check which seeds the user has played
   const seedIds = (seeds.results ?? []).map((s) => s.id);
-  let userScores: Record<string, { limited: number | null; free: number | null }> = {};
+  let userScores: Record<string, { limited: number | null }> = {};
   if (seedIds.length > 0) {
     const placeholders = seedIds.map(() => '?').join(',');
     const scores = await c.env.DB.prepare(
       `SELECT seed_id, mode, MAX(score) as best_score FROM play_scores
-       WHERE user_id = ? AND seed_id IN (${placeholders}) AND is_trial = 0
+       WHERE user_id = ? AND seed_id IN (${placeholders})
        GROUP BY seed_id, mode`
     ).bind(userId, ...seedIds).all<{ seed_id: string; mode: string; best_score: number }>();
 
     for (const s of scores.results ?? []) {
-      if (!userScores[s.seed_id]) userScores[s.seed_id] = { limited: null, free: null };
-      userScores[s.seed_id][s.mode as 'limited' | 'free'] = s.best_score;
+      if (!userScores[s.seed_id]) userScores[s.seed_id] = { limited: null };
+      if (s.mode === 'limited') {
+        userScores[s.seed_id].limited = s.best_score;
+      }
     }
   }
 
@@ -154,7 +107,7 @@ seedRoutes.get('/daily/calendar', async (c) => {
   });
 });
 
-// GET /api/seeds/:id - Get seed info with user's status
+// GET /api/seeds/:id - Get seed info with user's best scores
 seedRoutes.get('/:id', async (c) => {
   const userId = c.get('userId');
   const seedId = c.req.param('id');
@@ -167,30 +120,9 @@ seedRoutes.get('/:id', async (c) => {
   }>();
   if (!seed) return c.json({ error: 'Seed not found' }, 404);
 
-  // Determine user's status for this seed
-  const today = todayUTC();
-  const isUnlocked = await c.env.DB.prepare(
-    'SELECT id FROM user_unlocked_seeds WHERE user_id = ? AND seed_id = ?'
-  ).bind(userId, seedId).first();
-
-  const trialPlay = await c.env.DB.prepare(
-    'SELECT id FROM play_scores WHERE user_id = ? AND seed_id = ? AND is_trial = 1'
-  ).bind(userId, seedId).first();
-
-  let status: string;
-  if (seed.is_daily && seed.daily_date === today) {
-    status = 'daily_today';
-  } else if (isUnlocked) {
-    status = 'unlocked';
-  } else if (trialPlay) {
-    status = 'trial_used';
-  } else {
-    status = 'trial_available';
-  }
-
   // Get user's best scores
   const scores = await c.env.DB.prepare(
-    'SELECT mode, MAX(score) as best_score FROM play_scores WHERE user_id = ? AND seed_id = ? AND is_trial = 0 GROUP BY mode'
+    'SELECT mode, MAX(score) as best_score FROM play_scores WHERE user_id = ? AND seed_id = ? GROUP BY mode'
   ).bind(userId, seedId).all<{ mode: string; best_score: number }>();
 
   const bestScores: Record<string, number> = {};
@@ -205,7 +137,6 @@ seedRoutes.get('/:id', async (c) => {
     isDaily: !!seed.is_daily,
     dailyDate: seed.daily_date,
     createdByMe: seed.created_by_user_id === userId,
-    status,
     bestScores,
   });
 });

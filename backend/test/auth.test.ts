@@ -56,9 +56,7 @@ describe('Auth API', () => {
     });
 
     expect(res.status).toBe(200);
-    const data = await res.json() as { id: string; stamina: number; undoStock: number };
+    const data = await res.json() as { id: string; displayName: string | null };
     expect(data.id).toBeTruthy();
-    expect(data.stamina).toBe(5);
-    expect(data.undoStock).toBe(0);
   });
 });

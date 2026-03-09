@@ -1,6 +1,6 @@
 import {
   Cell, Color, ItemType, Position, Direction, Action,
-  Match, ChainStep, GameState, GameMode, BOARD_SIZE, NUM_COLORS,
+  Match, ChainStep, GameState, BOARD_SIZE, NUM_COLORS,
 } from './types.js';
 import { createRng, nextInt } from './rng.js';
 import {
@@ -32,7 +32,6 @@ function getAdjacentPos(pos: Position, dir: Direction): Position {
 /** 初期盤面を生成（自動消去込み、スコア0・アイテムなし） */
 export function initializeGame(
   seed: number,
-  mode: GameMode = 'limited',
   moveLimit?: number,
 ): GameState {
   let { board, rngState } = generateRawBoard(seed);
@@ -53,21 +52,19 @@ export function initializeGame(
     score: 0,
     rngState,
     moveCount: 0,
-    undoUsed: false,
     isGameOver: false,
-    mode,
-    moveLimit: mode === 'limited' ? (moveLimit ?? DEFAULT_MOVE_LIMIT) : undefined,
+    mode: 'limited',
+    moveLimit: moveLimit ?? DEFAULT_MOVE_LIMIT,
   };
 }
 
-/** GameStateのディープコピー（previousStateは含めない） */
+/** GameStateのディープコピー */
 export function cloneGameState(state: GameState): GameState {
   return {
     board: cloneBoard(state.board),
     score: state.score,
     rngState: state.rngState,
     moveCount: state.moveCount,
-    undoUsed: state.undoUsed,
     isGameOver: state.isGameOver,
     mode: state.mode,
     moveLimit: state.moveLimit,
@@ -225,9 +222,7 @@ function checkGameOver(state: GameState): void {
 export function processAction(state: GameState, action: Action): GameState {
   if (state.isGameOver) return state;
 
-  const prevState = cloneGameState(state);
   const newState = cloneGameState(state);
-  newState.previousState = prevState;
   const board = newState.board;
 
   if (action.type === 'magnifying_glass') {
@@ -558,9 +553,7 @@ export function processMagnifyingSynthesis(
   const synthesis = getSynthesisEffect(cell1.item, cell2.item);
   if (!synthesis) return state;
 
-  const prevState = cloneGameState(state);
   const newState = cloneGameState(state);
-  newState.previousState = prevState;
   const board = newState.board;
 
   board[pos1.row][pos1.col] = null;
@@ -661,10 +654,3 @@ function processChains(
   return { score: totalScore, rngState: rng, steps };
 }
 
-/** Undo処理 */
-export function undoAction(state: GameState): GameState | null {
-  if (state.undoUsed || !state.previousState) return null;
-  const restored = cloneGameState(state.previousState);
-  restored.undoUsed = true;
-  return restored;
-}

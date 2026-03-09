@@ -19,7 +19,7 @@ async function lookupSeedWithTopScore(db: D1Database, seedId: string) {
 
   const topScore = await db.prepare(
     `SELECT MAX(score) as best_score FROM play_scores
-     WHERE seed_id = ? AND mode = 'limited' AND used_brought_items = 0 AND is_trial = 0`
+     WHERE seed_id = ? AND mode = 'limited'`
   ).bind(seed.id).first<{ best_score: number | null }>();
 
   return { seed, bestScore: topScore?.best_score ?? null };

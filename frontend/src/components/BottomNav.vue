@@ -6,7 +6,6 @@ const route = useRoute();
 
 const tabs = [
   { path: '/', label: 'HOME', icon: '\u2302' },
-  { path: '/todo', label: 'TODO', icon: '\u2611' },
   { path: '/puzzle', label: 'PUZZLE', icon: '\u25A6' },
 ];
 </script>

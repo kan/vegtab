@@ -159,11 +159,6 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
     return;
   }
 
-  // Patch previousState to point to the original (pre-swap) state for correct undo
-  if (originalState) {
-    plan.finalState.previousState = originalState;
-  }
-
   drag.setLocked(true);
 
   // Build a board with the magnifying glass removed but targets still present

@@ -3,15 +3,12 @@ import { onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import BottomNav from './components/BottomNav.vue';
 import { useGameStore } from './stores/game';
-import { useTodoStore } from './stores/todo';
 
 const router = useRouter();
 
 onMounted(async () => {
   const gameStore = useGameStore();
   await gameStore.init();
-  const todoStore = useTodoStore();
-  await todoStore.syncFromServer();
 });
 </script>
 

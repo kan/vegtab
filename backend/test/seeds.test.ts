@@ -34,70 +34,28 @@ describe('Seeds & Ranking API', () => {
     expect(data.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('unlocks a seed consuming stamina', async () => {
+  it('seed info returns best scores', async () => {
+    const genRes = await SELF.fetch('http://localhost/api/seeds/generate', {
+      method: 'POST',
+      headers: authHeader(accessToken),
+    });
+    const { seedId } = await genRes.json() as { seedId: string };
+
+    const infoRes = await SELF.fetch(`http://localhost/api/seeds/${seedId}`, {
+      headers: authHeader(accessToken),
+    });
+    const info = await infoRes.json() as { seedId: string; bestScores: Record<string, number> };
+    expect(info.seedId).toBe(seedId);
+    expect(info.bestScores).toEqual({});
+  });
+
+  it('ranking returns correct data', async () => {
     // Generate seed
     const genRes = await SELF.fetch('http://localhost/api/seeds/generate', {
       method: 'POST',
       headers: authHeader(accessToken),
     });
     const { seedId } = await genRes.json() as { seedId: string };
-
-    // Unlock
-    const unlockRes = await SELF.fetch(`http://localhost/api/seeds/${seedId}/unlock`, {
-      method: 'POST',
-      headers: authHeader(accessToken),
-    });
-    expect(unlockRes.status).toBe(200);
-    const data = await unlockRes.json() as { remainingStamina: number };
-    expect(data.remainingStamina).toBe(4);
-
-    // Double unlock should fail
-    const res2 = await SELF.fetch(`http://localhost/api/seeds/${seedId}/unlock`, {
-      method: 'POST',
-      headers: authHeader(accessToken),
-    });
-    expect(res2.status).toBe(400);
-  });
-
-  it('seed status transitions correctly', async () => {
-    const genRes = await SELF.fetch('http://localhost/api/seeds/generate', {
-      method: 'POST',
-      headers: authHeader(accessToken),
-    });
-    const { seedId } = await genRes.json() as { seedId: string };
-
-    // Before unlock: trial_available (for own seeds too, since not unlocked yet)
-    const infoRes1 = await SELF.fetch(`http://localhost/api/seeds/${seedId}`, {
-      headers: authHeader(accessToken),
-    });
-    const info1 = await infoRes1.json() as { status: string };
-    expect(info1.status).toBe('trial_available');
-
-    // After unlock
-    await SELF.fetch(`http://localhost/api/seeds/${seedId}/unlock`, {
-      method: 'POST',
-      headers: authHeader(accessToken),
-    });
-
-    const infoRes2 = await SELF.fetch(`http://localhost/api/seeds/${seedId}`, {
-      headers: authHeader(accessToken),
-    });
-    const info2 = await infoRes2.json() as { status: string };
-    expect(info2.status).toBe('unlocked');
-  });
-
-  it('ranking returns correct data', async () => {
-    // Generate and unlock seed
-    const genRes = await SELF.fetch('http://localhost/api/seeds/generate', {
-      method: 'POST',
-      headers: authHeader(accessToken),
-    });
-    const { seedId } = await genRes.json() as { seedId: string };
-
-    await SELF.fetch(`http://localhost/api/seeds/${seedId}/unlock`, {
-      method: 'POST',
-      headers: authHeader(accessToken),
-    });
 
     // Submit a score
     await SELF.fetch('http://localhost/api/scores', {
@@ -110,9 +68,6 @@ describe('Seeds & Ranking API', () => {
         moveCount: 15,
         score: 5000,
         isCleared: true,
-        usedBroughtItems: false,
-        usedUndo: false,
-        isTrial: false,
         replayLog: [],
       }),
     });

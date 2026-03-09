@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { initializeGame, processAction, processMagnifyingSynthesis, undoAction, cloneGameState } from '../src/engine.js';
+import { initializeGame, processAction, processMagnifyingSynthesis, cloneGameState } from '../src/engine.js';
 import { hasMatches, findMatches } from '../src/match.js';
 import { isGameOver, hasValidSwap, hasActivatableItems } from '../src/gameOver.js';
 import { calculateRemainingItemBonus } from '../src/score.js';
@@ -108,41 +108,6 @@ describe('Process Action - Swap', () => {
   });
 });
 
-describe('Undo', () => {
-  it('Undoで1手前の状態に戻る', () => {
-    const state = initializeGame(42);
-    const action = findValidSwap(state);
-    if (action) {
-      const afterAction = processAction(state, action);
-      const undone = undoAction(afterAction);
-      expect(undone).not.toBeNull();
-      expect(undone!.score).toBe(0);
-      expect(undone!.undoUsed).toBe(true);
-    }
-  });
-
-  it('Undoは1プレイ1回まで', () => {
-    const state = initializeGame(42);
-    const action = findValidSwap(state);
-    if (action) {
-      const afterAction = processAction(state, action);
-      const undone = undoAction(afterAction);
-      expect(undone).not.toBeNull();
-      // 2回目のUndoは失敗
-      const action2 = findValidSwap(undone!);
-      if (action2) {
-        const afterAction2 = processAction(undone!, action2);
-        const undone2 = undoAction(afterAction2);
-        expect(undone2).toBeNull(); // undoUsed=trueなのでnull
-      }
-    }
-  });
-
-  it('初期状態ではUndoできない', () => {
-    const state = initializeGame(42);
-    expect(undoAction(state)).toBeNull();
-  });
-});
 
 describe('Score Calculation', () => {
   it('基礎点は1タイル10点 × 連鎖倍率', () => {
@@ -170,20 +135,14 @@ describe('Game Mode', () => {
     expect(state.moveLimit).toBe(15);
   });
 
-  it('フリーモードでは手数制限なし', () => {
-    const state = initializeGame(42, 'free');
-    expect(state.mode).toBe('free');
-    expect(state.moveLimit).toBeUndefined();
-  });
-
   it('手数制限モードのカスタム手数', () => {
-    const state = initializeGame(42, 'limited', 20);
+    const state = initializeGame(42, 20);
     expect(state.moveLimit).toBe(20);
   });
 
   it('手数制限モードで規定手数到達時にゲーム終了', () => {
     // 2手制限で2手打つ
-    let state = initializeGame(42, 'limited', 2);
+    let state = initializeGame(42, 2);
     const action1 = findValidSwap(state);
     if (!action1) return;
     state = processAction(state, action1);
@@ -196,28 +155,8 @@ describe('Game Mode', () => {
     expect(state.moveCount).toBe(2);
     expect(state.isGameOver).toBe(true);
   });
-
-  it('フリーモードでは手数で終了しない', () => {
-    let state = initializeGame(42, 'free');
-    const action = findValidSwap(state);
-    if (!action) return;
-    state = processAction(state, action);
-    expect(state.isGameOver).toBe(false);
-  });
 });
 
-describe('Undo - move count', () => {
-  it('Undoで手数カウントが1戻る', () => {
-    const state = initializeGame(42);
-    const action = findValidSwap(state);
-    if (!action) return;
-    const afterAction = processAction(state, action);
-    expect(afterAction.moveCount).toBe(1);
-    const undone = undoAction(afterAction);
-    expect(undone).not.toBeNull();
-    expect(undone!.moveCount).toBe(0);
-  });
-});
 
 describe('Remaining Item Bonus', () => {
   it('盤上のアイテムに応じたボーナスを計算', () => {

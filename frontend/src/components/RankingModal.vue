@@ -15,20 +15,18 @@ const emit = defineEmits<{
 }>();
 
 const gameStore = useGameStore();
-const activeTab = ref<'limited' | 'free'>('limited');
 
 interface RankEntry {
   rank: number;
   score: number;
   moves: number;
   playedAt: number;
-  usedItems: boolean;
   playerName: string;
   isMe: boolean;
 }
 
 const rankings = computed<RankEntry[]>(() => {
-  const records = gameStore.getRecordsForSeed(props.seed, activeTab.value);
+  const records = gameStore.getRecordsForSeed(props.seed, 'limited');
   const myName = gameStore.effectiveName;
   const sorted = [...records].sort((a, b) => b.score - a.score);
   return sorted.map((r, i) => ({
@@ -36,23 +34,22 @@ const rankings = computed<RankEntry[]>(() => {
     score: r.score,
     moves: r.moves,
     playedAt: r.playedAt,
-    usedItems: r.usedItems,
     playerName: r.playerName || 'Anonymous',
     isMe: (r.playerName || 'Anonymous') === myName,
   }));
 });
 
 const myBestRank = computed(() => {
-  const eligible = rankings.value.filter(r => r.isMe && !r.usedItems);
+  const eligible = rankings.value.filter(r => r.isMe);
   return eligible.length > 0 ? eligible[0].rank : null;
 });
 
 const myBestScore = computed(() => {
-  const eligible = rankings.value.filter(r => r.isMe && !r.usedItems);
+  const eligible = rankings.value.filter(r => r.isMe);
   return eligible.length > 0 ? eligible[0].score : 0;
 });
 
-const totalEntries = computed(() => rankings.value.filter(r => !r.usedItems).length);
+const totalEntries = computed(() => rankings.value.length);
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -65,10 +62,6 @@ function rankIcon(rank: number): string {
   if (rank === 3) return '\u{1F949}';
   return `#${rank}`;
 }
-
-watch(() => props.open, (v) => {
-  if (v) activeTab.value = 'limited';
-});
 </script>
 
 <template>
@@ -79,18 +72,6 @@ watch(() => props.open, (v) => {
           <h2 class="ranking-title">{{ t('common.ranking') }}</h2>
           <span class="ranking-seed">{{ t('common.seed', { seed }) }}</span>
           <button class="ranking-close" @click="emit('close')">&times;</button>
-        </div>
-
-        <!-- Mode tabs -->
-        <div class="ranking-tabs">
-          <button
-            :class="['tab', { active: activeTab === 'limited' }]"
-            @click="activeTab = 'limited'"
-          >{{ t('puzzle.limited') }}</button>
-          <button
-            :class="['tab', { active: activeTab === 'free' }]"
-            @click="activeTab = 'free'"
-          >{{ t('puzzle.free') }}</button>
         </div>
 
         <!-- My rank highlight -->
@@ -113,7 +94,7 @@ watch(() => props.open, (v) => {
           <div
             v-for="entry in rankings"
             :key="entry.playedAt"
-            :class="['ranking-row', { ref: entry.usedItems, me: entry.isMe }]"
+            :class="['ranking-row', { me: entry.isMe }]"
           >
             <span class="rank-num">{{ rankIcon(entry.rank) }}</span>
             <div class="rank-main">
@@ -122,7 +103,6 @@ watch(() => props.open, (v) => {
             </div>
             <div class="rank-right">
               <span class="rank-score">{{ entry.score.toLocaleString() }}</span>
-              <span v-if="entry.usedItems" class="rank-ref">{{ t('puzzle.ref') }}</span>
             </div>
           </div>
         </div>
@@ -181,33 +161,6 @@ watch(() => props.open, (v) => {
   cursor: pointer;
   line-height: 1;
   padding: 0 4px;
-}
-
-/* Tabs */
-.ranking-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-.tab {
-  flex: 1;
-  padding: 8px;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  background: var(--bg-hover);
-  color: var(--text-muted);
-  letter-spacing: 0.5px;
-  transition: all 0.15s;
-}
-.tab.active {
-  background: var(--brand);
-  color: #fff;
-}
-.tab.active:nth-child(2) {
-  background: var(--success);
 }
 
 /* My rank card */
@@ -279,9 +232,6 @@ watch(() => props.open, (v) => {
   border-radius: 6px;
   font-size: 13px;
 }
-.ranking-row.ref {
-  opacity: 0.5;
-}
 .ranking-row.me {
   background: var(--rank-me-bg);
   border: 1px solid var(--rank-me-border);
@@ -320,12 +270,6 @@ watch(() => props.open, (v) => {
   font-weight: 700;
   color: var(--text-primary);
   font-size: 14px;
-}
-.rank-ref {
-  display: block;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--warning);
 }
 .ranking-empty {
   text-align: center;
