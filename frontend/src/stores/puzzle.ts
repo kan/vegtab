@@ -179,6 +179,39 @@ function computeDropMoves(board: (Cell | null)[][]) {
   return { moves, newTileEntries };
 }
 
+/** ゲーム終了判定 + ボーナス加算 + finalState構築の共通ヘルパー */
+function resolveFinalState(
+  board: (Cell | null)[][],
+  score: number,
+  rngState: number,
+  moveCount: number,
+  mode: GameMode,
+  moveLimit: number | undefined,
+  quotaTable: number[] | undefined,
+  segmentStartScore: number | undefined,
+): GameState {
+  const tempState: GameState = {
+    board, score, rngState, moveCount,
+    isGameOver: false, mode, moveLimit, quotaTable, segmentStartScore,
+  };
+  const goResult = checkGameOverState(tempState);
+  let finalScore = score;
+  if (goResult.gameOver && mode === 'sprint') finalScore += calculateRemainingItemBonus(board);
+  if (goResult.gameOver && mode === 'clear') finalScore = moveCount;
+  return {
+    board: cloneBoard(board),
+    score: finalScore,
+    rngState,
+    moveCount,
+    isGameOver: goResult.gameOver,
+    isCleared: goResult.isCleared,
+    mode,
+    moveLimit,
+    quotaTable,
+    segmentStartScore: goResult.newSegmentStartScore ?? segmentStartScore,
+  };
+}
+
 function computeItemEffects(
   board: (Cell | null)[][],
   startPos: Position,
@@ -303,31 +336,10 @@ function buildItemPlan(
     effects,
     dropMoves, newTileEntries, boardAfterDrop,
     regularChains,
-    finalState: (() => {
-      const newMoveCount = moveCount + 1;
-      const tempState: GameState = {
-        board, score: totalScore, rngState: rng,
-        moveCount: newMoveCount, isGameOver: false,
-        mode: gameMode, moveLimit: gameMoveLimit, quotaTable,
-        segmentStartScore,
-      };
-      const goResult = checkGameOverState(tempState);
-      let finalScore = totalScore;
-      if (goResult.gameOver && gameMode === 'sprint') finalScore += calculateRemainingItemBonus(board);
-      if (goResult.gameOver && gameMode === 'clear') finalScore = newMoveCount;
-      return {
-        board: cloneBoard(board),
-        score: finalScore,
-        rngState: rng,
-        moveCount: newMoveCount,
-        isGameOver: goResult.gameOver,
-        isCleared: goResult.isCleared,
-        mode: gameMode,
-        moveLimit: gameMoveLimit,
-        quotaTable,
-        segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
-      };
-    })(),
+    finalState: resolveFinalState(
+      board, totalScore, rng, moveCount + 1,
+      gameMode, gameMoveLimit, quotaTable, segmentStartScore,
+    ),
   };
 }
 
@@ -521,18 +533,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
       computeChainSteps(board, rng, totalScore, 2);
 
-    const newMoveCount = state.moveCount + 1;
-    const tempState: GameState = {
-      board, score: finalScore, rngState: finalRng,
-      moveCount: newMoveCount, isGameOver: false,
-      mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
-      segmentStartScore: state.segmentStartScore,
-    };
-    const goResult = checkGameOverState(tempState);
-    let score = finalScore;
-    if (goResult.gameOver && state.mode === 'sprint') score += calculateRemainingItemBonus(board);
-    if (goResult.gameOver && state.mode === 'clear') score = newMoveCount;
-
     return {
       scopePos,
       adjacentTargets,
@@ -541,18 +541,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       itemEffects,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: {
-        board: cloneBoard(board),
-        score,
-        rngState: finalRng,
-        moveCount: newMoveCount,
-        isGameOver: goResult.gameOver,
-        isCleared: goResult.isCleared,
-        mode: state.mode,
-        moveLimit: state.moveLimit,
-        quotaTable: state.quotaTable,
-        segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
-      },
+      finalState: resolveFinalState(
+        board, finalScore, finalRng, state.moveCount + 1,
+        state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+      ),
     };
   }
 
@@ -686,35 +678,15 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
       computeChainSteps(board, rng, totalScore, 2);
 
-    const newMoveCount = state.moveCount + 1;
-    const tempState: GameState = {
-      board, score: finalScore, rngState: finalRng,
-      moveCount: newMoveCount, isGameOver: false,
-      mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
-      segmentStartScore: state.segmentStartScore,
-    };
-    const goResult = checkGameOverState(tempState);
-    let score = finalScore;
-    if (goResult.gameOver && state.mode === 'sprint') score += calculateRemainingItemBonus(board);
-    if (goResult.gameOver && state.mode === 'clear') score = newMoveCount;
-
     return {
       pos1, pos2, synthEffect: effect, adjacentTargets, targetCells, effectTargets,
       itemEffects, boardAfterClear,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: {
-        board: cloneBoard(board),
-        score,
-        rngState: finalRng,
-        moveCount: newMoveCount,
-        isGameOver: goResult.gameOver,
-        isCleared: goResult.isCleared,
-        mode: state.mode,
-        moveLimit: state.moveLimit,
-        quotaTable: state.quotaTable,
-        segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
-      },
+      finalState: resolveFinalState(
+        board, finalScore, finalRng, state.moveCount + 1,
+        state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+      ),
     };
   }
 
@@ -771,27 +743,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       matches = findMatches(board);
     }
 
-    const newMoveCount = state.moveCount + 1;
-    const tempState: GameState = {
-      board, score: totalScore, rngState: rng,
-      moveCount: newMoveCount, isGameOver: false,
-      mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
-      segmentStartScore: state.segmentStartScore,
-    };
-    const goResult = checkGameOverState(tempState);
-    let finalScore = totalScore;
-    if (goResult.gameOver && state.mode === 'sprint') finalScore += calculateRemainingItemBonus(board);
-    if (goResult.gameOver && state.mode === 'clear') finalScore = newMoveCount;
-
     return {
       boardAfterSwap, chains,
-      finalState: {
-        board: cloneBoard(board), score: finalScore, rngState: rng,
-        moveCount: newMoveCount,
-        isGameOver: goResult.gameOver, isCleared: goResult.isCleared,
-        mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
-        segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
-      },
+      finalState: resolveFinalState(
+        board, totalScore, rng, state.moveCount + 1,
+        state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+      ),
     };
   }
 
@@ -1042,31 +999,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       effects,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: (() => {
-        const newMoveCount = state.moveCount + 1;
-        const tempState: GameState = {
-          board, score: finalScore, rngState: finalRng,
-          moveCount: newMoveCount, isGameOver: false,
-          mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
-          segmentStartScore: state.segmentStartScore,
-        };
-        const goResult = checkGameOverState(tempState);
-        let score = finalScore;
-        if (goResult.gameOver && state.mode === 'sprint') score += calculateRemainingItemBonus(board);
-        if (goResult.gameOver && state.mode === 'clear') score = newMoveCount;
-        return {
-          board: cloneBoard(board),
-          score,
-          rngState: finalRng,
-          moveCount: newMoveCount,
-          isGameOver: goResult.gameOver,
-          isCleared: goResult.isCleared,
-          mode: state.mode,
-          moveLimit: state.moveLimit,
-          quotaTable: state.quotaTable,
-          segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
-        };
-      })(),
+      finalState: resolveFinalState(
+        board, finalScore, finalRng, state.moveCount + 1,
+        state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+      ),
     };
   }
 
