@@ -228,20 +228,8 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
     cellItemOverlay.clear();
   }
 
-  // Drop animation
-  const cs = cellSize.value;
-  for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const e of plan.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
-  visualBoard.value = plan.boardAfterDrop;
-  await nextFrame();
-  dropTransitioning.value = true;
-  const keys = Object.keys(dropOffsets);
-  for (const k of keys) dropOffsets[k] = 0;
-  await wait(ANIM.DROP);
-  dropTransitioning.value = false;
-  for (const k of keys) delete dropOffsets[k];
-
-  // Regular chains
+  // Drop + regular chains
+  await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
   for (const chain of plan.regularChains) await animateChainStep(chain);
 
   store.recordPlanStats(plan.regularChains);
@@ -316,20 +304,8 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
     cellItemOverlay.clear();
   }
 
-  // Drop animation
-  const cs = cellSize.value;
-  for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const e of plan.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
-  visualBoard.value = plan.boardAfterDrop;
-  await nextFrame();
-  dropTransitioning.value = true;
-  const keys = Object.keys(dropOffsets);
-  for (const k of keys) dropOffsets[k] = 0;
-  await wait(ANIM.DROP);
-  dropTransitioning.value = false;
-  for (const k of keys) delete dropOffsets[k];
-
-  // Regular chains
+  // Drop + regular chains
+  await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
   for (const chain of plan.regularChains) await animateChainStep(chain);
 
   store.recordPlanStats(plan.regularChains);
@@ -748,39 +724,34 @@ async function animateFlushSynthesis(pos: Position, targets: Position[], effectT
   await wait(ANIM.ITEM_CLEAR + 200);
 }
 
-async function animateSynthesisDropAndChains(plan: SynthesisAnimPlan) {
+/** Shared drop animation: set initial offsets, transition to 0, then clean up */
+async function animateDrop(
+  dropMoves: { col: number; fromRow: number; toRow: number }[],
+  newTileEntries: { row: number; col: number; segNulls: number }[],
+  boardAfterDrop: (Cell | null)[][],
+) {
   const cs = cellSize.value;
-  for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const e of plan.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
-  visualBoard.value = plan.boardAfterDrop;
+  for (const m of dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
+  for (const e of newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
+  visualBoard.value = boardAfterDrop;
   await nextFrame();
   dropTransitioning.value = true;
-  const dkeys = Object.keys(dropOffsets);
-  for (const k of dkeys) dropOffsets[k] = 0;
+  const keys = Object.keys(dropOffsets);
+  for (const k of keys) dropOffsets[k] = 0;
   await wait(ANIM.DROP);
   dropTransitioning.value = false;
-  for (const k of dkeys) delete dropOffsets[k];
+  for (const k of keys) delete dropOffsets[k];
+}
+
+async function animateSynthesisDropAndChains(plan: SynthesisAnimPlan) {
+  await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
   for (const chain of plan.regularChains) await animateChainStep(chain);
 }
 
 // --- Drop + chain animations ---
 
 async function animateDropAndChains(plan: ItemAnimPlan) {
-  const cs = cellSize.value;
-
-  // Drop after item effects
-  for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const e of plan.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
-  visualBoard.value = plan.boardAfterDrop;
-  await nextFrame();
-  dropTransitioning.value = true;
-  const dkeys = Object.keys(dropOffsets);
-  for (const k of dkeys) dropOffsets[k] = 0;
-  await wait(ANIM.DROP);
-  dropTransitioning.value = false;
-  for (const k of dkeys) delete dropOffsets[k];
-
-  // Regular match chains
+  await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
   for (const chain of plan.regularChains) await animateChainStep(chain);
 }
 
@@ -838,16 +809,7 @@ async function animateChainStep(chain: ChainAnimData) {
   }
 
   // Drop
-  for (const m of chain.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const e of chain.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
-  visualBoard.value = chain.boardAfterDrop;
-  await nextFrame();
-  dropTransitioning.value = true;
-  const keys = Object.keys(dropOffsets);
-  for (const k of keys) dropOffsets[k] = 0;
-  await wait(ANIM.DROP);
-  dropTransitioning.value = false;
-  for (const k of keys) delete dropOffsets[k];
+  await animateDrop(chain.dropMoves, chain.newTileEntries, chain.boardAfterDrop);
 }
 
 // --- Style helpers ---
