@@ -197,3 +197,36 @@ export class ApiError extends Error {
     super(`API Error ${status}: ${body}`);
   }
 }
+
+// --- Account transfer ---
+export async function generateTransferCode(): Promise<{ code: string; expiresIn: number }> {
+  return api<{ code: string; expiresIn: number }>('/api/auth/transfer-code', { method: 'POST' });
+}
+
+export async function redeemTransferCode(code: string): Promise<{
+  userId: string;
+  displayName: string | null;
+  accessToken: string;
+  refreshToken: string;
+}> {
+  const deviceId = getDeviceId();
+  const res = await fetch(`${API_BASE}/api/auth/redeem-transfer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, deviceId }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(res.status, body);
+  }
+  const data = await res.json() as {
+    userId: string;
+    displayName: string | null;
+    accessToken: string;
+    refreshToken: string;
+  };
+  saveTokens(data.accessToken, data.refreshToken, data.userId);
+  return data;
+}
+
+export { saveTokens };

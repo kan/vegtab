@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore, type PlayRecord } from '@/stores/game';
+import { generateTransferCode, redeemTransferCode, showToast } from '@/api/client';
 import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { useSound } from '@/sound';
@@ -43,6 +44,61 @@ async function submitShareCode() {
   if (!code) return;
   router.push(`/s/${code}`);
   showShareCodeInput.value = false;
+}
+
+// --- Account transfer ---
+const showTransferMenu = ref(false);
+const transferCode = ref('');
+const transferLoading = ref(false);
+const showRedeemInput = ref(false);
+const redeemCodeInput = ref('');
+const redeemLoading = ref(false);
+
+function openTransferMenu() {
+  menuOpen.value = false;
+  transferCode.value = '';
+  showTransferMenu.value = true;
+}
+
+async function copyTransferCode() {
+  if (!transferCode.value) return;
+  try {
+    await navigator.clipboard.writeText(transferCode.value);
+    showToast('success', 'common.copiedToClipboard');
+  } catch {
+    // Clipboard API not available
+  }
+}
+
+async function doGenerateCode() {
+  transferLoading.value = true;
+  try {
+    const result = await generateTransferCode();
+    transferCode.value = result.code;
+  } catch {
+    showTransferMenu.value = false;
+  }
+  transferLoading.value = false;
+}
+
+function openRedeemInput() {
+  menuOpen.value = false;
+  redeemCodeInput.value = '';
+  showRedeemInput.value = true;
+}
+
+async function doRedeem() {
+  const code = redeemCodeInput.value.trim().toUpperCase();
+  if (!code) return;
+  redeemLoading.value = true;
+  try {
+    const result = await redeemTransferCode(code);
+    await gameStore.resetAfterTransfer(result.displayName);
+    showRedeemInput.value = false;
+  } catch {
+    // Error shown via toast or alert
+  }
+  redeemLoading.value = false;
 }
 
 function openRanking(seed: number) {
@@ -120,7 +176,7 @@ const rankingMode = ref<'sprint' | 'clear' | 'survival'>('sprint');
 function bestPerUser(records: PlayRecord[], mode: string) {
   const best = new Map<string, PlayRecord>();
   for (const r of records) {
-    const name = r.playerName || 'Anonymous';
+    const name = r.playerName || 'NO NAME';
     const prev = best.get(name);
     if (!prev) { best.set(name, r); continue; }
     if (mode === 'clear') {
@@ -148,7 +204,7 @@ const rankingPreview = computed(() => {
   }
   return sorted.slice(0, 5).map((r, i) => ({
     rank: i + 1,
-    playerName: r.playerName || 'Anonymous',
+    playerName: r.playerName || 'NO NAME',
     score: r.score,
     moves: r.moves,
   }));
@@ -342,6 +398,15 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
               <span class="menu-item-label">{{ t('home.language') }}</span>
               <span class="menu-item-status on">{{ locale === 'ja' ? '日本語' : 'English' }}</span>
             </button>
+            <div class="menu-divider" />
+            <button class="menu-item" @click="openTransferMenu">
+              <span class="menu-item-icon">📲</span>
+              <span class="menu-item-label">{{ t('transfer.generate') }}</span>
+            </button>
+            <button class="menu-item" @click="openRedeemInput">
+              <span class="menu-item-icon">🔑</span>
+              <span class="menu-item-label">{{ t('transfer.redeem') }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -377,6 +442,51 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
           <div class="modal-actions">
             <button class="modal-btn-primary" :disabled="!shareCodeInput.trim()" @click="submitShareCode">{{ t('common.ok') }}</button>
             <button class="modal-btn-secondary" @click="showShareCodeInput = false">{{ t('common.cancel') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Transfer code generate modal -->
+    <Teleport to="body">
+      <div v-if="showTransferMenu" class="modal-overlay" @click.self="showTransferMenu = false">
+        <div class="modal">
+          <h3 class="modal-title">{{ t('transfer.title') }}</h3>
+          <p class="modal-desc">{{ t('transfer.generateDesc') }}</p>
+          <template v-if="transferCode">
+            <p class="transfer-code-label">{{ t('transfer.codeLabel') }}</p>
+            <div class="transfer-code-display" @click="copyTransferCode">{{ transferCode }}</div>
+            <p class="transfer-code-expiry">{{ t('transfer.codeExpiry', { minutes: 10 }) }}</p>
+          </template>
+          <div class="modal-actions">
+            <button v-if="!transferCode" class="modal-btn-primary" :disabled="transferLoading" @click="doGenerateCode">
+              {{ t('transfer.generate') }}
+            </button>
+            <button class="modal-btn-secondary" @click="showTransferMenu = false">{{ t('common.ok') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Transfer code redeem modal -->
+    <Teleport to="body">
+      <div v-if="showRedeemInput" class="modal-overlay" @click.self="showRedeemInput = false">
+        <div class="modal">
+          <h3 class="modal-title">{{ t('transfer.redeem') }}</h3>
+          <p class="modal-desc">{{ t('transfer.redeemDesc') }}</p>
+          <p class="transfer-warning">{{ t('transfer.warning') }}</p>
+          <input
+            v-model="redeemCodeInput"
+            class="share-code-input"
+            maxlength="10"
+            :placeholder="t('transfer.codePlaceholder')"
+            @keyup.enter="doRedeem"
+          />
+          <div class="modal-actions">
+            <button class="modal-btn-primary" :disabled="!redeemCodeInput.trim() || redeemLoading" @click="doRedeem">
+              {{ t('transfer.confirm') }}
+            </button>
+            <button class="modal-btn-secondary" @click="showRedeemInput = false">{{ t('common.cancel') }}</button>
           </div>
         </div>
       </div>
@@ -988,5 +1098,44 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
   font-size: 12px;
   color: var(--text-muted);
   margin: 0 0 16px;
+}
+.transfer-code-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.transfer-code-display {
+  font-family: monospace;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-align: center;
+  padding: 12px;
+  background: var(--bg-card-alt);
+  border: 2px dashed var(--brand);
+  border-radius: 8px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  user-select: all;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.transfer-code-display:active {
+  background: var(--bg-hover);
+}
+.transfer-code-expiry {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  margin: 0 0 12px;
+}
+.transfer-warning {
+  font-size: 11px;
+  color: var(--warning-text, #c05621);
+  background: var(--warning-bg, #fefcbf);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 0 0 12px;
 }
 </style>

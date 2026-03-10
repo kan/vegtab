@@ -52,8 +52,8 @@ const rankings = computed<RankEntry[]>(() => {
     score: r.score,
     moves: r.moves,
     playedAt: r.playedAt,
-    playerName: r.playerName || 'Anonymous',
-    isMe: (r.playerName || 'Anonymous') === myName,
+    playerName: r.playerName || 'NO NAME',
+    isMe: (r.playerName || 'NO NAME') === myName,
   }));
 });
 

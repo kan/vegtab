@@ -112,7 +112,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Pro
     return (entries.results ?? []).map((e, i) => ({
       rank: i + 1,
       userId: e.user_id,
-      displayName: e.display_name ?? 'Anonymous',
+      displayName: e.display_name ?? 'NO NAME',
       score: e.best_score,
       moveCount: e.move_count,
     }));
@@ -125,7 +125,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Pro
     return (entries.results ?? []).map((e, i) => ({
       rank: i + 1,
       userId: e.user_id,
-      displayName: e.display_name ?? 'Anonymous',
+      displayName: e.display_name ?? 'NO NAME',
       score: e.score,
       moveCount: e.best_move_count,
       isCleared: true,
@@ -139,7 +139,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Pro
   return (entries.results ?? []).map((e, i) => ({
     rank: i + 1,
     userId: e.user_id,
-    displayName: e.display_name ?? 'Anonymous',
+    displayName: e.display_name ?? 'NO NAME',
     score: e.score,
     moveCount: e.best_move_count,
   }));

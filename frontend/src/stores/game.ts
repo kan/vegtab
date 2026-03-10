@@ -38,6 +38,7 @@ export const useGameStore = defineStore('game', () => {
         await register();
       }
       await syncProfile();
+      await syncScoresFromServer();
       initialized.value = true;
     } catch (e) {
       console.warn('Failed to initialize with server, using local data', e);
@@ -59,9 +60,59 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
+  /** Fetch user's scores from server and merge into local playRecords */
+  async function syncScoresFromServer() {
+    try {
+      const data = await api<{
+        scores: Array<{
+          seedValue: number;
+          mode: GameMode;
+          moveLimit: number | null;
+          moveCount: number;
+          score: number;
+          isCleared: boolean;
+          createdAt: string;
+        }>;
+      }>('/api/scores/my');
+
+      for (const s of data.scores) {
+        // Skip if local already has a record for this seed+mode
+        const exists = playRecords.value.some(
+          r => r.seed === s.seedValue && r.mode === s.mode,
+        );
+        if (exists) continue;
+
+        playRecords.value.push({
+          seed: s.seedValue,
+          mode: s.mode,
+          score: s.score,
+          moves: s.moveCount,
+          moveLimit: s.moveLimit ?? undefined,
+          isCleared: s.isCleared,
+          playedAt: new Date(s.createdAt + 'Z').getTime(),
+          playerName: effectiveName.value,
+        });
+      }
+      saveRecords();
+    } catch {
+      // Silently fail — local data still usable
+    }
+  }
+
   async function setDisplayName(name: string) {
+    const oldName = effectiveName.value;
     displayName.value = name.slice(0, 20);
     localStorage.setItem('tomado_display_name', displayName.value);
+
+    // Update playerName on existing local records that had the old name
+    const newName = effectiveName.value;
+    if (oldName !== newName) {
+      for (const r of playRecords.value) {
+        if (r.playerName === oldName) r.playerName = newName;
+      }
+      saveRecords();
+    }
+
     try {
       await api('/api/user/profile', {
         method: 'PATCH',
@@ -72,7 +123,7 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  const effectiveName = computed(() => displayName.value || 'Anonymous');
+  const effectiveName = computed(() => displayName.value || 'NO NAME');
 
   // --- Seeds ---
 
@@ -202,6 +253,20 @@ export const useGameStore = defineStore('game', () => {
     localStorage.setItem('tomado_share_codes_v2', JSON.stringify(shareCodeCache.value));
   }
 
+  /** Reset local state after account transfer, then resync from server */
+  async function resetAfterTransfer(newDisplayName: string | null) {
+    displayName.value = newDisplayName ?? '';
+    localStorage.setItem('tomado_display_name', displayName.value);
+    playRecords.value = [];
+    saveRecords();
+    shareCodeCache.value = {};
+    saveShareCodeCache();
+    initialized.value = false;
+    // Resync scores from the transferred account
+    await syncScoresFromServer();
+    initialized.value = true;
+  }
+
   return {
     displayName, effectiveName, setDisplayName,
     playRecords,
@@ -209,8 +274,9 @@ export const useGameStore = defineStore('game', () => {
     isTodaysDailySeed,
     addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves,
     getDailySeeds, hasPlayedDaily,
-    init, syncProfile, initialized,
+    init, syncProfile, syncScoresFromServer, initialized,
     getShareCode,
+    resetAfterTransfer,
   };
 });
 

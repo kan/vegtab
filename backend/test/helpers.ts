@@ -50,6 +50,15 @@ CREATE TABLE IF NOT EXISTS achievements (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_achievements_user_type ON achievements(user_id, achievement_type);
+
+CREATE TABLE IF NOT EXISTS user_devices (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  device_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_device_id ON user_devices(device_id);
+CREATE INDEX IF NOT EXISTS idx_user_devices_user_id ON user_devices(user_id);
 `;
 
 export async function applyMigrations() {

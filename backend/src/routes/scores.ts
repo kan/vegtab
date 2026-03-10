@@ -105,18 +105,21 @@ scoreRoutes.get('/my', async (c) => {
   const userId = c.get('userId');
   const seedId = c.req.query('seedId');
 
-  let query = `SELECT ps.id, ps.seed_id, ps.mode, ps.move_count, ps.score, ps.is_cleared, ps.created_at
-    FROM play_scores ps WHERE ps.user_id = ?`;
+  let query = `SELECT ps.id, ps.seed_id, s.seed_value, ps.mode, ps.move_limit, ps.move_count, ps.score, ps.is_cleared, ps.created_at
+    FROM play_scores ps
+    JOIN puzzle_seeds s ON s.id = ps.seed_id
+    WHERE ps.user_id = ?`;
   const params: unknown[] = [userId];
 
   if (seedId) {
     query += ' AND ps.seed_id = ?';
     params.push(seedId);
   }
-  query += ' ORDER BY ps.created_at DESC LIMIT 50';
+  query += ' ORDER BY ps.created_at DESC LIMIT 200';
 
   const scores = await c.env.DB.prepare(query).bind(...params).all<{
-    id: string; seed_id: string; mode: string; move_count: number; score: number;
+    id: string; seed_id: string; seed_value: string; mode: string;
+    move_limit: number | null; move_count: number; score: number;
     is_cleared: number; created_at: string;
   }>();
 
@@ -124,7 +127,9 @@ scoreRoutes.get('/my', async (c) => {
     scores: (scores.results ?? []).map((s) => ({
       id: s.id,
       seedId: s.seed_id,
+      seedValue: Number(s.seed_value),
       mode: s.mode,
+      moveLimit: s.move_limit,
       moveCount: s.move_count,
       score: s.score,
       isCleared: !!s.is_cleared,
