@@ -111,8 +111,6 @@ watch(() => store.isGameOver, (ended) => {
       isCleared: store.isCleared ?? false,
       moveLimit: store.moveLimit,
     });
-    // Eagerly fetch share code for score screen
-    gameStore.getShareCode(store.seed!).then(code => { shareCode.value = code; }).catch(() => {});
     // Prompt for name if not set
     if (!gameStore.displayName) {
       showNamePrompt.value = true;
@@ -138,9 +136,8 @@ const shareUrl = computed(() => shareCode.value ? `${location.origin}/s/${shareC
 
 async function shareScore() {
   if (store.seed === undefined) return;
-  if (!shareCode.value) {
-    shareCode.value = await gameStore.getShareCode(store.seed);
-  }
+  const cachedCode = gameStore.getShareCode(store.seed);
+  if (cachedCode) shareCode.value = cachedCode;
   const code = shareCode.value ?? `#${store.seed}`;
   const url = shareUrl.value ?? '';
   const modeLabel = t(`mode.${selectedMode.value}`);

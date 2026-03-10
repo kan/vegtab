@@ -29,10 +29,6 @@ onMounted(async () => {
       gameStore.init(),
       api<{ seedId: string; seedValue: string; shareCode: string }>(`/api/seeds/by-code/${code}`),
     ]);
-    const n = Number(res.seedValue);
-    if (!Number.isNaN(n)) {
-      gameStore.cacheShareCode(n, res.seedId, res.shareCode);
-    }
     seedInfo.value = { seedValue: res.seedValue, shareCode: res.shareCode };
 
     // Mobile: redirect immediately

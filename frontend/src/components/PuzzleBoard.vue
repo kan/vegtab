@@ -891,7 +891,7 @@ function tileTransition(r: number, c: number) {
                 <div v-if="activeBoard[row - 1][col - 1]!.obstacle" class="tile obstacle-cell" :class="{ 'is-obstacle-clearing': obstacleClearingCells.has(pk(row - 1, col - 1)), 'is-obstacle-damaged': obstacleDamagedCells.has(pk(row - 1, col - 1)) }">
                   <ObstacleTile
                     :durability="activeBoard[row - 1][col - 1]!.obstacle!.durability"
-                    :size="cellSize - 5"
+                    :size="Math.max(0, cellSize - 5)"
                   />
                 </div>
 
@@ -912,7 +912,7 @@ function tileTransition(r: number, c: number) {
                 >
                   <VegetableIcon
                     :color="activeBoard[row - 1][col - 1]!.color"
-                    :size="cellSize - 5"
+                    :size="Math.max(0, cellSize - 5)"
                   />
                   <span
                     v-if="matchedCells.has(pk(row - 1, col - 1)) || clearingCells.has(pk(row - 1, col - 1))"

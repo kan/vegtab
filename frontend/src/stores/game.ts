@@ -24,9 +24,9 @@ export const useGameStore = defineStore('game', () => {
   const displayName = ref(loadStr('tomado_display_name', ''));
   const playRecords = ref<PlayRecord[]>(loadJson('tomado_play_records', []));
   const initialized = ref(false);
-  // Map: engine seed number → { backendSeedId, shareCode }
-  const shareCodeMap = ref<Record<number, { seedId: string; shareCode: string }>>(
-    loadJson('tomado_share_codes', {})
+  // Cache: engine seed number → shareCode (populated from score submission response)
+  const shareCodeCache = ref<Record<number, string>>(
+    loadJson('tomado_share_codes_v2', {})
   );
 
   /** Initialize: ensure authenticated and sync with server */
@@ -92,6 +92,19 @@ export const useGameStore = defineStore('game', () => {
     return ((Date.now() & 0x7fffffff) ^ (Math.random() * 0x7fffffff)) >>> 0;
   }
 
+  /** Find the date string for a daily seed number, or null if not a daily seed */
+  function findDailyDate(seed: number): string | null {
+    // Check today ±1 day (timezone tolerance)
+    const today = new Date();
+    for (let offset = -1; offset <= 1; offset++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + offset);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (generateDailySeed(dateStr) === seed) return dateStr;
+    }
+    return null;
+  }
+
   // --- Play records ---
 
   function addPlayRecord(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
@@ -106,23 +119,16 @@ export const useGameStore = defineStore('game', () => {
   }
 
   async function submitScoreToBackend(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
-    // Reuse getShareCode to ensure seed is registered (with deduplication)
-    try {
-      await getShareCode(record.seed);
-    } catch {
-      showToast('error', 'toast.scoreSubmitFailed');
-      return;
-    }
-    const seedId = shareCodeMap.value[record.seed]?.seedId;
-    if (!seedId) {
-      showToast('error', 'toast.scoreSubmitFailed');
+    const date = findDailyDate(record.seed);
+    if (!date) {
+      // Not a daily seed — cannot submit
       return;
     }
     try {
-      await api('/api/scores', {
+      const res = await api<{ scoreId: string; shareCode: string }>('/api/scores', {
         method: 'POST',
         body: JSON.stringify({
-          seedId,
+          date,
           mode: record.mode,
           moveLimit: record.moveLimit ?? null,
           moveCount: record.moves,
@@ -132,6 +138,11 @@ export const useGameStore = defineStore('game', () => {
         }),
         offlineQueue: true,
       });
+      // Cache the shareCode for sharing
+      if (res.shareCode) {
+        shareCodeCache.value[record.seed] = res.shareCode;
+        saveShareCodeCache();
+      }
     } catch {
       // Error already handled by api() (toast shown, or queued offline)
     }
@@ -180,44 +191,20 @@ export const useGameStore = defineStore('game', () => {
     return playRecords.value.some(r => r.seed === seed);
   }
 
+  // --- Share ---
+
+  function getShareCode(seed: number): string | null {
+    return shareCodeCache.value[seed] ?? null;
+  }
+
   // --- Persistence ---
 
   function saveRecords() {
     localStorage.setItem('tomado_play_records', JSON.stringify(playRecords.value));
   }
 
-  function saveShareCodes() {
-    localStorage.setItem('tomado_share_codes', JSON.stringify(shareCodeMap.value));
-  }
-
-  /** Cache a share code mapping and persist to localStorage */
-  function cacheShareCode(seed: number, seedId: string, shareCode: string) {
-    shareCodeMap.value[seed] = { seedId, shareCode };
-    saveShareCodes();
-  }
-
-  /** Get or create a shareCode for a seed by registering it with the backend */
-  const pendingShareCodes = new Map<number, Promise<string | null>>();
-  async function getShareCode(seed: number): Promise<string | null> {
-    const cached = shareCodeMap.value[seed];
-    if (cached) return cached.shareCode;
-    const inflight = pendingShareCodes.get(seed);
-    if (inflight) return inflight;
-    const p = (async () => {
-      try {
-        const res = await api<{ seedId: string; seedValue: string; shareCode: string }>('/api/seeds/generate', {
-          method: 'POST',
-          body: JSON.stringify({ seedValue: String(seed) }),
-        });
-        cacheShareCode(seed, res.seedId, res.shareCode);
-        return res.shareCode;
-      } catch {
-        return null;
-      }
-    })();
-    pendingShareCodes.set(seed, p);
-    p.finally(() => pendingShareCodes.delete(seed));
-    return p;
+  function saveShareCodeCache() {
+    localStorage.setItem('tomado_share_codes_v2', JSON.stringify(shareCodeCache.value));
   }
 
   return {
@@ -228,7 +215,7 @@ export const useGameStore = defineStore('game', () => {
     addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves,
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, initialized,
-    getShareCode, cacheShareCode,
+    getShareCode,
   };
 });
 
@@ -250,4 +237,3 @@ function loadJson<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-
