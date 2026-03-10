@@ -288,7 +288,36 @@ project/
 - **トークン管理:** アクセストークン（1h）とリフレッシュトークン（90d）の2トークン方式。ライブラリは jose。
 - **匿名ログインフロー:** 初回アクセス時にクライアント側でUUIDを生成、バックエンドに送信して「ゲストユーザー」としてD1に登録。
 
-### 5.2. 不正対策
+### 5.2. アカウント引き継ぎ（マルチデバイス）
+
+1つのアカウントを複数のデバイス/ブラウザで共有する仕組み。引き継ぎ後も元の端末はそのまま利用可能。
+
+**引き継ぎコード発行フロー:**
+1. ユーザーが設定画面で「引き継ぎコード発行」をタップ
+2. バックエンドが8文字の英数字コードを生成し、KVに `link:{code}` → `userId` を保存（TTL: 10分）
+3. コードと有効期限をユーザーに表示
+
+**引き継ぎコード入力フロー:**
+1. 別端末で「引き継ぎコードを入力」を選択し、8文字コードを入力
+2. バックエンドがKVからコードを検索し、対応する `userId` を取得
+3. 新端末の `device_id` を `user_devices` テーブルに登録
+4. 対象ユーザーのJWTを発行し、新端末に保存
+5. KVからコードを削除（1回限り有効）
+
+**マルチデバイス管理:**
+- `user_devices` テーブルで1ユーザーに複数の `device_id` を紐付ける
+- 認証時のデバイス検索順序: `user_devices` → `users.device_id`（後方互換）
+- 各端末は独立したJWTを保持し、同時にログイン可能
+- 新端末にもともと別ユーザーが存在した場合、そのユーザーは孤立する（スコアデータは残るがデバイス紐付けは解除）
+
+**API:**
+- `POST /api/account/link-code`（認証必須）→ `{ code, expiresAt }`
+- `POST /api/account/link`（認証不要）→ `{ code, deviceId }` → `{ userId, accessToken, refreshToken }`
+
+**将来拡張:**
+- Google / Apple ID 連携による外部認証。`user_devices` テーブルと同様の構造で `user_auth_providers` テーブルを追加し、外部プロバイダのID → `userId` のマッピングを管理する。
+
+### 5.3. 不正対策
 
 段階的に対策を強化する。
 
@@ -302,6 +331,7 @@ project/
 ## 6. データベース設計 (Cloudflare D1)
 
 - **`users`**: `id` (UUID), `display_name` (表示名, 最大20文字), `device_id`, `created_at`
+- **`user_devices`**: `user_id` (FK→users), `device_id` (UNIQUE), `linked_at` — マルチデバイス対応。引き継ぎコードで紐付けた追加デバイスを管理。
 - **`puzzle_seeds`**: `seed_id`, `seed_value` (ユニーク), `share_code` (ユニーク, 6〜8文字の英数字), `daily_date` (YYYY-MM-DD), `created_at`
 - **`play_scores`**: `id`, `user_id`, `seed_id`, `mode` (sprint / clear / survival), `score`, `move_count` (実際の手数), `move_limit` (Sprint: 規定手数, nullable), `is_cleared` (Clearモードのクリア可否), `replay_log_key` (R2のオブジェクトキー), `created_at`
 - **`achievements`**: `id`, `user_id`, `achievement_type`, `current_value`, `is_unlocked`, `unlocked_at`
@@ -376,6 +406,13 @@ Cloudflare Workers + D1によるAPI実装。
 2. 対象: スコア送信失敗、ランキング取得失敗、認証エラー、ネットワークエラー
 3. エラー種別に応じたメッセージとリトライ導線の提供
 4. i18n対応（日本語/英語）
+
+**C. アカウント引き継ぎ（§5.2 の実装）**
+1. DBマイグレーション: `user_devices` テーブル追加
+2. バックエンド: 引き継ぎコード発行API（KV, TTL 10分）、引き継ぎコード入力API（user_devices登録 + JWT発行）
+3. バックエンド: 認証フローの修正（`user_devices` → `users.device_id` の順で検索）
+4. フロントエンド: 設定画面にコード発行UI（コード表示 + 有効期限カウントダウン）、コード入力UI
+5. i18n対応
 
 #### 中優先度
 
