@@ -105,6 +105,15 @@ export default {
     noRecord: '記録なし',
     moves: '{count}手',
   },
+  toast: {
+    scoreSavedOffline: 'スコアをオフライン保存しました。接続復帰時に自動送信されます。',
+    networkError: 'サーバーに接続できません。オフラインモードで動作中です。',
+    authRetry: '再認証しています…',
+    offlineQueueSent: 'オフラインデータを同期しました！',
+    offlineQueueFailed: '一部のオフラインデータを同期できませんでした。',
+    scoreSubmitFailed: 'スコアの送信に失敗しました。',
+    rankingFetchFailed: 'ランキングを取得できませんでした。',
+  },
   shareRedirect: {
     notFound: 'シードが見つかりません',
     notFoundMessage: 'この共有リンクは無効または期限切れです。',

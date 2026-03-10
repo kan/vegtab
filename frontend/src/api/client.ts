@@ -1,3 +1,5 @@
+import { enqueue, processQueue } from './offlineQueue';
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787';
 
 const TOKEN_KEY = 'tomado_access_token';
@@ -63,26 +65,62 @@ export async function register(): Promise<{ userId: string }> {
   return { userId: data.userId };
 }
 
+// --- Toast notification system ---
+export type ToastType = 'error' | 'info' | 'success';
+export interface ToastEvent {
+  type: ToastType;
+  messageKey: string;
+  duration?: number;
+}
+type ToastListener = (event: ToastEvent) => void;
+const toastListeners: ToastListener[] = [];
+
+export function onToast(listener: ToastListener): () => void {
+  toastListeners.push(listener);
+  return () => {
+    const idx = toastListeners.indexOf(listener);
+    if (idx >= 0) toastListeners.splice(idx, 1);
+  };
+}
+
+export function showToast(type: ToastType, messageKey: string, duration = 4000) {
+  for (const l of toastListeners) l({ type, messageKey, duration });
+}
+
+// --- API call ---
 export async function api<T = unknown>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & { offlineQueue?: boolean } = {},
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
+  const { offlineQueue: shouldQueue, ...fetchOptions } = options;
 
   const doFetch = async () => {
     const headers: Record<string, string> = {
-      ...(options.headers as Record<string, string> ?? {}),
+      ...(fetchOptions.headers as Record<string, string> ?? {}),
     };
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
-    if (options.body && !headers['Content-Type']) {
+    if (fetchOptions.body && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
-    return fetch(url, { ...options, headers });
+    return fetch(url, { ...fetchOptions, headers });
   };
 
-  let res = await doFetch();
+  let res: Response;
+  try {
+    res = await doFetch();
+  } catch (e) {
+    // Network error
+    if (shouldQueue && fetchOptions.body && typeof fetchOptions.body === 'string') {
+      enqueue(path, fetchOptions.method ?? 'POST', fetchOptions.body);
+      showToast('info', 'toast.scoreSavedOffline');
+      throw new ApiError(0, 'Network error — queued for retry');
+    }
+    showToast('error', 'toast.networkError');
+    throw e;
+  }
 
   // Auto-refresh on 401
   if (res.status === 401 && refreshToken) {
@@ -90,18 +128,52 @@ export async function api<T = unknown>(
     if (refreshed) {
       res = await doFetch();
     } else {
-      // Re-register if refresh also fails
+      showToast('info', 'toast.authRetry');
       await register();
       res = await doFetch();
     }
   }
 
   if (!res.ok) {
+    if (shouldQueue && res.status >= 500 && fetchOptions.body && typeof fetchOptions.body === 'string') {
+      enqueue(path, fetchOptions.method ?? 'POST', fetchOptions.body);
+      showToast('info', 'toast.scoreSavedOffline');
+      throw new ApiError(res.status, 'Server error — queued for retry');
+    }
     const body = await res.text();
     throw new ApiError(res.status, body);
   }
 
   return res.json() as Promise<T>;
+}
+
+// --- Offline queue processing ---
+function buildAuthFetch() {
+  return async (url: string, method: string, body: string): Promise<Response> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+    return fetch(`${API_BASE}${url}`, { method, headers, body });
+  };
+}
+
+export async function flushOfflineQueue(): Promise<{ succeeded: number; failed: number; remaining: number }> {
+  const result = await processQueue(buildAuthFetch());
+  if (result.succeeded > 0) {
+    showToast('success', 'toast.offlineQueueSent');
+  }
+  if (result.failed > 0) {
+    showToast('error', 'toast.offlineQueueFailed');
+  }
+  return result;
+}
+
+// Auto-flush on online event
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { flushOfflineQueue(); });
 }
 
 export class ApiError extends Error {

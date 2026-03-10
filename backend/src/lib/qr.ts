@@ -296,7 +296,7 @@ export function generateOgpSvg(shareCode: string, shareUrl: string, description:
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
 <rect width="${width}" height="${height}" fill="#f5f0e8"/>
-<text x="80" y="200" font-family="sans-serif" font-size="64" font-weight="800" fill="#4CAF50">Tomado</text>
+<text x="80" y="200" font-family="sans-serif" font-size="64" font-weight="800" fill="#2e7d32">Vege-Table</text>
 <text x="80" y="280" font-family="sans-serif" font-size="36" font-weight="700" fill="#333" letter-spacing="0.15em">${escapeXml(shareCode)}</text>
 <text x="80" y="340" font-family="sans-serif" font-size="22" fill="#666">${escapeXml(description)}</text>
 <text x="80" y="500" font-family="sans-serif" font-size="18" fill="#999">Daily 3-Match Puzzle</text>

@@ -105,6 +105,15 @@ export default {
     noRecord: 'No record yet',
     moves: '{count} moves',
   },
+  toast: {
+    scoreSavedOffline: 'Score saved offline. It will be sent automatically when you reconnect.',
+    networkError: 'Could not connect to the server. Playing in offline mode.',
+    authRetry: 'Re-authenticating...',
+    offlineQueueSent: 'Offline data synced successfully!',
+    offlineQueueFailed: 'Some offline data could not be synced.',
+    scoreSubmitFailed: 'Failed to submit score.',
+    rankingFetchFailed: 'Could not load ranking.',
+  },
   shareRedirect: {
     notFound: 'Seed not found',
     notFoundMessage: 'This share link may be invalid or expired.',

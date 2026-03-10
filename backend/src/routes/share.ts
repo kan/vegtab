@@ -11,18 +11,37 @@ interface SeedRow {
   id: string; seed_value: string; share_code: string; is_daily: number; daily_date: string | null;
 }
 
-async function lookupSeedWithTopScore(db: D1Database, seedId: string) {
+interface TopScoreRow {
+  mode: string;
+  best_score: number;
+  best_moves: number;
+}
+
+async function lookupSeedWithTopScores(db: D1Database, seedId: string) {
   const seed = await db.prepare(
     'SELECT id, seed_value, share_code, is_daily, daily_date FROM puzzle_seeds WHERE id = ? OR share_code = ?'
   ).bind(seedId, seedId.toUpperCase()).first<SeedRow>();
   if (!seed) return null;
 
-  const topScore = await db.prepare(
-    `SELECT MAX(score) as best_score FROM play_scores
-     WHERE seed_id = ? AND mode = 'limited'`
-  ).bind(seed.id).first<{ best_score: number | null }>();
+  const scores = await db.prepare(
+    `SELECT mode, MAX(score) as best_score, MAX(move_count) as best_moves
+     FROM play_scores WHERE seed_id = ? GROUP BY mode`
+  ).bind(seed.id).all<TopScoreRow>();
 
-  return { seed, bestScore: topScore?.best_score ?? null };
+  const topScores: Record<string, { score: number; moves: number }> = {};
+  for (const row of scores.results ?? []) {
+    topScores[row.mode] = { score: row.best_score, moves: row.best_moves };
+  }
+
+  return { seed, topScores };
+}
+
+function buildDescription(topScores: Record<string, { score: number; moves: number }>): string {
+  const parts: string[] = [];
+  if (topScores.sprint) parts.push(`Sprint: ${topScores.sprint.score} pts`);
+  if (topScores.clear) parts.push(`Clear: ${topScores.clear.moves} moves`);
+  if (topScores.survival) parts.push(`Survival: ${topScores.survival.moves} moves`);
+  return parts.length > 0 ? parts.join(' | ') : 'Try this puzzle!';
 }
 
 export const shareRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -30,16 +49,14 @@ export const shareRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }
 // GET /s/:seedId/ogp.svg - Dynamic OGP image with QR code
 shareRoutes.get('/:seedId/ogp.svg', async (c) => {
   const seedId = c.req.param('seedId');
-  const result = await lookupSeedWithTopScore(c.env.DB, seedId);
+  const result = await lookupSeedWithTopScores(c.env.DB, seedId);
 
   if (!result) {
     return c.text('Not found', 404);
   }
 
-  const { seed, bestScore } = result;
-  const description = bestScore
-    ? `Top score: ${bestScore} points`
-    : 'Try this puzzle!';
+  const { seed, topScores } = result;
+  const description = buildDescription(topScores);
 
   const baseUrl = getBaseUrl(c.env);
   const shareUrl = `${baseUrl}/s/${seed.share_code}`;
@@ -56,19 +73,20 @@ shareRoutes.get('/:seedId', async (c) => {
   const seedId = c.req.param('seedId');
   const ua = c.req.header('User-Agent') ?? '';
 
-  const result = await lookupSeedWithTopScore(c.env.DB, seedId);
+  const result = await lookupSeedWithTopScores(c.env.DB, seedId);
 
   if (!result) {
     return c.html('<html><body><h1>Seed not found</h1></body></html>', 404);
   }
 
-  const { seed, bestScore } = result;
+  const { seed, topScores } = result;
   const title = escapeHtml(seed.is_daily
-    ? `Tomado Daily Puzzle - ${seed.daily_date}`
-    : `Tomado Puzzle - ${seed.share_code}`);
-  const description = escapeHtml(bestScore
-    ? `Top score: ${bestScore} points. Can you beat it?`
-    : 'Try this puzzle and compete for the high score!');
+    ? `Vege-Table Daily Puzzle - ${seed.daily_date}`
+    : `Vege-Table Puzzle - ${seed.share_code}`);
+  const description = escapeHtml(
+    buildDescription(topScores)
+      + (Object.keys(topScores).length > 0 ? '. Can you beat it?' : '')
+  );
   const shareCode = seed.share_code;
   const safeShareCode = escapeHtml(shareCode);
   const baseUrl = getBaseUrl(c.env);

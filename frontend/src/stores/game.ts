@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { todayLocal } from '@/utils/date';
-import { api, register, isAuthenticated } from '@/api/client';
+import { api, register, isAuthenticated, showToast } from '@/api/client';
 
 // --- Types ---
 
@@ -14,6 +14,8 @@ export interface PlayRecord {
   moves: number;
   playedAt: number;
   playerName: string;
+  isCleared?: boolean;
+  moveLimit?: number;
 }
 
 // --- Store ---
@@ -99,6 +101,44 @@ export const useGameStore = defineStore('game', () => {
       playerName: effectiveName.value,
     });
     saveRecords();
+    // Submit score to backend (fire-and-forget with offline queue)
+    submitScoreToBackend(record);
+  }
+
+  async function submitScoreToBackend(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
+    const cached = shareCodeMap.value[record.seed];
+    let seedId = cached?.seedId;
+    if (!seedId) {
+      // Ensure the seed is registered with the backend
+      try {
+        const res = await api<{ seedId: string; shareCode: string }>('/api/seeds/generate', {
+          method: 'POST',
+          body: JSON.stringify({ seedValue: String(record.seed) }),
+        });
+        cacheShareCode(record.seed, res.seedId, res.shareCode);
+        seedId = res.seedId;
+      } catch {
+        showToast('error', 'toast.scoreSubmitFailed');
+        return;
+      }
+    }
+    try {
+      await api('/api/scores', {
+        method: 'POST',
+        body: JSON.stringify({
+          seedId,
+          mode: record.mode,
+          moveLimit: record.moveLimit ?? null,
+          moveCount: record.moves,
+          score: record.score,
+          isCleared: record.isCleared ?? false,
+          replayLog: [],
+        }),
+        offlineQueue: true,
+      });
+    } catch {
+      // Error already handled by api() (toast shown, or queued offline)
+    }
   }
 
   function getRecordsForSeed(seed: number, mode?: GameMode): PlayRecord[] {

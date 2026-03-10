@@ -108,6 +108,8 @@ watch(() => store.isGameOver, (ended) => {
       mode: selectedMode.value,
       score: store.score,
       moves: store.moveCount,
+      isCleared: store.isCleared ?? false,
+      moveLimit: store.moveLimit,
     });
     // Eagerly fetch share code for score screen
     gameStore.getShareCode(store.seed!).then(code => { shareCode.value = code; }).catch(() => {});
