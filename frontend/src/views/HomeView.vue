@@ -177,12 +177,16 @@ const rankingMode = ref<'sprint' | 'clear' | 'survival'>('sprint');
 const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number }>>([]);
 const rankingLoading = ref(false);
 
+let previewSeq = 0;
+
 async function fetchRankingPreview() {
+  const seq = ++previewSeq;
   rankingLoading.value = true;
   try {
     const data = await api<{
       ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number }>;
     }>(`/api/rankings/by-value/${todaySeed.value}?mode=${rankingMode.value}`);
+    if (seq !== previewSeq) return;
     rankingPreview.value = data.ranking.slice(0, 5).map(e => ({
       rank: e.rank,
       playerName: e.displayName,
@@ -190,6 +194,7 @@ async function fetchRankingPreview() {
       moves: e.moveCount,
     }));
   } catch {
+    if (seq !== previewSeq) return;
     rankingPreview.value = [];
   }
   rankingLoading.value = false;
@@ -966,21 +971,12 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
   text-align: center;
   padding: 8px 0;
 }
+/* Skeleton loading (animation in theme.css) */
 .skeleton-row { pointer-events: none; }
-.skeleton-block {
-  display: inline-block;
-  height: 12px;
-  border-radius: 3px;
-  background: var(--skeleton-bg, rgba(128, 128, 128, 0.15));
-  animation: shimmer 1.2s ease-in-out infinite alternate;
-}
+.skeleton-block { display: inline-block; height: 12px; }
 .skeleton-rank { width: 16px; }
 .skeleton-name { flex: 1; }
 .skeleton-val { width: 40px; }
-@keyframes shimmer {
-  from { opacity: 0.4; }
-  to { opacity: 1; }
-}
 
 /* Calendar */
 .calendar {

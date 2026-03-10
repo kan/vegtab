@@ -39,7 +39,10 @@ watch(() => props.open, (o) => {
 });
 watch(activeMode, () => { if (props.open) fetchRanking(); });
 
+let fetchSeq = 0;
+
 async function fetchRanking() {
+  const seq = ++fetchSeq;
   loading.value = true;
   try {
     const userId = getUserId();
@@ -55,6 +58,7 @@ async function fetchRanking() {
       userRank: { rank: number; score: number; moveCount?: number } | null;
     }>(`/api/rankings/by-value/${props.seed}?mode=${activeMode.value}`);
 
+    if (seq !== fetchSeq) return; // stale response
     rankings.value = data.ranking.map(e => ({
       rank: e.rank,
       score: e.score,
@@ -64,6 +68,7 @@ async function fetchRanking() {
     }));
     myRank.value = data.userRank;
   } catch {
+    if (seq !== fetchSeq) return;
     rankings.value = [];
     myRank.value = null;
   }
@@ -360,40 +365,17 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
   font-size: 14px;
 }
 
-/* Skeleton loading */
+/* Skeleton loading (animation in theme.css) */
 .skeleton-card {
   flex-direction: column;
   gap: 8px;
   background: var(--bg-card-alt);
 }
-.skeleton-row {
-  gap: 10px;
-}
-.skeleton-circle {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--skeleton-bg, rgba(128, 128, 128, 0.15));
-  flex-shrink: 0;
-  animation: shimmer 1.2s ease-in-out infinite alternate;
-}
-.skeleton-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.skeleton-line {
-  height: 12px;
-  border-radius: 4px;
-  background: var(--skeleton-bg, rgba(128, 128, 128, 0.15));
-  animation: shimmer 1.2s ease-in-out infinite alternate;
-}
+.skeleton-row { gap: 10px; }
+.skeleton-circle { width: 24px; height: 24px; flex-shrink: 0; }
+.skeleton-text { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.skeleton-line { height: 12px; }
 .skeleton-wide { width: 70%; }
 .skeleton-short { width: 40%; }
 .skeleton-score { width: 48px; height: 14px; flex-shrink: 0; }
-@keyframes shimmer {
-  from { opacity: 0.4; }
-  to { opacity: 1; }
-}
 </style>
