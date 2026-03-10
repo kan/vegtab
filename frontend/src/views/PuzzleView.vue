@@ -132,8 +132,8 @@ watch(() => [route.params.seed, route.query.mode], () => {
 });
 
 // --- Record score when game ends ---
-watch(() => store.isGameOver, (ended) => {
-  if (ended && !scoreRecorded.value && store.seed !== undefined) {
+watch([() => store.isGameOver, () => store.autoActivating], ([ended, activating]) => {
+  if (ended && !activating && !scoreRecorded.value && store.seed !== undefined) {
     clearSession();
     stopBGM();
     const isPositiveEnd = (selectedMode.value === 'sprint'
@@ -306,7 +306,7 @@ const gameOverScore = computed(() => {
       </div>
 
       <!-- Game over overlay -->
-      <div v-if="store.isGameOver" class="game-over-overlay">
+      <div v-if="store.isGameOver && !store.autoActivating" class="game-over-overlay">
         <div class="game-over-card">
           <h2>{{ gameOverTitle }}</h2>
           <p class="final-score">{{ gameOverScore }}</p>

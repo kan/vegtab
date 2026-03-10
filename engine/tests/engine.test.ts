@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { initializeGame, processAction, processScopeSynthesis, cloneGameState } from '../src/engine.js';
 import { hasMatches, findMatches } from '../src/match.js';
 import { isGameOver, hasValidSwap, hasActivatableItems, checkGameOverState } from '../src/gameOver.js';
-import { calculateRemainingItemBonus } from '../src/score.js';
 import { countObstacles, allObstaclesCleared } from '../src/obstacle.js';
 import { DEFAULT_QUOTA_TABLE } from '../src/survival.js';
 import { BOARD_SIZE, Cell, Color, GameState } from '../src/types.js';
@@ -160,40 +159,21 @@ describe('Game Mode', () => {
 });
 
 
-describe('Remaining Item Bonus', () => {
-  it('盤上のアイテムに応じたボーナスを計算', () => {
-    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
-      Array.from({ length: BOARD_SIZE }, () => ({ color: 0 as Color }))
-    );
-    board[0][0] = { color: 0 as Color, item: 'scope' };
-    board[1][1] = { color: 0 as Color, item: 'v_cut' };
-    board[2][2] = { color: 0 as Color, item: 'flush' };
-    expect(calculateRemainingItemBonus(board)).toBe(50 + 150 + 500);
-  });
-
-  it('アイテムがなければボーナス0', () => {
-    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
-      Array.from({ length: BOARD_SIZE }, () => ({ color: 0 as Color }))
-    );
-    expect(calculateRemainingItemBonus(board)).toBe(0);
-  });
-
-  it('Sprintモード終了時に残存アイテムボーナスが加算される', () => {
+describe('Sprint game over (no item bonus)', () => {
+  it('Sprintモード終了時に残存アイテムボーナスは加算されない', () => {
     // 1手制限で始めて、アイテムを配置してから1手消費
     let state = initializeGame(42, 'sprint', { moveLimit: 1 });
-    // 手動でアイテムを配置
     state.board[7][7] = { color: 0 as Color, item: 'flush' };
     const action = findValidSwap(state);
     if (!action) return;
     const newState = processAction(state, action);
     if (newState.isGameOver) {
-      // flushが残っていればボーナスが加算されているはず
       const flushOnBoard = newState.board.some(row =>
         row.some(cell => cell?.item === 'flush')
       );
       if (flushOnBoard) {
-        // スコアにはアイテムボーナス500が含まれる
-        expect(newState.score).toBeGreaterThanOrEqual(500);
+        // ボーナスなし: スコアは500未満のはず（アイテム自動発動はフロントエンド側で処理）
+        expect(newState.score).toBeLessThan(500);
       }
     }
   });
@@ -255,9 +235,8 @@ describe('Sprint Mode', () => {
     expect(state.moveLimit).toBe(25);
   });
 
-  it('ゲーム終了時に残存アイテムボーナスが加算される', () => {
+  it('ゲーム終了時に残存アイテムボーナスは加算されない（自動発動はフロントエンド側）', () => {
     let state = initializeGame(42, 'sprint', { moveLimit: 1 });
-    // アイテムを手動配置
     state.board[7][7] = { color: 0 as Color, item: 'v_cut' };
     const action = findValidSwap(state);
     if (!action) return;
@@ -267,7 +246,8 @@ describe('Sprint Mode', () => {
         row.some(cell => cell?.item === 'v_cut')
       );
       if (vCutOnBoard) {
-        expect(newState.score).toBeGreaterThanOrEqual(150);
+        // ボーナスなし: v_cutの150点は加算されない
+        expect(newState.score).toBeLessThan(150);
       }
     }
   });

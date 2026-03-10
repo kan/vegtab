@@ -15,7 +15,7 @@ import {
   getVCutTargets, getHCutTargets, getBurstTargets,
   getScopeAdjacentTargets,
 } from './item.js';
-import { calculateStepScore, getFullClearBonus, calculateRemainingItemBonus } from './score.js';
+import { calculateStepScore, getFullClearBonus } from './score.js';
 import { checkGameOverState } from './gameOver.js';
 import { generateObstacles, damageObstacles } from './obstacle.js';
 import { DEFAULT_QUOTA_TABLE } from './survival.js';
@@ -264,9 +264,6 @@ function applyGameOver(state: GameState): void {
   if (result.newSegmentStartScore !== undefined) state.segmentStartScore = result.newSegmentStartScore;
 
   if (state.isGameOver) {
-    if (state.mode === 'sprint') {
-      state.score += calculateRemainingItemBonus(state.board);
-    }
     if (state.mode === 'clear') {
       // Clearモード: スコアは手数（少ないほど良い）
       state.score = state.moveCount;

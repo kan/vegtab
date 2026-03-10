@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import {
   initializeGame, processAction, processScopeSynthesis, processDamage,
   cloneBoard, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
-  calculateStepScore, calculateRemainingItemBonus,
+  calculateStepScore,
   determineItemFromMatches, checkGameOverState,
   isValidPosition, getItemTargets, findFlushTargetColor,
   getSynthesisEffect, getSynthesisTargets,
@@ -196,7 +196,6 @@ function resolveFinalState(
   };
   const goResult = checkGameOverState(tempState);
   let finalScore = score;
-  if (goResult.gameOver && mode === 'sprint') finalScore += calculateRemainingItemBonus(board);
   if (goResult.gameOver && mode === 'clear') finalScore = moveCount;
   return {
     board: cloneBoard(board),
@@ -390,6 +389,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const _displayScore = ref<number | null>(null);
   const score = computed(() => _displayScore.value ?? (gameState.value?.score ?? 0));
   const moveCount = computed(() => gameState.value?.moveCount ?? 0);
+  const autoActivating = ref(false);
   const isGameOver = computed(() => gameState.value?.isGameOver ?? false);
   const mode = computed<GameMode>(() => gameState.value?.mode ?? 'sprint');
   const moveLimit = computed(() => gameState.value?.moveLimit);
@@ -1049,6 +1049,33 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
   }
 
+  /** Sprint auto-activation: compute plan for the next item on the board */
+  function computeAutoActivationPlan(): { pos: Position; plan: ItemAnimPlan } | null {
+    if (!gameState.value || gameState.value.mode !== 'sprint') return null;
+    const state = gameState.value;
+
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const cell = state.board[r][c];
+        if (!cell?.item) continue;
+        const pos = { row: r, col: c };
+        const board = cloneBoard(state.board);
+        let targetColor: number | undefined;
+        if (cell.item === 'flush') {
+          targetColor = findFlushTargetColor(board, pos) ?? undefined;
+        }
+        // moveCount - 1 because buildItemPlan adds 1 internally; we don't want to increment
+        const plan = buildItemPlan(
+          board, state.rngState, state.score, state.moveCount - 1,
+          pos, cell.item, targetColor,
+          state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+        );
+        return { pos, plan };
+      }
+    }
+    return null;
+  }
+
   function setDisplayScore(s: number) { _displayScore.value = s; }
   function clearDisplayScore() { _displayScore.value = null; }
 
@@ -1067,13 +1094,14 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   return {
     gameState, seed,
-    board, score, moveCount, isGameOver, isCleared,
+    board, score, moveCount, autoActivating, isGameOver, isCleared,
     mode, moveLimit, remainingMoves,
     obstacleCount, quotaTable, quotaTarget, movesUntilCheck, segmentScore,
     startGame, restoreState, swap, tap,
     activateScope, applyScopeSynthesis,
     computeScopePlan, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,
+    computeAutoActivationPlan,
     applyState, setDisplayScore, clearDisplayScore, placeItem,
     maxChain, generatedItemTypes, recordPlanStats,
   };

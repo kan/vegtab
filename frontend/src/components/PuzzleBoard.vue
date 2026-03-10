@@ -106,6 +106,27 @@ function onPointerUpWithDebug(e: PointerEvent) {
 function wait(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
 function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))); }
 
+// --- Sprint auto-activation of remaining items ---
+async function autoActivateItems() {
+  if (!store.isGameOver || store.mode !== 'sprint') return;
+
+  store.autoActivating = true;
+  await wait(400); // brief pause before auto-activation starts
+
+  let autoPlan = store.computeAutoActivationPlan();
+  while (autoPlan) {
+    visualBoard.value = autoPlan.plan.boardBeforeActivation;
+    await animateItemEffects(autoPlan.plan);
+    await animateDropAndChains(autoPlan.plan);
+    store.recordPlanStats(autoPlan.plan.regularChains);
+    store.applyState(autoPlan.plan.finalState);
+    visualBoard.value = null;
+    autoPlan = store.computeAutoActivationPlan();
+  }
+
+  store.autoActivating = false;
+}
+
 // --- Tap ---
 async function handleTap(pos: Position) {
   // Scope cell selection mode
@@ -135,6 +156,7 @@ async function handleTap(pos: Position) {
 
   store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
+  await autoActivateItems();
   visualBoard.value = null;
   drag.setLocked(false);
 }
@@ -234,6 +256,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
 
   store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
+  await autoActivateItems();
   visualBoard.value = null;
   drag.setLocked(false);
 }
@@ -310,6 +333,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
 
   store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
+  await autoActivateItems();
   visualBoard.value = null;
   drag.setLocked(false);
 }
@@ -335,6 +359,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     await animateChainsWithScore(swapPlan.chains, swapPlan.finalState.score);
     store.recordPlanStats(swapPlan.chains);
     store.applyState(swapPlan.finalState);
+    await autoActivateItems();
     visualBoard.value = null;
     drag.setLocked(false);
     return;
@@ -379,6 +404,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     await animateDropAndChains(itemSwap.plan);
     store.recordPlanStats([...itemSwap.preChains, ...itemSwap.plan.regularChains]);
     store.applyState(itemSwap.plan.finalState);
+    await autoActivateItems();
     visualBoard.value = null;
     drag.setLocked(false);
     return;
@@ -420,6 +446,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     await animateSynthesisDropAndChains(synthPlan);
     store.recordPlanStats(synthPlan.regularChains);
     store.applyState(synthPlan.finalState);
+    await autoActivateItems();
     visualBoard.value = null;
     drag.setLocked(false);
     return;
