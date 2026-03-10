@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useGameStore, type PlayRecord, type GameMode } from '@/stores/game';
-import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
+import { type GameMode } from '@/stores/game';
+import { api, getUserId } from '@/api/client';
 
 const { t } = useI18n();
 
@@ -16,64 +16,66 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-const gameStore = useGameStore();
 const activeMode = ref<GameMode>(props.mode ?? 'sprint');
-
-watch(() => props.mode, (m) => { if (m) activeMode.value = m; });
-watch(() => props.open, (o) => { if (o && props.mode) activeMode.value = props.mode; });
+const loading = ref(false);
 
 interface RankEntry {
   rank: number;
   score: number;
   moves: number;
-  playedAt: number;
   playerName: string;
   isMe: boolean;
 }
 
-const rankings = computed<RankEntry[]>(() => {
-  const records = gameStore.getRecordsForSeed(props.seed, activeMode.value);
-  const myName = gameStore.effectiveName;
+const rankings = ref<RankEntry[]>([]);
+const myRank = ref<{ rank: number; score: number; moveCount?: number } | null>(null);
 
-  let sorted: PlayRecord[];
-  if (activeMode.value === 'clear') {
-    // Clear: sort by fewest moves (score = moveCount for cleared)
-    const cleared = records.filter(r => r.score > 0);
-    sorted = [...cleared].sort((a, b) => a.score - b.score);
-  } else if (activeMode.value === 'survival') {
-    // Survival: sort by most moves, then score
-    sorted = [...records].sort((a, b) => b.moves - a.moves || b.score - a.score);
-  } else {
-    // Sprint: sort by highest score
-    sorted = [...records].sort((a, b) => b.score - a.score);
+watch(() => props.mode, (m) => { if (m) activeMode.value = m; });
+watch(() => props.open, (o) => {
+  if (o) {
+    if (props.mode) activeMode.value = props.mode;
+    fetchRanking();
   }
-
-  return sorted.map((r, i) => ({
-    rank: i + 1,
-    score: r.score,
-    moves: r.moves,
-    playedAt: r.playedAt,
-    playerName: r.playerName || DEFAULT_DISPLAY_NAME,
-    isMe: (r.playerName || DEFAULT_DISPLAY_NAME) === myName,
-  }));
 });
+watch(activeMode, () => { if (props.open) fetchRanking(); });
 
-const myBestRank = computed(() => {
-  const eligible = rankings.value.filter(r => r.isMe);
-  return eligible.length > 0 ? eligible[0].rank : null;
-});
+async function fetchRanking() {
+  loading.value = true;
+  try {
+    const userId = getUserId();
+    const data = await api<{
+      ranking: Array<{
+        rank: number;
+        userId: string;
+        displayName: string;
+        score: number;
+        moveCount: number;
+        isCleared?: boolean;
+      }>;
+      userRank: { rank: number; score: number; moveCount?: number } | null;
+    }>(`/api/rankings/by-value/${props.seed}?mode=${activeMode.value}`);
 
-const myBestScore = computed(() => {
-  const eligible = rankings.value.filter(r => r.isMe);
-  return eligible.length > 0 ? eligible[0].score : 0;
-});
-
-const totalEntries = computed(() => rankings.value.length);
-
-function formatDate(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+    rankings.value = data.ranking.map(e => ({
+      rank: e.rank,
+      score: e.score,
+      moves: e.moveCount,
+      playerName: e.displayName,
+      isMe: e.userId === userId,
+    }));
+    myRank.value = data.userRank;
+  } catch {
+    rankings.value = [];
+    myRank.value = null;
+  }
+  loading.value = false;
 }
+
+const myRankDisplay = computed(() => {
+  if (!myRank.value) return '';
+  if (activeMode.value === 'clear') return `${myRank.value.moveCount ?? myRank.value.score} ${t('mode.moves')}`;
+  if (activeMode.value === 'survival') return `${myRank.value.moveCount ?? 0} ${t('mode.moves')}`;
+  return myRank.value.score.toLocaleString();
+});
 
 function rankIcon(rank: number): string {
   if (rank === 1) return '\u{1F947}';
@@ -83,7 +85,7 @@ function rankIcon(rank: number): string {
 }
 
 function displayValue(entry: RankEntry): string {
-  if (activeMode.value === 'clear') return `${entry.score} ${t('mode.moves')}`;
+  if (activeMode.value === 'clear') return `${entry.moves} ${t('mode.moves')}`;
   if (activeMode.value === 'survival') return `${entry.moves} ${t('mode.moves')}`;
   return entry.score.toLocaleString();
 }
@@ -111,15 +113,33 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
           >{{ t(`mode.${m}`) }}</button>
         </div>
 
+        <!-- Loading skeleton -->
+        <template v-if="loading">
+          <div class="my-rank-card skeleton-card">
+            <div class="skeleton-line skeleton-short" />
+            <div class="skeleton-line skeleton-wide" />
+          </div>
+          <div class="ranking-list">
+            <div v-for="i in 5" :key="i" class="ranking-row skeleton-row">
+              <span class="skeleton-circle" />
+              <div class="skeleton-text">
+                <div class="skeleton-line skeleton-wide" />
+                <div class="skeleton-line skeleton-short" />
+              </div>
+              <span class="skeleton-line skeleton-score" />
+            </div>
+          </div>
+        </template>
+
         <!-- My rank highlight -->
-        <div v-if="myBestRank !== null" class="my-rank-card">
+        <template v-else>
+        <div v-if="myRank" class="my-rank-card">
           <div class="my-rank-left">
             <span class="my-rank-label">{{ t('ranking.yourRank') }}</span>
-            <span class="my-rank-num">{{ myBestRank }}<span class="my-rank-total"> / {{ totalEntries }}</span></span>
+            <span class="my-rank-num">{{ myRank.rank }}<span class="my-rank-total"> / {{ rankings.length || myRank.rank }}</span></span>
           </div>
           <div class="my-rank-right">
-            <span class="my-rank-score">{{ displayValue(rankings.find(r => r.isMe)!) }}</span>
-            <span class="my-rank-name">{{ gameStore.effectiveName }}</span>
+            <span class="my-rank-score">{{ myRankDisplay }}</span>
           </div>
         </div>
         <div v-else class="my-rank-card my-rank-empty">
@@ -130,13 +150,13 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
         <div v-if="rankings.length > 0" class="ranking-list">
           <div
             v-for="entry in rankings"
-            :key="entry.playedAt"
+            :key="entry.rank"
             :class="['ranking-row', { me: entry.isMe }]"
           >
             <span class="rank-num">{{ rankIcon(entry.rank) }}</span>
             <div class="rank-main">
               <span class="rank-name">{{ entry.playerName }}</span>
-              <span class="rank-meta">{{ t('ranking.moves', { count: entry.moves }) }} &middot; {{ formatDate(entry.playedAt) }}</span>
+              <span class="rank-meta">{{ t('ranking.moves', { count: entry.moves }) }}</span>
             </div>
             <div class="rank-right">
               <span class="rank-score">{{ displayValue(entry) }}</span>
@@ -146,6 +166,7 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
         <div v-else class="ranking-empty">
           {{ t('common.noRecords') }}
         </div>
+        </template>
       </div>
     </div>
   </Teleport>
@@ -337,5 +358,42 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
   padding: 32px;
   color: var(--text-disabled);
   font-size: 14px;
+}
+
+/* Skeleton loading */
+.skeleton-card {
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-card-alt);
+}
+.skeleton-row {
+  gap: 10px;
+}
+.skeleton-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--skeleton-bg, rgba(128, 128, 128, 0.15));
+  flex-shrink: 0;
+  animation: shimmer 1.2s ease-in-out infinite alternate;
+}
+.skeleton-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: var(--skeleton-bg, rgba(128, 128, 128, 0.15));
+  animation: shimmer 1.2s ease-in-out infinite alternate;
+}
+.skeleton-wide { width: 70%; }
+.skeleton-short { width: 40%; }
+.skeleton-score { width: 48px; height: 14px; flex-shrink: 0; }
+@keyframes shimmer {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
 }
 </style>

@@ -11,6 +11,45 @@ type GameMode = (typeof VALID_MODES)[number];
 
 export const rankingRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
+// GET /api/rankings/by-value/:seedValue?mode=sprint — Lookup by seed_value (number)
+rankingRoutes.get('/by-value/:seedValue', async (c) => {
+  const seedValue = c.req.param('seedValue');
+  const seed = await c.env.DB.prepare(
+    'SELECT id FROM puzzle_seeds WHERE seed_value = ?'
+  ).bind(seedValue).first<{ id: string }>();
+  if (!seed) return c.json({ ranking: [], userRank: null });
+
+  // Redirect internally to the main handler logic
+  const userId = c.get('userId');
+  const seedId = seed.id;
+  const mode = (c.req.query('mode') ?? 'sprint') as string;
+
+  if (!VALID_MODES.includes(mode as GameMode)) {
+    return c.json({ error: 'Invalid mode' }, 400);
+  }
+
+  const cacheKey = `ranking:${seedId}:${mode}`;
+  const cached = await c.env.KV.get(cacheKey, 'json') as RankingData | null;
+  if (cached) {
+    const cachedEntry = cached.entries.find(e => e.userId === userId);
+    const userRank = cachedEntry
+      ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount }
+      : await getUserRank(c.env.DB, userId, seedId, mode as GameMode);
+    return c.json({ ranking: cached.entries, userRank });
+  }
+
+  const [rankingEntries, userRank] = await Promise.all([
+    queryRanking(c.env.DB, seedId, mode as GameMode),
+    getUserRank(c.env.DB, userId, seedId, mode as GameMode),
+  ]);
+
+  await c.env.KV.put(cacheKey, JSON.stringify({ entries: rankingEntries }), {
+    expirationTtl: RANKING_CACHE_TTL,
+  });
+
+  return c.json({ ranking: rankingEntries, userRank });
+});
+
 // GET /api/rankings/:seedId?mode=sprint
 rankingRoutes.get('/:seedId', async (c) => {
   const userId = c.get('userId');

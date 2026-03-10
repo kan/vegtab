@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useGameStore, type PlayRecord } from '@/stores/game';
-import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
-import { generateTransferCode, redeemTransferCode, showToast } from '@/api/client';
+import { useGameStore } from '@/stores/game';
+import { generateTransferCode, redeemTransferCode, showToast, api } from '@/api/client';
 import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { useSound } from '@/sound';
@@ -173,48 +172,34 @@ onUnmounted(() => {
   clearInterval(countdownTimer);
 });
 
-// --- Ranking preview (local data, best per user) ---
+// --- Ranking preview (from API) ---
 const rankingMode = ref<'sprint' | 'clear' | 'survival'>('sprint');
+const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number }>>([]);
+const rankingLoading = ref(false);
 
-function bestPerUser(records: PlayRecord[], mode: string) {
-  const best = new Map<string, PlayRecord>();
-  for (const r of records) {
-    const name = r.playerName || DEFAULT_DISPLAY_NAME;
-    const prev = best.get(name);
-    if (!prev) { best.set(name, r); continue; }
-    if (mode === 'clear') {
-      if (r.score > 0 && (!prev.score || r.score < prev.score)) best.set(name, r);
-    } else if (mode === 'survival') {
-      if (r.moves > prev.moves || (r.moves === prev.moves && r.score > prev.score)) best.set(name, r);
-    } else {
-      if (r.score > prev.score) best.set(name, r);
-    }
+async function fetchRankingPreview() {
+  rankingLoading.value = true;
+  try {
+    const data = await api<{
+      ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number }>;
+    }>(`/api/rankings/by-value/${todaySeed.value}?mode=${rankingMode.value}`);
+    rankingPreview.value = data.ranking.slice(0, 5).map(e => ({
+      rank: e.rank,
+      playerName: e.displayName,
+      score: e.score,
+      moves: e.moveCount,
+    }));
+  } catch {
+    rankingPreview.value = [];
   }
-  return [...best.values()];
+  rankingLoading.value = false;
 }
 
-const rankingPreview = computed(() => {
-  const mode = rankingMode.value;
-  const records = gameStore.getRecordsForSeed(todaySeed.value, mode);
-  const deduped = bestPerUser(records, mode);
-  let sorted: typeof deduped;
-  if (mode === 'clear') {
-    sorted = deduped.filter(r => r.score > 0).sort((a, b) => a.score - b.score);
-  } else if (mode === 'survival') {
-    sorted = [...deduped].sort((a, b) => b.moves - a.moves || b.score - a.score);
-  } else {
-    sorted = [...deduped].sort((a, b) => b.score - a.score);
-  }
-  return sorted.slice(0, 5).map((r, i) => ({
-    rank: i + 1,
-    playerName: r.playerName || DEFAULT_DISPLAY_NAME,
-    score: r.score,
-    moves: r.moves,
-  }));
-});
+watch(rankingMode, () => fetchRankingPreview());
+onMounted(() => { fetchRankingPreview(); });
 
 function rankingDisplayValue(entry: { score: number; moves: number }) {
-  if (rankingMode.value === 'clear') return `${entry.score} ${t('mode.moves')}`;
+  if (rankingMode.value === 'clear') return `${entry.moves} ${t('mode.moves')}`;
   if (rankingMode.value === 'survival') return `${entry.moves} ${t('mode.moves')}`;
   return entry.score.toLocaleString();
 }
@@ -304,7 +289,14 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
             <button :class="['ranking-mode-tab', { active: rankingMode === 'clear' }]" @click="rankingMode = 'clear'">{{ t('mode.clear') }}</button>
             <button :class="['ranking-mode-tab', { active: rankingMode === 'survival' }]" @click="rankingMode = 'survival'">{{ t('mode.survival') }}</button>
           </div>
-          <template v-if="rankingPreview.length > 0">
+          <template v-if="rankingLoading">
+            <div v-for="i in 3" :key="i" class="ranking-preview-row skeleton-row">
+              <span class="ranking-preview-rank skeleton-block skeleton-rank" />
+              <span class="skeleton-block skeleton-name" />
+              <span class="skeleton-block skeleton-val" />
+            </div>
+          </template>
+          <template v-else-if="rankingPreview.length > 0">
             <div v-for="entry in rankingPreview" :key="entry.rank" class="ranking-preview-row">
               <span class="ranking-preview-rank">{{ entry.rank }}</span>
               <span class="ranking-preview-name">{{ entry.playerName }}</span>
@@ -973,6 +965,21 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
   color: var(--text-muted);
   text-align: center;
   padding: 8px 0;
+}
+.skeleton-row { pointer-events: none; }
+.skeleton-block {
+  display: inline-block;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--skeleton-bg, rgba(128, 128, 128, 0.15));
+  animation: shimmer 1.2s ease-in-out infinite alternate;
+}
+.skeleton-rank { width: 16px; }
+.skeleton-name { flex: 1; }
+.skeleton-val { width: 40px; }
+@keyframes shimmer {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
 }
 
 /* Calendar */
