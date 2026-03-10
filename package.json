@@ -4,6 +4,7 @@
   "private": true,
   "description": "TODO × 3-match puzzle gamification app",
   "scripts": {
+    "dev": "concurrently -n back,front -c blue,green \"npm run dev -w backend\" \"npm run dev -w frontend\"",
     "test": "npm test --workspaces --if-present",
     "build": "npm run build -w frontend",
     "deploy:backend": "npm run deploy:prod -w backend",
@@ -14,5 +15,8 @@
     "engine",
     "frontend",
     "backend"
-  ]
+  ],
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
 }
