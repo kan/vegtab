@@ -64,6 +64,7 @@ const clearingCells = reactive(new Set<string>());
 
 // --- Obstacle destruction animation state ---
 const obstacleClearingCells = reactive(new Set<string>());
+const obstacleDamagedCells = reactive(new Set<string>());
 
 // --- Item effect animation state ---
 const itemClearingCells = reactive(new Set<string>());
@@ -77,6 +78,18 @@ const dropTransitioning = ref(false);
 
 // --- Screen shake ---
 const shaking = ref(false);
+
+// --- Scope tap hint ---
+const showScopeTapHint = ref(false);
+const scopeTapHintText = ref('');
+let scopeHintTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showScopeHint(key: string) {
+  clearTimeout(scopeHintTimer);
+  scopeTapHintText.value = t(`puzzle.${key}`);
+  showScopeTapHint.value = true;
+  scopeHintTimer = setTimeout(() => { showScopeTapHint.value = false; }, 3000);
+}
 
 // --- Drag handling ---
 const drag = useDragHandler(cellSize, boardEl, commitSwap, handleTap);
@@ -106,6 +119,7 @@ async function handleTap(pos: Position) {
   if (cell?.item === 'scope') {
     scope.startSelection(pos);
     clearOff(pos.row, pos.col);
+    showScopeHint('scopeTapHint');
     return;
   }
 
@@ -127,6 +141,7 @@ async function handleTap(pos: Position) {
 async function handleScopeSelection(pos: Position) {
   const result = scope.selectCell(pos);
   if (!result) return;
+  showScopeTapHint.value = false;
 
   if (result.synthesis) {
     await animateScopeSynthesis(result.synthesis.pos1, result.synthesis.pos2, result.cells);
@@ -138,6 +153,7 @@ async function handleScopeSelection(pos: Position) {
 function cancelScopeSelection() {
   scope.cancelSelection();
   visualBoard.value = null;
+  showScopeTapHint.value = false;
 }
 
 async function animateScope(scopePos: Position, targetCells: Position[]) {
@@ -361,6 +377,7 @@ async function commitSwap(pos: Position, dir: Direction) {
         swapped[nb.row][nb.col] = cell1;
         visualBoard.value = swapped;
         scope.startSelection(scopePos);
+        showScopeHint('scopeTapHint');
         drag.setLocked(false);
         return;
       }
@@ -394,6 +411,13 @@ async function commitSwap(pos: Position, dir: Direction) {
         if (synth && ['scope+scope', 'scope+v_cut', 'scope+h_cut', 'scope+burst'].includes(synth.effect)) {
           clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
           scope.startSelection(pos, synth.effect === 'scope+scope' ? 3 : 1, { pos1: pos, pos2: nb });
+          const synthHintMap: Record<string, string> = {
+            'scope+scope': 'scopeScopeSynthHint',
+            'scope+v_cut': 'scopeVCutSynthHint',
+            'scope+h_cut': 'scopeHCutSynthHint',
+            'scope+burst': 'scopeBurstSynthHint',
+          };
+          showScopeHint(synthHintMap[synth.effect] ?? 'scopeTapHint');
           drag.setLocked(false);
           return;
         }
@@ -774,11 +798,37 @@ async function animateChainStep(chain: ChainAnimData) {
   matchedCells.clear();
   clearingCells.clear();
 
+  // Obstacle damage shake (surviving obstacles adjacent to cleared tiles)
+  const damagedKeys: string[] = [];
+  if (visualBoard.value) {
+    for (const cp of chain.clearedPositions) {
+      for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nr = cp.row + dr, nc = cp.col + dc;
+        if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
+          const cell = visualBoard.value[nr]?.[nc];
+          if (cell?.obstacle && !chain.destroyedObstacles.some(d => d.row === nr && d.col === nc)) {
+            const k = pk(nr, nc);
+            if (!obstacleDamagedCells.has(k)) {
+              obstacleDamagedCells.add(k);
+              damagedKeys.push(k);
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Obstacle destruction
   if (chain.destroyedObstacles.length > 0) {
     for (const p of chain.destroyedObstacles) obstacleClearingCells.add(pk(p.row, p.col));
     await wait(ANIM.CLEAR);
     obstacleClearingCells.clear();
+  }
+
+  // Clear damage shake
+  if (damagedKeys.length > 0) {
+    await wait(100);
+    for (const k of damagedKeys) obstacleDamagedCells.delete(k);
   }
 
   // Drop
@@ -838,7 +888,7 @@ function tileTransition(r: number, c: number) {
                 }"
               >
                 <!-- Obstacle tile -->
-                <div v-if="activeBoard[row - 1][col - 1]!.obstacle" class="tile obstacle-cell" :class="{ 'is-obstacle-clearing': obstacleClearingCells.has(pk(row - 1, col - 1)) }">
+                <div v-if="activeBoard[row - 1][col - 1]!.obstacle" class="tile obstacle-cell" :class="{ 'is-obstacle-clearing': obstacleClearingCells.has(pk(row - 1, col - 1)), 'is-obstacle-damaged': obstacleDamagedCells.has(pk(row - 1, col - 1)) }">
                   <ObstacleTile
                     :durability="activeBoard[row - 1][col - 1]!.obstacle!.durability"
                     :size="cellSize - 5"
@@ -927,6 +977,10 @@ function tileTransition(r: number, c: number) {
         </div>
       </template>
     </div>
+    <!-- Scope tap hint (outside board overflow) -->
+    <div v-if="showScopeTapHint" class="scope-tap-hint">
+      {{ scopeTapHintText }}
+    </div>
   </div>
 </template>
 
@@ -935,6 +989,7 @@ function tileTransition(r: number, c: number) {
   width: 100%;
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
@@ -977,8 +1032,19 @@ function tileTransition(r: number, c: number) {
   justify-content: center;
   pointer-events: none;
 }
+.obstacle-cell.is-obstacle-damaged {
+  animation: obstacle-shake 0.3s ease-out;
+}
 .obstacle-cell.is-obstacle-clearing {
   animation: obstacle-destroy 0.35s ease-out forwards;
+}
+@keyframes obstacle-shake {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-3px, 0); }
+  30% { transform: translate(3px, 0); }
+  45% { transform: translate(-2px, 0); }
+  60% { transform: translate(2px, 0); }
+  75% { transform: translate(-1px, 0); }
 }
 @keyframes obstacle-destroy {
   0%   { transform: scale(1); opacity: 1; }
@@ -1113,6 +1179,24 @@ function tileTransition(r: number, c: number) {
   color: var(--info);
   font-size: 11px;
   cursor: pointer;
+}
+
+/* Scope tap hint */
+.scope-tap-hint {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--info);
+  background: var(--bg-card);
+  padding: 6px 16px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-card);
+  margin-top: 8px;
+  animation: hint-fade 3s ease-out forwards;
+}
+@keyframes hint-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* Screen shake */

@@ -21,6 +21,27 @@ const router = useRouter();
 const debugPanel = ref<InstanceType<typeof DebugPanel> | null>(null);
 const puzzleBoard = ref<InstanceType<typeof PuzzleBoard> | null>(null);
 const scoreRecorded = ref(false);
+const showNamePrompt = ref(false);
+const nameInput = ref('');
+
+// --- Sprint remaining moves overlay ---
+const movesOverlayText = ref('');
+const showMovesOverlay = ref(false);
+let prevRemainingMoves: number | undefined;
+let movesOverlayTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(() => store.remainingMoves, (remaining) => {
+  if (selectedMode.value !== 'sprint' || remaining === undefined || store.isGameOver) return;
+  // Show overlay when hitting exactly 5 or entering <=3
+  if ((remaining === 5 && prevRemainingMoves !== 5)
+    || (remaining <= 3 && remaining < (prevRemainingMoves ?? Infinity))) {
+    movesOverlayText.value = t('puzzle.movesRemaining', { remaining });
+    showMovesOverlay.value = true;
+    clearTimeout(movesOverlayTimer);
+    movesOverlayTimer = setTimeout(() => { showMovesOverlay.value = false; }, 1200);
+  }
+  prevRemainingMoves = remaining;
+});
 
 // --- View phase ---
 type ViewPhase = 'modeSelect' | 'playing';
@@ -90,8 +111,23 @@ watch(() => store.isGameOver, (ended) => {
     });
     // Eagerly fetch share code for score screen
     gameStore.getShareCode(store.seed!).then(code => { shareCode.value = code; }).catch(() => {});
+    // Prompt for name if not set
+    if (!gameStore.displayName) {
+      showNamePrompt.value = true;
+      nameInput.value = '';
+    }
   }
 });
+
+function saveNameAndDismiss() {
+  const name = nameInput.value.trim();
+  if (name) gameStore.setDisplayName(name);
+  showNamePrompt.value = false;
+}
+
+function skipNamePrompt() {
+  showNamePrompt.value = false;
+}
 
 // --- Share ---
 const shareToast = ref(false);
@@ -123,11 +159,13 @@ async function shareScore() {
 }
 
 function restart() {
+  prevRemainingMoves = undefined;
   beginGame(store.seed, selectedMode.value);
 }
 
 onUnmounted(() => {
   stopBGM();
+  clearTimeout(movesOverlayTimer);
 });
 
 // --- Ranking ---
@@ -196,13 +234,14 @@ const gameOverScore = computed(() => {
           </div>
         </div>
         <div class="header-row">
-          <div class="move-label">
-            <template v-if="selectedMode === 'sprint' && store.remainingMoves !== undefined">
-              {{ t('puzzle.movesRemaining', { remaining: store.remainingMoves, limit: store.moveLimit }) }}
-            </template>
-            <template v-else>
-              {{ t('puzzle.moveCount', { count: store.moveCount }) }}
-            </template>
+          <template v-if="selectedMode === 'sprint' && store.remainingMoves !== undefined">
+            <div :class="['remaining-moves', { 'remaining-urgent': store.remainingMoves <= 5 }]">
+              <span class="remaining-number">{{ store.remainingMoves }}</span>
+              <span class="remaining-label">{{ t('puzzle.movesRemaining', { remaining: store.remainingMoves }) }}</span>
+            </div>
+          </template>
+          <div v-else class="move-label">
+            {{ t('puzzle.moveCount', { count: store.moveCount }) }}
           </div>
         </div>
         <!-- Survival gauge -->
@@ -215,8 +254,12 @@ const gameOverScore = computed(() => {
         </div>
       </header>
 
-      <div class="board-area">
+      <div :class="['board-area', { 'board-urgent': selectedMode === 'sprint' && store.remainingMoves !== undefined && store.remainingMoves <= 5 && !store.isGameOver }]">
         <PuzzleBoard ref="puzzleBoard" :debug-panel="debugPanel" />
+        <!-- Sprint remaining moves overlay -->
+        <div v-if="showMovesOverlay" class="moves-overlay" :key="movesOverlayText">
+          <span class="moves-overlay-text">{{ movesOverlayText }}</span>
+        </div>
       </div>
 
       <!-- Game over overlay -->
@@ -226,9 +269,9 @@ const gameOverScore = computed(() => {
           <p class="final-score">{{ gameOverScore }}</p>
           <p class="move-info">{{ t('puzzle.moveCount', { count: store.moveCount }) }}</p>
           <div class="game-over-actions actions-col">
-            <button class="btn" @click="restart">{{ t('common.retry') }}</button>
-            <button class="btn btn-share" @click="shareScore">{{ t('common.share') }}</button>
-            <button class="btn btn-home" @click="router.push('/')">{{ t('common.home') }}</button>
+            <button class="btn" @click="restart"><span class="btn-icon">&#x21BB;</span> {{ t('common.retry') }}</button>
+            <button class="btn btn-share" @click="shareScore"><svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><line x1="8.2" y1="10.8" x2="15.8" y2="6.2"/><line x1="8.2" y1="13.2" x2="15.8" y2="17.8"/></svg> {{ t('common.share') }}</button>
+            <button class="btn btn-home" @click="router.push('/')"><span class="btn-icon">&#x2302;</span> {{ t('common.home') }}</button>
           </div>
         </div>
       </div>
@@ -248,6 +291,27 @@ const gameOverScore = computed(() => {
 
       <!-- Share toast -->
       <div v-if="shareToast" class="share-toast">{{ t('common.copiedToClipboard') }}</div>
+
+      <!-- Name prompt modal -->
+      <Teleport to="body">
+        <div v-if="showNamePrompt" class="modal-overlay">
+          <div class="modal">
+            <h3 class="modal-title">{{ t('puzzle.namePromptTitle') }}</h3>
+            <p class="modal-desc">{{ t('puzzle.namePromptMessage') }}</p>
+            <input
+              v-model="nameInput"
+              class="name-prompt-input"
+              maxlength="20"
+              :placeholder="t('home.namePlaceholder')"
+              @keyup.enter="saveNameAndDismiss"
+            />
+            <div class="modal-actions">
+              <button class="modal-btn-primary" :disabled="!nameInput.trim()" @click="saveNameAndDismiss">{{ t('common.ok') }}</button>
+              <button class="modal-btn-secondary" @click="skipNamePrompt">{{ t('puzzle.namePromptLater') }}</button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
 
       <RankingModal :seed="store.seed!" :open="showRanking" :mode="selectedMode" @close="showRanking = false" />
       <DebugPanel v-if="isDev" ref="debugPanel" />
@@ -315,6 +379,82 @@ const gameOverScore = computed(() => {
 .move-label {
   font-size: 13px;
   color: var(--text-secondary);
+}
+.remaining-moves {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  transition: color 0.3s;
+}
+.remaining-number {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--brand);
+  line-height: 1;
+  transition: color 0.3s, transform 0.2s;
+}
+.remaining-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.remaining-urgent .remaining-number {
+  color: var(--danger, #f44336);
+  animation: remaining-bounce 0.6s ease infinite;
+}
+.remaining-urgent .remaining-label {
+  color: var(--danger, #f44336);
+}
+@keyframes remaining-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+.board-urgent::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 3px solid rgba(244, 67, 54, 0.5);
+  border-radius: 8px;
+  pointer-events: none;
+  animation: board-pulse 1.2s ease-in-out infinite;
+  z-index: 5;
+}
+@keyframes board-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+/* Sprint remaining moves overlay */
+.moves-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 8;
+  pointer-events: none;
+  animation: moves-overlay-anim 1.2s ease-out forwards;
+}
+.moves-overlay-text {
+  font-size: 48px;
+  font-weight: 900;
+  color: var(--danger, #f44336);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 0 40px rgba(244,67,54,0.3);
+  letter-spacing: -1px;
+}
+@keyframes moves-overlay-anim {
+  0% { opacity: 0; transform: scale(1.5); }
+  15% { opacity: 1; transform: scale(1); }
+  70% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.8); }
+}
+.btn-icon {
+  margin-right: 4px;
+}
+.btn-icon-svg {
+  width: 16px;
+  height: 16px;
+  vertical-align: -2px;
+  margin-right: 4px;
 }
 .board-area {
   flex: 1;
@@ -425,5 +565,74 @@ const gameOverScore = computed(() => {
 .actions-col {
   flex-direction: column;
   gap: 10px;
+}
+/* Name prompt modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 24px;
+  width: 320px;
+  max-width: 90vw;
+}
+.modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+}
+.modal-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+.modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.modal-btn-primary {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+.modal-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.modal-btn-secondary {
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+}
+.name-prompt-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 16px;
+  text-align: center;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  box-sizing: border-box;
 }
 </style>

@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useGameStore } from '@/stores/game';
+import { useGameStore, type PlayRecord } from '@/stores/game';
 import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { useSound } from '@/sound';
@@ -87,6 +87,55 @@ function saveName() {
   gameStore.setDisplayName(nameInput.value.trim());
   editingName.value = false;
 }
+
+// --- Daily help ---
+const showDailyHelp = ref(false);
+
+// --- Ranking preview (local data, best per user) ---
+const rankingMode = ref<'sprint' | 'clear' | 'survival'>('sprint');
+
+function bestPerUser(records: PlayRecord[], mode: string) {
+  const best = new Map<string, PlayRecord>();
+  for (const r of records) {
+    const name = r.playerName || 'Anonymous';
+    const prev = best.get(name);
+    if (!prev) { best.set(name, r); continue; }
+    if (mode === 'clear') {
+      if (r.score > 0 && (!prev.score || r.score < prev.score)) best.set(name, r);
+    } else if (mode === 'survival') {
+      if (r.moves > prev.moves || (r.moves === prev.moves && r.score > prev.score)) best.set(name, r);
+    } else {
+      if (r.score > prev.score) best.set(name, r);
+    }
+  }
+  return [...best.values()];
+}
+
+const rankingPreview = computed(() => {
+  const mode = rankingMode.value;
+  const records = gameStore.getRecordsForSeed(todaySeed.value, mode);
+  const deduped = bestPerUser(records, mode);
+  let sorted: typeof deduped;
+  if (mode === 'clear') {
+    sorted = deduped.filter(r => r.score > 0).sort((a, b) => a.score - b.score);
+  } else if (mode === 'survival') {
+    sorted = [...deduped].sort((a, b) => b.moves - a.moves || b.score - a.score);
+  } else {
+    sorted = [...deduped].sort((a, b) => b.score - a.score);
+  }
+  return sorted.slice(0, 5).map((r, i) => ({
+    rank: i + 1,
+    playerName: r.playerName || 'Anonymous',
+    score: r.score,
+    moves: r.moves,
+  }));
+});
+
+function rankingDisplayValue(entry: { score: number; moves: number }) {
+  if (rankingMode.value === 'clear') return `${entry.score} ${t('mode.moves')}`;
+  if (rankingMode.value === 'survival') return `${entry.moves} ${t('mode.moves')}`;
+  return entry.score.toLocaleString();
+}
 </script>
 
 <template>
@@ -127,7 +176,11 @@ function saveName() {
 
     <!-- Daily Puzzle -->
     <div class="section">
-      <h2 class="section-title">{{ t('home.dailyPuzzle') }}</h2>
+      <div class="section-title-row">
+        <h2 class="section-title">{{ t('home.dailyPuzzle') }}</h2>
+        <button class="help-btn" @click="showDailyHelp = !showDailyHelp" title="?">?</button>
+      </div>
+      <div v-if="showDailyHelp" class="daily-help-box">{{ t('home.dailyHelp') }}</div>
       <div class="daily-card-v2">
         <div class="daily-header">
           <span class="daily-date">{{ todayLocal() }}</span>
@@ -153,6 +206,26 @@ function saveName() {
             <span v-if="todayBestSurvival > 0" class="mode-btn-best">{{ todayBestSurvival }}{{ t('mode.moves') }}</span>
             <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
           </button>
+        </div>
+        <!-- Ranking preview -->
+        <div class="ranking-preview">
+          <div class="ranking-preview-header">
+            <span class="ranking-preview-title">🏆 {{ t('home.rankingPreview') }}</span>
+            <button class="ranking-see-all" @click="openRanking(todaySeed)">{{ t('home.seeAll') }}</button>
+          </div>
+          <div class="ranking-mode-tabs">
+            <button :class="['ranking-mode-tab', { active: rankingMode === 'sprint' }]" @click="rankingMode = 'sprint'">{{ t('mode.sprint') }}</button>
+            <button :class="['ranking-mode-tab', { active: rankingMode === 'clear' }]" @click="rankingMode = 'clear'">{{ t('mode.clear') }}</button>
+            <button :class="['ranking-mode-tab', { active: rankingMode === 'survival' }]" @click="rankingMode = 'survival'">{{ t('mode.survival') }}</button>
+          </div>
+          <template v-if="rankingPreview.length > 0">
+            <div v-for="entry in rankingPreview" :key="entry.rank" class="ranking-preview-row">
+              <span class="ranking-preview-rank">{{ entry.rank }}</span>
+              <span class="ranking-preview-name">{{ entry.playerName }}</span>
+              <span class="ranking-preview-score">{{ rankingDisplayValue(entry) }}</span>
+            </div>
+          </template>
+          <div v-else class="ranking-preview-empty">{{ t('common.noRecords') }}</div>
         </div>
       </div>
     </div>
@@ -634,6 +707,115 @@ function saveName() {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
+}
+
+/* Section title row with help */
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.help-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--text-muted);
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.daily-help-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Ranking preview */
+.ranking-preview {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.ranking-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.ranking-preview-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.ranking-see-all {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--brand);
+  font-weight: 600;
+  cursor: pointer;
+}
+.ranking-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.ranking-preview-rank {
+  width: 20px;
+  text-align: center;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.ranking-preview-name {
+  flex: 1;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ranking-preview-score {
+  font-weight: 700;
+  color: var(--brand);
+}
+.ranking-mode-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.ranking-mode-tab {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.ranking-mode-tab.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+.ranking-preview-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 8px 0;
 }
 
 /* Calendar */

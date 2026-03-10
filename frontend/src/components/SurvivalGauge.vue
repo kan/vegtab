@@ -25,6 +25,9 @@ const barColor = computed(() => {
 const remaining = computed(() => {
   return Math.max(0, props.quota - props.currentScore);
 });
+
+const isNearQuota = computed(() => progress.value >= 80 && progress.value < 100);
+const isQuotaMet = computed(() => progress.value >= 100);
 </script>
 
 <template>
@@ -39,11 +42,12 @@ const remaining = computed(() => {
     </div>
     <div class="gauge-track">
       <div
-        class="gauge-fill"
+        :class="['gauge-fill', { 'gauge-fill-pulse': isNearQuota, 'gauge-fill-met': isQuotaMet }]"
         :style="{ width: progress + '%', background: barColor }"
       />
       <span class="gauge-moves-badge">{{ movesUntilCheck }}</span>
     </div>
+    <div v-if="isQuotaMet" class="gauge-met-label">{{ t('mode.quotaCleared') }}</div>
   </div>
 </template>
 
@@ -78,6 +82,23 @@ const remaining = computed(() => {
   height: 100%;
   border-radius: 4px;
   transition: width 0.3s ease, background 0.3s ease;
+}
+.gauge-fill-pulse {
+  animation: gauge-pulse 1s ease-in-out infinite;
+}
+.gauge-fill-met {
+  animation: none;
+}
+@keyframes gauge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.gauge-met-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--success, #4caf50);
+  text-align: center;
+  margin-top: 2px;
 }
 .gauge-moves-badge {
   position: absolute;
