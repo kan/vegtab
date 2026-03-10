@@ -11,26 +11,35 @@ interface SeedRow {
   id: string; seed_value: string; share_code: string; is_daily: number; daily_date: string | null;
 }
 
-interface TopScoreRow {
-  mode: string;
-  best_score: number;
-  best_moves: number;
+interface SeedWithScoreRow extends SeedRow {
+  mode: string | null;
+  best_score: number | null;
+  best_moves: number | null;
 }
 
 async function lookupSeedWithTopScores(db: D1Database, seedId: string) {
-  const seed = await db.prepare(
-    'SELECT id, seed_value, share_code, is_daily, daily_date FROM puzzle_seeds WHERE id = ? OR share_code = ?'
-  ).bind(seedId, seedId.toUpperCase()).first<SeedRow>();
-  if (!seed) return null;
+  const rows = await db.prepare(
+    `SELECT s.id, s.seed_value, s.share_code, s.is_daily, s.daily_date,
+            p.mode, MAX(p.score) as best_score, MAX(p.move_count) as best_moves
+     FROM puzzle_seeds s
+     LEFT JOIN play_scores p ON p.seed_id = s.id
+     WHERE s.id = ? OR s.share_code = ?
+     GROUP BY s.id, s.seed_value, s.share_code, s.is_daily, s.daily_date, p.mode`
+  ).bind(seedId, seedId.toUpperCase()).all<SeedWithScoreRow>();
 
-  const scores = await db.prepare(
-    `SELECT mode, MAX(score) as best_score, MAX(move_count) as best_moves
-     FROM play_scores WHERE seed_id = ? GROUP BY mode`
-  ).bind(seed.id).all<TopScoreRow>();
+  if (!rows.results || rows.results.length === 0) return null;
+
+  const first = rows.results[0];
+  const seed: SeedRow = {
+    id: first.id, seed_value: first.seed_value, share_code: first.share_code,
+    is_daily: first.is_daily, daily_date: first.daily_date,
+  };
 
   const topScores: Record<string, { score: number; moves: number }> = {};
-  for (const row of scores.results ?? []) {
-    topScores[row.mode] = { score: row.best_score, moves: row.best_moves };
+  for (const row of rows.results) {
+    if (row.mode && row.best_score !== null) {
+      topScores[row.mode] = { score: row.best_score, moves: row.best_moves ?? 0 };
+    }
   }
 
   return { seed, topScores };

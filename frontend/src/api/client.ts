@@ -147,28 +147,44 @@ export async function api<T = unknown>(
   return res.json() as Promise<T>;
 }
 
-// --- Offline queue processing ---
-function buildAuthFetch() {
-  return async (url: string, method: string, body: string): Promise<Response> => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (accessToken) {
+// --- Shared authenticated fetch (used by api() and offline queue) ---
+async function authedFetch(path: string, method: string, body?: string): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+  let res = await fetch(`${API_BASE}${path}`, { method, headers, body });
+  // Handle 401 with token refresh
+  if (res.status === 401 && refreshToken) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
       headers['Authorization'] = `Bearer ${accessToken}`;
+      res = await fetch(`${API_BASE}${path}`, { method, headers, body });
+    } else {
+      await register();
+      headers['Authorization'] = `Bearer ${accessToken}`;
+      res = await fetch(`${API_BASE}${path}`, { method, headers, body });
     }
-    return fetch(`${API_BASE}${url}`, { method, headers, body });
-  };
+  }
+  return res;
 }
 
+// --- Offline queue processing ---
+let flushing = false;
+
 export async function flushOfflineQueue(): Promise<{ succeeded: number; failed: number; remaining: number }> {
-  const result = await processQueue(buildAuthFetch());
-  if (result.succeeded > 0) {
-    showToast('success', 'toast.offlineQueueSent');
+  if (flushing) return { succeeded: 0, failed: 0, remaining: 0 };
+  flushing = true;
+  try {
+    const result = await processQueue((url, method, body) => authedFetch(url, method, body));
+    if (result.succeeded > 0) {
+      showToast('success', 'toast.offlineQueueSent');
+    }
+    if (result.failed > 0) {
+      showToast('error', 'toast.offlineQueueFailed');
+    }
+    return result;
+  } finally {
+    flushing = false;
   }
-  if (result.failed > 0) {
-    showToast('error', 'toast.offlineQueueFailed');
-  }
-  return result;
 }
 
 // Auto-flush on online event

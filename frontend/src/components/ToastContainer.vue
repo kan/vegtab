@@ -15,27 +15,34 @@ interface Toast {
 const toasts = ref<Toast[]>([]);
 let nextId = 0;
 let unsubscribe: (() => void) | undefined;
+const timers = new Map<number, ReturnType<typeof setTimeout>>();
 
 onMounted(() => {
   unsubscribe = onToast((event) => {
     const id = nextId++;
     toasts.value.push({ id, type: event.type, messageKey: event.messageKey, leaving: false });
     const duration = event.duration ?? 4000;
-    setTimeout(() => dismissToast(id), duration);
+    timers.set(id, setTimeout(() => dismissToast(id), duration));
   });
 });
 
 onUnmounted(() => {
   unsubscribe?.();
+  for (const timer of timers.values()) clearTimeout(timer);
+  timers.clear();
 });
 
 function dismissToast(id: number) {
   const toast = toasts.value.find(t => t.id === id);
-  if (!toast) return;
+  if (!toast || toast.leaving) return;
+  const existing = timers.get(id);
+  if (existing) { clearTimeout(existing); timers.delete(id); }
   toast.leaving = true;
-  setTimeout(() => {
+  const removeTimer = setTimeout(() => {
     toasts.value = toasts.value.filter(t => t.id !== id);
+    timers.delete(id);
   }, 300);
+  timers.set(id, removeTimer);
 }
 </script>
 

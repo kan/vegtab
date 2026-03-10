@@ -59,32 +59,27 @@ export async function processQueue(
   let failed = 0;
   const remaining: QueueEntry[] = [];
 
+  function retryOrFail(entry: QueueEntry) {
+    entry.retries++;
+    if (entry.retries < MAX_RETRIES) {
+      remaining.push(entry);
+    } else {
+      failed++;
+    }
+  }
+
   for (const entry of queue) {
     try {
       const res = await doFetch(entry.url, entry.method, entry.body);
       if (res.ok || res.status === 409) {
-        // Success or conflict (duplicate) — remove from queue
         succeeded++;
       } else if (res.status >= 400 && res.status < 500) {
-        // Client error — don't retry
-        failed++;
+        failed++; // Client error — don't retry
       } else {
-        // Server error — retry later
-        entry.retries++;
-        if (entry.retries < MAX_RETRIES) {
-          remaining.push(entry);
-        } else {
-          failed++;
-        }
+        retryOrFail(entry); // Server error
       }
     } catch {
-      // Network error — retry later
-      entry.retries++;
-      if (entry.retries < MAX_RETRIES) {
-        remaining.push(entry);
-      } else {
-        failed++;
-      }
+      retryOrFail(entry); // Network error
     }
   }
 

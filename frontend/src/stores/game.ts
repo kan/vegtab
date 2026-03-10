@@ -106,21 +106,17 @@ export const useGameStore = defineStore('game', () => {
   }
 
   async function submitScoreToBackend(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
-    const cached = shareCodeMap.value[record.seed];
-    let seedId = cached?.seedId;
+    // Reuse getShareCode to ensure seed is registered (with deduplication)
+    try {
+      await getShareCode(record.seed);
+    } catch {
+      showToast('error', 'toast.scoreSubmitFailed');
+      return;
+    }
+    const seedId = shareCodeMap.value[record.seed]?.seedId;
     if (!seedId) {
-      // Ensure the seed is registered with the backend
-      try {
-        const res = await api<{ seedId: string; shareCode: string }>('/api/seeds/generate', {
-          method: 'POST',
-          body: JSON.stringify({ seedValue: String(record.seed) }),
-        });
-        cacheShareCode(record.seed, res.seedId, res.shareCode);
-        seedId = res.seedId;
-      } catch {
-        showToast('error', 'toast.scoreSubmitFailed');
-        return;
-      }
+      showToast('error', 'toast.scoreSubmitFailed');
+      return;
     }
     try {
       await api('/api/scores', {
