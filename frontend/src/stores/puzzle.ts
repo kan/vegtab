@@ -429,6 +429,13 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     gameState.value = initializeGame(seed.value, gameMode ?? 'sprint');
   }
 
+  function restoreState(savedSeed: number, state: GameState, savedMaxChain: number, savedItemTypes: string[]) {
+    seed.value = savedSeed;
+    maxChain.value = savedMaxChain;
+    generatedItemTypes.value = new Set(savedItemTypes);
+    gameState.value = state;
+  }
+
   function swap(pos: Position, dir: Direction) {
     if (!gameState.value) return;
     const newState = processAction(gameState.value, { type: 'swap', pos, dir });
@@ -1030,7 +1037,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     board, score, moveCount, isGameOver, isCleared,
     mode, moveLimit, remainingMoves,
     obstacleCount, quotaTable, quotaTarget, movesUntilCheck, segmentScore,
-    startGame, swap, tap,
+    startGame, restoreState, swap, tap,
     activateScope, applyScopeSynthesis,
     computeScopePlan, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,

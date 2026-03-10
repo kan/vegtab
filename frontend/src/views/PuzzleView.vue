@@ -48,7 +48,44 @@ type ViewPhase = 'modeSelect' | 'playing';
 const viewPhase = ref<ViewPhase>('modeSelect');
 const selectedMode = ref<GameMode>('sprint');
 
+const SESSION_KEY = 'tomado_puzzle_state';
+
+function saveSession() {
+  if (!store.gameState || store.isGameOver) return;
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      seed: store.seed,
+      mode: selectedMode.value,
+      state: store.gameState,
+      maxChain: store.maxChain,
+      generatedItemTypes: [...store.generatedItemTypes],
+    }));
+  } catch { /* ignore quota errors */ }
+}
+
+function clearSession() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+function tryRestoreSession(seed: number, mode: GameMode): boolean {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (saved.seed !== seed || saved.mode !== mode) return false;
+    if (saved.state?.isGameOver) { clearSession(); return false; }
+    store.restoreState(seed, saved.state, saved.maxChain ?? 0, saved.generatedItemTypes ?? []);
+    selectedMode.value = mode;
+    scoreRecorded.value = false;
+    viewPhase.value = 'playing';
+    startBGM();
+    clearSession();
+    return true;
+  } catch { return false; }
+}
+
 function beginGame(seed: number, mode: GameMode) {
+  clearSession();
   selectedMode.value = mode;
   store.startGame(seed, mode);
   startBGM();
@@ -68,7 +105,8 @@ function handleRoute() {
   }
 
   if (modeQuery && ['sprint', 'clear', 'survival'].includes(modeQuery)) {
-    // Mode specified in URL — start immediately
+    // Try to restore an in-progress session first
+    if (tryRestoreSession(seed, modeQuery)) return;
     beginGame(seed, modeQuery);
     return;
   }
@@ -86,6 +124,7 @@ function onModeSelect(mode: GameMode) {
 
 onMounted(() => {
   handleRoute();
+  window.addEventListener('beforeunload', saveSession);
 });
 
 watch(() => [route.params.seed, route.query.mode], () => {
@@ -95,6 +134,7 @@ watch(() => [route.params.seed, route.query.mode], () => {
 // --- Record score when game ends ---
 watch(() => store.isGameOver, (ended) => {
   if (ended && !scoreRecorded.value && store.seed !== undefined) {
+    clearSession();
     stopBGM();
     const isPositiveEnd = (selectedMode.value === 'sprint'
       && store.moveLimit !== undefined
@@ -165,6 +205,8 @@ function restart() {
 }
 
 onUnmounted(() => {
+  saveSession();
+  window.removeEventListener('beforeunload', saveSession);
   stopBGM();
   clearTimeout(movesOverlayTimer);
 });
