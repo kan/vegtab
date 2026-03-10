@@ -325,7 +325,7 @@ function buildItemPlan(
         mode: gameMode,
         moveLimit: gameMoveLimit,
         quotaTable,
-        segmentStartScore: tempState.segmentStartScore,
+        segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
       };
     })(),
   };
@@ -551,7 +551,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         mode: state.mode,
         moveLimit: state.moveLimit,
         quotaTable: state.quotaTable,
-        segmentStartScore: tempState.segmentStartScore,
+        segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
       },
     };
   }
@@ -713,7 +713,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         mode: state.mode,
         moveLimit: state.moveLimit,
         quotaTable: state.quotaTable,
-        segmentStartScore: tempState.segmentStartScore,
+        segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
       },
     };
   }
@@ -790,7 +790,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         moveCount: newMoveCount,
         isGameOver: goResult.gameOver, isCleared: goResult.isCleared,
         mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
-        segmentStartScore: tempState.segmentStartScore,
+        segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
       },
     };
   }
@@ -1064,7 +1064,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           mode: state.mode,
           moveLimit: state.moveLimit,
           quotaTable: state.quotaTable,
-          segmentStartScore: tempState.segmentStartScore,
+          segmentStartScore: goResult.newSegmentStartScore ?? tempState.segmentStartScore,
         };
       })(),
     };

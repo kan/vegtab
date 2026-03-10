@@ -21,30 +21,27 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
   const userId = c.get('userId');
   const data = c.req.valid('json');
 
-  // Verify seed exists
-  const seed = await c.env.DB.prepare(
-    'SELECT id, seed_value, is_daily, daily_date FROM puzzle_seeds WHERE id = ?'
-  ).bind(data.seedId).first<{
-    id: string; seed_value: string; is_daily: number; daily_date: string | null;
-  }>();
+  // Verify seed exists + check for existing record in parallel
+  const [seed, existing] = await Promise.all([
+    c.env.DB.prepare(
+      'SELECT id, seed_value, is_daily, daily_date FROM puzzle_seeds WHERE id = ?'
+    ).bind(data.seedId).first<{
+      id: string; seed_value: string; is_daily: number; daily_date: string | null;
+    }>(),
+    c.env.DB.prepare(
+      `SELECT id, score, move_count, is_cleared FROM play_scores
+       WHERE user_id = ? AND seed_id = ? AND mode = ?`
+    ).bind(userId, data.seedId, data.mode).first<{
+      id: string; score: number; move_count: number; is_cleared: number;
+    }>(),
+  ]);
   if (!seed) return c.json({ error: 'Seed not found' }, 404);
 
   // TODO: Replay verification with engine (Phase 3 enhancement)
   // For now, store the replay log and trust the score
   // Full verification: replay the actions with the engine and compare scores
 
-  // Store replay log in R2
-  const replayLogKey = `replays/${userId}/${data.seedId}/${generateId()}.json`;
-  await c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog));
-
-  // Check for existing record — keep only the best per user/seed/mode
-  const existing = await c.env.DB.prepare(
-    `SELECT id, score, move_count, is_cleared FROM play_scores
-     WHERE user_id = ? AND seed_id = ? AND mode = ?`
-  ).bind(userId, data.seedId, data.mode).first<{
-    id: string; score: number; move_count: number; is_cleared: number;
-  }>();
-
+  // Determine if new score is better
   let isBetter = true;
   if (existing) {
     if (data.mode === 'sprint') {
@@ -66,27 +63,36 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     }
   }
 
+  // Only write replay log to R2 if this score will be stored
   let scoreId: string;
   if (!existing) {
+    const replayLogKey = `replays/${userId}/${data.seedId}/${generateId()}.json`;
     scoreId = generateId();
-    await c.env.DB.prepare(
-      `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, replay_log_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(
-      scoreId, userId, data.seedId, data.mode,
-      data.moveLimit ?? null, data.moveCount, data.score,
-      data.isCleared ? 1 : 0, replayLogKey
-    ).run();
+    await Promise.all([
+      c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog)),
+      c.env.DB.prepare(
+        `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, replay_log_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        scoreId, userId, data.seedId, data.mode,
+        data.moveLimit ?? null, data.moveCount, data.score,
+        data.isCleared ? 1 : 0, replayLogKey
+      ).run(),
+    ]);
   } else if (isBetter) {
+    const replayLogKey = `replays/${userId}/${data.seedId}/${generateId()}.json`;
     scoreId = existing.id;
-    await c.env.DB.prepare(
-      `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, replay_log_key = ?
-       WHERE id = ?`
-    ).bind(
-      data.moveLimit ?? null, data.moveCount, data.score,
-      data.isCleared ? 1 : 0, replayLogKey,
-      scoreId
-    ).run();
+    await Promise.all([
+      c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog)),
+      c.env.DB.prepare(
+        `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, replay_log_key = ?
+         WHERE id = ?`
+      ).bind(
+        data.moveLimit ?? null, data.moveCount, data.score,
+        data.isCleared ? 1 : 0, replayLogKey,
+        scoreId
+      ).run(),
+    ]);
   } else {
     scoreId = existing.id;
   }

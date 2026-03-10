@@ -53,8 +53,13 @@ function isStuck(board: (Cell | null)[][]): boolean {
   return !hasValidSwap(board) && !hasActivatableItems(board);
 }
 
-/** ゲーム終了判定（3モード対応） */
-export function checkGameOverState(state: GameState): { gameOver: boolean; isCleared?: boolean } {
+/** ゲーム終了判定（3モード対応）
+ * 戻り値の newSegmentStartScore が返された場合、呼び出し元で state.segmentStartScore を更新すること */
+export function checkGameOverState(state: GameState): {
+  gameOver: boolean;
+  isCleared?: boolean;
+  newSegmentStartScore?: number;
+} {
   const { board, mode, moveCount, moveLimit, score, quotaTable } = state;
 
   switch (mode) {
@@ -74,8 +79,8 @@ export function checkGameOverState(state: GameState): { gameOver: boolean; isCle
         const check = checkSurvivalQuota(moveCount, segmentScore, quotaTable);
         if (check.isCheckpoint) {
           if (!check.quotaMet) return { gameOver: true };
-          // ノルマ達成: 次の区間のためにsegmentStartScoreを更新
-          state.segmentStartScore = score;
+          // ノルマ達成: 呼び出し元で segmentStartScore を更新
+          return { gameOver: false, newSegmentStartScore: score };
         }
       }
       if (isStuck(board)) return { gameOver: true };

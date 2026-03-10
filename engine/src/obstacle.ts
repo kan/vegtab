@@ -71,9 +71,14 @@ export function countObstacles(board: (Cell | null)[][]): number {
   return count;
 }
 
-/** 全おじゃまタイルが除去されたか */
+/** 全おじゃまタイルが除去されたか（最初の1つ見つかった時点でfalse） */
 export function allObstaclesCleared(board: (Cell | null)[][]): boolean {
-  return countObstacles(board) === 0;
+  for (let row = 0; row < BOARD_SIZE; row++) {
+    for (let col = 0; col < BOARD_SIZE; col++) {
+      if (board[row][col]?.obstacle) return false;
+    }
+  }
+  return true;
 }
 
 /**

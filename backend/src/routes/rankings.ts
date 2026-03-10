@@ -31,14 +31,15 @@ rankingRoutes.get('/:seedId', async (c) => {
     return c.json({ ranking: cached.entries, userRank });
   }
 
-  const rankingEntries = await queryRanking(c.env.DB, seedId, mode as GameMode);
+  const [rankingEntries, userRank] = await Promise.all([
+    queryRanking(c.env.DB, seedId, mode as GameMode),
+    getUserRank(c.env.DB, userId, seedId, mode as GameMode),
+  ]);
 
   // Cache in KV
   await c.env.KV.put(cacheKey, JSON.stringify({ entries: rankingEntries }), {
     expirationTtl: RANKING_CACHE_TTL,
   });
-
-  const userRank = await getUserRank(c.env.DB, userId, seedId, mode as GameMode);
 
   return c.json({ ranking: rankingEntries, userRank });
 });
@@ -58,9 +59,8 @@ interface RankingData {
 
 // --- Mode-specific ranking queries ---
 
-function sprintRankingSQL(): { sql: string; orderDesc: string } {
-  return {
-    sql: `SELECT r.user_id, u.display_name, r.best_score, ps2.move_count
+function sprintRankingSQL(): string {
+  return `SELECT r.user_id, u.display_name, r.best_score, ps2.move_count
      FROM (
        SELECT user_id, MAX(score) as best_score
        FROM play_scores
@@ -71,9 +71,7 @@ function sprintRankingSQL(): { sql: string; orderDesc: string } {
        AND ps2.seed_id = ? AND ps2.mode = ?
      JOIN users u ON u.id = r.user_id
      ORDER BY r.best_score DESC
-     LIMIT ?`,
-    orderDesc: 'score DESC',
-  };
+     LIMIT ?`;
 }
 
 function clearRankingSQL(): string {
@@ -108,7 +106,7 @@ function survivalRankingSQL(): string {
 
 async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Promise<RankingEntry[]> {
   if (mode === 'sprint') {
-    const entries = await db.prepare(sprintRankingSQL().sql)
+    const entries = await db.prepare(sprintRankingSQL())
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
       .all<{ user_id: string; display_name: string | null; best_score: number; move_count: number }>();
     return (entries.results ?? []).map((e, i) => ({

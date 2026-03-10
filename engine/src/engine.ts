@@ -259,6 +259,7 @@ function applyGameOver(state: GameState): void {
   const result = checkGameOverState(state);
   state.isGameOver = result.gameOver;
   if (result.isCleared !== undefined) state.isCleared = result.isCleared;
+  if (result.newSegmentStartScore !== undefined) state.segmentStartScore = result.newSegmentStartScore;
 
   if (state.isGameOver) {
     if (state.mode === 'sprint') {
@@ -789,10 +790,8 @@ function processChains(
     }
 
     // スコア — Clearモードでは加算しない
-    if (mode !== 'clear') {
-      const stepScore = calculateStepScore(matches, chainIndex);
-      totalScore += stepScore;
-    }
+    const stepScore = mode !== 'clear' ? calculateStepScore(matches, chainIndex) : 0;
+    totalScore += stepScore;
 
     // アイテム配置
     const generatedItems: { pos: Position; item: ItemType }[] = [];
@@ -806,7 +805,7 @@ function processChains(
       matches,
       clearedPositions: cleared,
       generatedItems,
-      score: mode !== 'clear' ? calculateStepScore(matches, chainIndex) : 0,
+      score: stepScore,
     });
 
     chainIndex++;

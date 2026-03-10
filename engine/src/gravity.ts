@@ -3,13 +3,13 @@ import { Cell, BOARD_SIZE } from './types.js';
 /** 重力落下処理: おじゃまタイルを固定し、セグメントごとに落下させる */
 export function applyGravity(board: (Cell | null)[][]): void {
   for (let col = 0; col < BOARD_SIZE; col++) {
-    // おじゃまタイルがなければ従来の単純コンパクション
-    let hasObstacle = false;
+    // おじゃまタイルの位置を収集（なければ単一セグメント [0, BOARD_SIZE)）
+    const obstacleRows: number[] = [];
     for (let row = 0; row < BOARD_SIZE; row++) {
-      if (board[row][col]?.obstacle) { hasObstacle = true; break; }
+      if (board[row][col]?.obstacle) obstacleRows.push(row);
     }
 
-    if (!hasObstacle) {
+    if (obstacleRows.length === 0) {
       // 従来の単純コンパクション
       let writeRow = BOARD_SIZE - 1;
       for (let readRow = BOARD_SIZE - 1; readRow >= 0; readRow--) {
@@ -26,13 +26,6 @@ export function applyGravity(board: (Cell | null)[][]): void {
       }
     } else {
       // セグメントベースの落下: おじゃまタイルで区切られたセグメントごとにコンパクション
-      // セグメント境界を特定（おじゃまタイルの位置）
-      const obstacleRows: number[] = [];
-      for (let row = 0; row < BOARD_SIZE; row++) {
-        if (board[row][col]?.obstacle) obstacleRows.push(row);
-      }
-
-      // 各セグメント（おじゃまタイル間の範囲）を個別にコンパクション
       // セグメント: [segStart, segEnd) — おじゃまタイルの行は含まない
       const segments: [number, number][] = [];
       let segStart = 0;
