@@ -774,7 +774,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     );
   }
 
-  function computeItemSwapPlan(pos: Position, dir: Direction): { boardAfterSwap: (Cell | null)[][]; plan: ItemAnimPlan } | null {
+  function computeItemSwapPlan(pos: Position, dir: Direction): {
+    boardAfterSwap: (Cell | null)[][];
+    preChains: ChainAnimData[];
+    preScore: number;
+    plan: ItemAnimPlan;
+  } | null {
     if (!gameState.value) return null;
     const state = gameState.value;
     const target = adjPos(pos, dir);
@@ -793,17 +798,45 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     const itemCell = cell1.item ? cell1 : cell2;
     const otherCell = cell1.item ? cell2 : cell1;
-    const newItemPos = cell1.item ? target : pos;
+
+    const origItemPos = cell1.item ? target : pos;
+
+    // Process pre-chains: matches created by the vegetable's new position
+    const { chains: preChains, rng: preRng, totalScore: preScore } =
+      computeChainSteps(board, state.rngState, state.score, 1);
+
+    // Find the item's current position after gravity (it may have dropped)
+    // Items never participate in matches, so the original item is still on the board.
+    // Search its original column from bottom up (gravity only moves it down).
+    let newItemPos: Position | null = null;
+    for (let r = BOARD_SIZE - 1; r >= 0; r--) {
+      if (board[r][origItemPos.col]?.item === itemCell.item) {
+        newItemPos = { row: r, col: origItemPos.col };
+        break;
+      }
+    }
+    // Fallback: scan entire board (e.g. if column was restructured by obstacle destruction)
+    if (!newItemPos) {
+      for (let r = 0; r < BOARD_SIZE && !newItemPos; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          if (board[r][c]?.item === itemCell.item) {
+            newItemPos = { row: r, col: c };
+            break;
+          }
+        }
+      }
+    }
+    if (!newItemPos) return null;
 
     let targetColor: number | undefined;
     if (itemCell.item === 'flush') targetColor = otherCell.color;
 
     const plan = buildItemPlan(
-      board, state.rngState, state.score, state.moveCount,
+      board, preRng, preScore, state.moveCount,
       newItemPos, itemCell.item!, targetColor,
       state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
     );
-    return { boardAfterSwap, plan };
+    return { boardAfterSwap, preChains, preScore, plan };
   }
 
   function computeSynthesisPlan(pos: Position, dir: Direction): SynthesisAnimPlan | null {

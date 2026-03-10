@@ -369,12 +369,15 @@ async function commitSwap(pos: Position, dir: Direction) {
   if (itemSwap) {
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = itemSwap.boardAfterSwap;
-    await wait(50);
-    // Reassign for item effects
+    // Animate pre-chains (matches from the vegetable swap) before item activation
+    if (itemSwap.preChains.length > 0) {
+      await animateChainsWithScore(itemSwap.preChains, itemSwap.preScore);
+    }
+    // Then activate the item
     visualBoard.value = itemSwap.plan.boardBeforeActivation;
     await animateItemEffects(itemSwap.plan);
     await animateDropAndChains(itemSwap.plan);
-    store.recordPlanStats(itemSwap.plan.regularChains);
+    store.recordPlanStats([...itemSwap.preChains, ...itemSwap.plan.regularChains]);
     store.applyState(itemSwap.plan.finalState);
     visualBoard.value = null;
     drag.setLocked(false);
