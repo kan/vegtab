@@ -29,6 +29,7 @@ export default {
     newPuzzle: 'New Puzzle',
     pastDailySeeds: 'Past Daily Puzzles',
     dailyHelp: 'Daily puzzles update every day. All players share the same board — same moves, same results. Plan your strategy and aim for the best score!',
+    nextPuzzleIn: 'Next puzzle in',
     rankingPreview: 'Ranking',
     seeAll: 'See All',
     soundSE: 'Sound Effects',

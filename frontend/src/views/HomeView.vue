@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore, type PlayRecord } from '@/stores/game';
@@ -90,6 +90,29 @@ function saveName() {
 
 // --- Daily help ---
 const showDailyHelp = ref(false);
+
+// --- Daily countdown (time until UTC midnight) ---
+const countdown = ref('');
+let countdownTimer: ReturnType<typeof setInterval> | undefined;
+
+function updateCountdown() {
+  const now = new Date();
+  const utcMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  const diff = utcMidnight.getTime() - now.getTime();
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  countdown.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+onMounted(() => {
+  updateCountdown();
+  countdownTimer = setInterval(updateCountdown, 1000);
+});
+
+onUnmounted(() => {
+  clearInterval(countdownTimer);
+});
 
 // --- Ranking preview (local data, best per user) ---
 const rankingMode = ref<'sprint' | 'clear' | 'survival'>('sprint');
@@ -186,6 +209,10 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
           <span class="daily-date">{{ todayLocal() }}</span>
           <span class="daily-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
           <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('common.ranking')">&#x1F3C6;</button>
+        </div>
+        <div class="daily-countdown">
+          <span class="countdown-label">{{ t('home.nextPuzzleIn') }}</span>
+          <span class="countdown-time">{{ countdown }}</span>
         </div>
         <div class="mode-buttons">
           <button class="mode-btn" @click="playMode('sprint')">
@@ -665,6 +692,23 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
   font-size: 11px;
   color: var(--text-muted);
   flex: 1;
+}
+.daily-countdown {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+.countdown-label {
+  color: var(--text-muted);
+}
+.countdown-time {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
 }
 .mode-buttons {
   display: flex;

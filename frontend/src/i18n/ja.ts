@@ -29,6 +29,7 @@ export default {
     newPuzzle: '新しいパズル',
     pastDailySeeds: '過去のデイリーパズル',
     dailyHelp: 'デイリーパズルは毎日更新され、全プレイヤーが同じ盤面に挑戦します。同じ操作で同じ結果になるので、戦略を練ってベストスコアを目指しましょう！',
+    nextPuzzleIn: '次のパズルまで',
     rankingPreview: 'ランキング',
     seeAll: 'もっと見る',
     soundSE: '効果音',
