@@ -33,8 +33,11 @@ const myRank = ref<{ rank: number; score: number; moveCount?: number } | null>(n
 watch(() => props.mode, (m) => { if (m) activeMode.value = m; });
 watch(() => props.open, (o) => {
   if (o) {
-    if (props.mode) activeMode.value = props.mode;
-    fetchRanking();
+    if (props.mode && props.mode !== activeMode.value) {
+      activeMode.value = props.mode; // triggers activeMode watcher
+    } else {
+      fetchRanking();
+    }
   }
 });
 watch(activeMode, () => { if (props.open) fetchRanking(); });

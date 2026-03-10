@@ -73,8 +73,10 @@ function tryRestoreSession(seed: number, mode: GameMode): boolean {
     if (!raw) return false;
     const saved = JSON.parse(raw);
     if (saved.seed !== seed || saved.mode !== mode) return false;
-    if (saved.state?.isGameOver) { clearSession(); return false; }
-    store.restoreState(seed, saved.state, saved.maxChain ?? 0, saved.generatedItemTypes ?? []);
+    const s = saved.state;
+    if (!s?.board || typeof s.score !== 'number' || typeof s.rngState !== 'number') { clearSession(); return false; }
+    if (s.isGameOver) { clearSession(); return false; }
+    store.restoreState(seed, s, saved.maxChain ?? 0, saved.generatedItemTypes ?? []);
     selectedMode.value = mode;
     scoreRecorded.value = false;
     viewPhase.value = 'playing';
@@ -369,7 +371,6 @@ const gameOverScore = computed(() => {
   flex-direction: column;
   padding: 12px;
   overflow: hidden;
-  overscroll-behavior-x: none;
   position: relative;
 }
 .puzzle-header {

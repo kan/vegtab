@@ -806,11 +806,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const { chains: preChains, rng: preRng, totalScore: preScore } =
       computeChainSteps(board, state.rngState, state.score, 1);
 
-    // Find the item's current position after gravity (it may have dropped)
+    // Find the item's current position after gravity (it may have dropped).
     // Items never participate in matches, so the original item is still on the board.
-    // Search its original column from bottom up (gravity only moves it down).
+    // Gravity only moves it down within the same column — search from origItemPos.row
+    // downward to find the closest match (avoids confusion with newly generated items).
     let newItemPos: Position | null = null;
-    for (let r = BOARD_SIZE - 1; r >= 0; r--) {
+    for (let r = origItemPos.row; r < BOARD_SIZE; r++) {
       if (board[r][origItemPos.col]?.item === itemCell.item) {
         newItemPos = { row: r, col: origItemPos.col };
         break;
@@ -1078,7 +1079,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   }
 
   function setDisplayScore(s: number) { _displayScore.value = s; }
-  function clearDisplayScore() { _displayScore.value = null; }
 
   function applyState(state: GameState) {
     _displayScore.value = null;
@@ -1103,7 +1103,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     computeScopePlan, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,
     computeAutoActivationPlan,
-    applyState, setDisplayScore, clearDisplayScore, placeItem,
+    applyState, setDisplayScore, placeItem,
     maxChain, generatedItemTypes, recordPlanStats,
   };
 });
