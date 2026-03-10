@@ -381,6 +381,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const gameState = ref<GameState | null>(null);
   const seed = ref(0);
 
+  // Stats tracking for achievements
+  const maxChain = ref(0);
+  const generatedItemTypes = ref<Set<string>>(new Set());
+
   const board = computed(() => gameState.value?.board ?? null);
   const score = computed(() => gameState.value?.score ?? 0);
   const moveCount = computed(() => gameState.value?.moveCount ?? 0);
@@ -418,6 +422,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   function startGame(newSeed?: number, gameMode?: GameMode) {
     seed.value = newSeed ?? Math.floor(Math.random() * 0x7FFFFFFF);
+    maxChain.value = 0;
+    generatedItemTypes.value = new Set();
     gameState.value = initializeGame(seed.value, gameMode ?? 'sprint');
   }
 
@@ -989,6 +995,18 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     };
   }
 
+  /** Record chain/item stats from animation plan data for achievement tracking */
+  function recordPlanStats(chains: ChainAnimData[]) {
+    for (const chain of chains) {
+      if (chain.chainIndex > maxChain.value) {
+        maxChain.value = chain.chainIndex;
+      }
+      if (chain.itemGen) {
+        generatedItemTypes.value.add(chain.itemGen.item);
+      }
+    }
+  }
+
   function applyState(state: GameState) {
     gameState.value = state;
   }
@@ -1011,5 +1029,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     computeScopePlan, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,
     applyState, placeItem,
+    maxChain, generatedItemTypes, recordPlanStats,
   };
 });

@@ -18,6 +18,8 @@ export interface PlayRecord {
   playerName: string;
   isCleared?: boolean;
   moveLimit?: number;
+  maxChain?: number;
+  generatedItemTypes?: string[];
 }
 
 // --- Store ---
@@ -38,7 +40,8 @@ export const useGameStore = defineStore('game', () => {
       if (!isAuthenticated()) {
         await register();
       }
-      await Promise.all([syncProfile(), syncScoresFromServer()]);
+      const { useAchievementStore } = await import('@/stores/achievements');
+      await Promise.all([syncProfile(), syncScoresFromServer(), useAchievementStore().fetchAchievements()]);
       initialized.value = true;
     } catch (e) {
       console.warn('Failed to initialize with server, using local data', e);
@@ -170,7 +173,7 @@ export const useGameStore = defineStore('game', () => {
       return;
     }
     try {
-      const res = await api<{ scoreId: string; shareCode: string }>('/api/scores', {
+      const res = await api<{ scoreId: string; shareCode: string; newAchievements: string[] }>('/api/scores', {
         method: 'POST',
         body: JSON.stringify({
           date,
@@ -179,6 +182,8 @@ export const useGameStore = defineStore('game', () => {
           moveCount: record.moves,
           score: record.score,
           isCleared: record.isCleared ?? false,
+          maxChain: record.maxChain ?? 0,
+          generatedItemTypes: record.generatedItemTypes ?? [],
           replayLog: [],
         }),
         offlineQueue: true,
@@ -187,6 +192,13 @@ export const useGameStore = defineStore('game', () => {
       if (res.shareCode) {
         shareCodeCache.value[record.seed] = res.shareCode;
         saveShareCodeCache();
+      }
+      // Handle newly unlocked achievements
+      if (res.newAchievements?.length > 0) {
+        // Dynamically import to avoid circular dependency
+        const { useAchievementStore } = await import('@/stores/achievements');
+        const achievementStore = useAchievementStore();
+        achievementStore.handleNewAchievements(res.newAchievements);
       }
     } catch {
       // Error already handled by api() (toast shown, or queued offline)

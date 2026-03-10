@@ -133,6 +133,7 @@ async function handleTap(pos: Position) {
   await animateItemEffects(plan);
   await animateDropAndChains(plan);
 
+  store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
   visualBoard.value = null;
   drag.setLocked(false);
@@ -243,6 +244,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   // Regular chains
   for (const chain of plan.regularChains) await animateChainStep(chain);
 
+  store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
   visualBoard.value = null;
   drag.setLocked(false);
@@ -330,6 +332,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   // Regular chains
   for (const chain of plan.regularChains) await animateChainStep(chain);
 
+  store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
   visualBoard.value = null;
   drag.setLocked(false);
@@ -354,6 +357,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = swapPlan.boardAfterSwap;
     for (const chain of swapPlan.chains) await animateChainStep(chain);
+    store.recordPlanStats(swapPlan.chains);
     store.applyState(swapPlan.finalState);
     visualBoard.value = null;
     drag.setLocked(false);
@@ -394,6 +398,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     visualBoard.value = itemSwap.plan.boardBeforeActivation;
     await animateItemEffects(itemSwap.plan);
     await animateDropAndChains(itemSwap.plan);
+    store.recordPlanStats(itemSwap.plan.regularChains);
     store.applyState(itemSwap.plan.finalState);
     visualBoard.value = null;
     drag.setLocked(false);
@@ -434,6 +439,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     visualBoard.value = synthPlan.boardBeforeActivation;
     await animateSynthesisEffects(synthPlan);
     await animateSynthesisDropAndChains(synthPlan);
+    store.recordPlanStats(synthPlan.regularChains);
     store.applyState(synthPlan.finalState);
     visualBoard.value = null;
     drag.setLocked(false);

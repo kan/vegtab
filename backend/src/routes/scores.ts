@@ -5,6 +5,7 @@ import type { Bindings, Variables } from '../types';
 import { generateId } from '../lib/id';
 import { isDateNearToday } from '../lib/date';
 import { findOrCreateDailySeed } from '../lib/seed';
+import { evaluateAchievements } from '../lib/achievements';
 
 const submitScoreSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -13,6 +14,8 @@ const submitScoreSchema = z.object({
   moveCount: z.number().int(),
   score: z.number().int(),
   isCleared: z.boolean(),
+  maxChain: z.number().int().optional().default(0),
+  generatedItemTypes: z.array(z.string()).optional().default([]),
   replayLog: z.array(z.unknown()),
 });
 
@@ -97,7 +100,25 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
   // Invalidate ranking cache
   await c.env.KV.delete(`ranking:${seed.id}:${data.mode}`);
 
-  return c.json({ scoreId, shareCode: seed.share_code }, 201);
+  // Evaluate achievements (non-blocking)
+  const achievementPromise = evaluateAchievements(c.env.DB, userId, {
+    mode: data.mode,
+    score: data.score,
+    moveCount: data.moveCount,
+    isCleared: data.isCleared,
+    date: data.date,
+    maxChain: data.maxChain,
+    generatedItemTypes: data.generatedItemTypes,
+  });
+
+  let newAchievements: string[] = [];
+  try {
+    newAchievements = await achievementPromise;
+  } catch {
+    // Achievement evaluation failure should not break score submission
+  }
+
+  return c.json({ scoreId, shareCode: seed.share_code, newAchievements }, 201);
 });
 
 // GET /api/scores/my - Get user's play history

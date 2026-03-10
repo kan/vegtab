@@ -7,6 +7,7 @@ import { userRoutes } from './routes/user';
 import { seedRoutes } from './routes/seeds';
 import { scoreRoutes } from './routes/scores';
 import { rankingRoutes } from './routes/rankings';
+import { achievementRoutes } from './routes/achievements';
 import { shareRoutes } from './routes/share';
 import { authMiddleware } from './middleware/auth';
 
@@ -36,5 +37,6 @@ app.route('/api/user', userRoutes);
 app.route('/api/seeds', seedRoutes);
 app.route('/api/scores', scoreRoutes);
 app.route('/api/rankings', rankingRoutes);
+app.route('/api/achievements', achievementRoutes);
 
 export default app;

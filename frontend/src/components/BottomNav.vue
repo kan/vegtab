@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
 
 const router = useRouter();
 const route = useRoute();
 const gameStore = useGameStore();
+const { t } = useI18n();
 
 function goToPuzzle() {
   const seed = gameStore.generateDailySeed();
@@ -19,15 +21,22 @@ function goToPuzzle() {
       :class="['nav-btn', { active: route.path === '/' }]"
       @click="router.push('/')"
     >
-      <span class="nav-icon">&#x2302;</span>
+      <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       <span class="nav-label">HOME</span>
     </button>
     <button
       :class="['nav-btn', { active: route.path.startsWith('/puzzle') }]"
       @click="goToPuzzle"
     >
-      <span class="nav-icon">&#x25A6;</span>
+      <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
       <span class="nav-label">PUZZLE</span>
+    </button>
+    <button
+      :class="['nav-btn', { active: route.path === '/achievements' }]"
+      @click="router.push('/achievements')"
+    >
+      <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2"/><path d="M18 9h2a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-2"/><path d="M6 3h12v7a6 6 0 0 1-12 0V3z"/><path d="M9 21h6"/><path d="M12 16v5"/></svg>
+      <span class="nav-label">{{ t('achievement.title').toUpperCase() }}</span>
     </button>
   </nav>
 </template>
@@ -57,10 +66,11 @@ function goToPuzzle() {
 .nav-btn.active {
   color: var(--brand);
 }
-.nav-icon {
-  font-size: 20px;
-}
 .nav-label {
   font-weight: 600;
+}
+.nav-icon-svg {
+  width: 20px;
+  height: 20px;
 }
 </style>

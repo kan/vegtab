@@ -110,6 +110,8 @@ watch(() => store.isGameOver, (ended) => {
       moves: store.moveCount,
       isCleared: store.isCleared ?? false,
       moveLimit: store.moveLimit,
+      maxChain: store.maxChain,
+      generatedItemTypes: [...store.generatedItemTypes],
     });
     // Prompt for name if not set
     if (!gameStore.displayName) {
