@@ -4,7 +4,7 @@ export function todayUTC(): string {
 }
 
 /** Derive a deterministic engine seed number from a YYYY-MM-DD date string.
- *  Must match frontend's generateDailySeed() exactly. */
+ *  Canonical implementation in engine/src/seed.ts — keep in sync. */
 export function generateDailySeed(dateStr: string): number {
   let hash = 0;
   for (let i = 0; i < dateStr.length; i++) {

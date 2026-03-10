@@ -1,27 +1,14 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
-import { generateId, generateShareCode } from '../lib/id';
-import { todayUTC, generateDailySeed } from '../lib/date';
+import { todayUTC } from '../lib/date';
+import { findOrCreateDailySeed } from '../lib/seed';
 
 export const seedRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // GET /api/seeds/daily - Get today's daily seed
 seedRoutes.get('/daily', async (c) => {
   const today = todayUTC();
-
-  let seed = await c.env.DB.prepare(
-    'SELECT id, seed_value, share_code FROM puzzle_seeds WHERE is_daily = 1 AND daily_date = ?'
-  ).bind(today).first<{ id: string; seed_value: string; share_code: string }>();
-
-  if (!seed) {
-    const seedId = generateId();
-    const seedValue = String(generateDailySeed(today));
-    const shareCode = generateShareCode();
-    await c.env.DB.prepare(
-      'INSERT INTO puzzle_seeds (id, seed_value, share_code, is_daily, daily_date) VALUES (?, ?, ?, 1, ?)'
-    ).bind(seedId, seedValue, shareCode, today).run();
-    seed = { id: seedId, seed_value: seedValue, share_code: shareCode };
-  }
+  const seed = await findOrCreateDailySeed(c.env.DB, today);
 
   return c.json({
     seedId: seed.id,

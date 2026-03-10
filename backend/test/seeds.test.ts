@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF, env } from 'cloudflare:test';
 import { applyMigrations, registerUser, authHeader } from './helpers';
-
-/** Helper: get today's date as YYYY-MM-DD in UTC */
-function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayUTC } from '../src/lib/date';
 
 describe('Seeds & Ranking API', () => {
   let accessToken: string;

@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Bindings, Variables } from '../types';
-import { generateId, generateShareCode } from '../lib/id';
-import { generateDailySeed, isDateNearToday } from '../lib/date';
+import { generateId } from '../lib/id';
+import { isDateNearToday } from '../lib/date';
+import { findOrCreateDailySeed } from '../lib/seed';
 
 const submitScoreSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -27,32 +28,15 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     return c.json({ error: 'Invalid date' }, 400);
   }
 
-  // Find or create the daily seed for this date
-  let seed = await c.env.DB.prepare(
-    'SELECT id, seed_value, share_code FROM puzzle_seeds WHERE is_daily = 1 AND daily_date = ?'
-  ).bind(data.date).first<{ id: string; seed_value: string; share_code: string }>();
+  // Find or create the daily seed, and check for existing score in one query
+  const seed = await findOrCreateDailySeed(c.env.DB, data.date);
 
-  if (!seed) {
-    const seedId = generateId();
-    const seedValue = String(generateDailySeed(data.date));
-    const shareCode = generateShareCode();
-    await c.env.DB.prepare(
-      'INSERT INTO puzzle_seeds (id, seed_value, share_code, is_daily, daily_date) VALUES (?, ?, ?, 1, ?)'
-    ).bind(seedId, seedValue, shareCode, data.date).run();
-    seed = { id: seedId, seed_value: seedValue, share_code: shareCode };
-  }
-
-  // Check for existing record
   const existing = await c.env.DB.prepare(
     `SELECT id, score, move_count, is_cleared FROM play_scores
      WHERE user_id = ? AND seed_id = ? AND mode = ?`
   ).bind(userId, seed.id, data.mode).first<{
     id: string; score: number; move_count: number; is_cleared: number;
   }>();
-
-  // TODO: Replay verification with engine (Phase 3 enhancement)
-  // For now, store the replay log and trust the score
-  // Full verification: replay the actions with the engine and compare scores
 
   // Determine if new score is better
   let isBetter = true;

@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { todayLocal } from '@/utils/date';
+import { formatDateLocal, todayLocal } from '@/utils/date';
 import { api, register, isAuthenticated, showToast } from '@/api/client';
+import { generateDailySeed } from '@tomado/engine';
 
 // --- Types ---
 
@@ -75,17 +76,12 @@ export const useGameStore = defineStore('game', () => {
 
   // --- Seeds ---
 
-  function generateDailySeed(dateStr?: string): number {
-    const d = dateStr ?? todayLocal();
-    let hash = 0;
-    for (let i = 0; i < d.length; i++) {
-      hash = ((hash << 5) - hash + d.charCodeAt(i)) | 0;
-    }
-    return Math.abs(hash);
+  function dailySeed(dateStr?: string): number {
+    return generateDailySeed(dateStr ?? todayLocal());
   }
 
   function isTodaysDailySeed(seed: number): boolean {
-    return seed === generateDailySeed(todayLocal());
+    return seed === dailySeed(todayLocal());
   }
 
   function randomSeed(): number {
@@ -94,12 +90,11 @@ export const useGameStore = defineStore('game', () => {
 
   /** Find the date string for a daily seed number, or null if not a daily seed */
   function findDailyDate(seed: number): string | null {
-    // Check today ±1 day (timezone tolerance)
     const today = new Date();
     for (let offset = -1; offset <= 1; offset++) {
       const d = new Date(today);
       d.setDate(d.getDate() + offset);
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const dateStr = formatDateLocal(d);
       if (generateDailySeed(dateStr) === seed) return dateStr;
     }
     return null;
@@ -210,7 +205,7 @@ export const useGameStore = defineStore('game', () => {
   return {
     displayName, effectiveName, setDisplayName,
     playRecords,
-    generateDailySeed, randomSeed,
+    generateDailySeed: dailySeed, randomSeed,
     isTodaysDailySeed,
     addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves,
     getDailySeeds, hasPlayedDaily,
