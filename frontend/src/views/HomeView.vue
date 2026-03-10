@@ -321,8 +321,8 @@ function saveName() {
 /* Hamburger menu */
 .hamburger-btn {
   position: fixed;
-  bottom: 70px;
-  right: 16px;
+  bottom: 80px;
+  right: max(16px, calc((100vw - 480px) / 2 + 16px));
   width: 44px;
   height: 44px;
   border-radius: 50%;
