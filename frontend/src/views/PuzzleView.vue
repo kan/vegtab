@@ -270,7 +270,7 @@ const gameOverScore = computed(() => {
             <template v-if="selectedMode === 'clear'">
               <div class="score-label">{{ t('mode.obstacles', { count: store.obstacleCount }) }}</div>
             </template>
-            <template v-else>
+            <template v-else-if="selectedMode !== 'survival'">
               <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
               <div v-if="myBest > 0" class="best-label">{{ t('puzzle.best', { score: myBest.toLocaleString() }) }}</div>
             </template>

@@ -416,10 +416,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const mc = gameState.value.moveCount;
     return 5 - (mc % 5);
   });
-  /** 現区間で稼いだスコア */
+  /** 現区間で稼いだスコア（displayScore反映） */
   const segmentScore = computed(() => {
     if (!gameState.value) return 0;
-    return gameState.value.score - (gameState.value.segmentStartScore ?? 0);
+    const currentScore = _displayScore.value ?? gameState.value.score;
+    return currentScore - (gameState.value.segmentStartScore ?? 0);
   });
 
   function startGame(newSeed?: number, gameMode?: GameMode) {

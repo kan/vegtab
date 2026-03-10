@@ -16,33 +16,34 @@ const progress = computed(() => {
 });
 
 const barColor = computed(() => {
-  const p = progress.value;
-  if (p >= 80) return 'var(--success, #4caf50)';
-  if (p >= 50) return 'var(--warning, #ff9800)';
-  return 'var(--danger, #f44336)';
+  if (progress.value >= 100) return 'var(--success, #4caf50)';
+  return 'var(--warning, #ff9800)';
 });
 
 const remaining = computed(() => {
   return Math.max(0, props.quota - props.currentScore);
 });
 
-const isNearQuota = computed(() => progress.value >= 80 && progress.value < 100);
 const isQuotaMet = computed(() => progress.value >= 100);
 </script>
 
 <template>
   <div class="survival-gauge">
     <div class="gauge-header">
-      <span class="gauge-quota">
-        {{ t('mode.survivalQuota', { moves: movesUntilCheck, target: remaining.toLocaleString() }) }}
-      </span>
+      <div class="gauge-main">
+        <span class="gauge-label">{{ t('mode.survivalQuotaPre') }}</span>
+        <span class="gauge-number">{{ movesUntilCheck }}</span>
+        <span class="gauge-label">{{ t('mode.survivalQuotaMid') }}</span>
+        <span class="gauge-number">{{ remaining.toLocaleString() }}</span>
+        <span class="gauge-label">{{ t('mode.survivalQuotaSuf') }}</span>
+      </div>
       <span class="gauge-score">
         {{ t('mode.survivalProgress', { current: currentScore.toLocaleString(), target: quota.toLocaleString() }) }}
       </span>
     </div>
     <div class="gauge-track">
       <div
-        :class="['gauge-fill', { 'gauge-fill-pulse': isNearQuota, 'gauge-fill-met': isQuotaMet }]"
+        :class="['gauge-fill', { 'gauge-fill-met': isQuotaMet }]"
         :style="{ width: progress + '%', background: barColor }"
       />
       <span class="gauge-moves-badge">{{ movesUntilCheck }}</span>
@@ -61,10 +62,21 @@ const isQuotaMet = computed(() => progress.value >= 100);
   align-items: baseline;
   margin-bottom: 3px;
 }
-.gauge-quota {
-  font-size: 11px;
-  font-weight: 700;
+.gauge-main {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.gauge-number {
+  font-size: 22px;
+  font-weight: 800;
   color: var(--text-primary);
+  line-height: 1;
+}
+.gauge-label {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-secondary);
 }
 .gauge-score {
   font-size: 10px;
@@ -83,15 +95,8 @@ const isQuotaMet = computed(() => progress.value >= 100);
   border-radius: 4px;
   transition: width 0.3s ease, background 0.3s ease;
 }
-.gauge-fill-pulse {
-  animation: gauge-pulse 1s ease-in-out infinite;
-}
 .gauge-fill-met {
   animation: none;
-}
-@keyframes gauge-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
 }
 .gauge-met-label {
   font-size: 10px;
