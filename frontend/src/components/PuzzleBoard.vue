@@ -230,7 +230,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
 
   // Drop + regular chains
   await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
-  for (const chain of plan.regularChains) await animateChainStep(chain);
+  await animateChainsWithScore(plan.regularChains, plan.finalState.score);
 
   store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
@@ -306,7 +306,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
 
   // Drop + regular chains
   await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
-  for (const chain of plan.regularChains) await animateChainStep(chain);
+  await animateChainsWithScore(plan.regularChains, plan.finalState.score);
 
   store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
@@ -332,7 +332,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   if (swapPlan) {
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = swapPlan.boardAfterSwap;
-    for (const chain of swapPlan.chains) await animateChainStep(chain);
+    await animateChainsWithScore(swapPlan.chains, swapPlan.finalState.score);
     store.recordPlanStats(swapPlan.chains);
     store.applyState(swapPlan.finalState);
     visualBoard.value = null;
@@ -743,16 +743,27 @@ async function animateDrop(
   for (const k of keys) delete dropOffsets[k];
 }
 
+async function animateChainsWithScore(chains: ChainAnimData[], finalScore: number) {
+  const chainScoreTotal = chains.reduce((s, c) => s + c.score, 0);
+  let running = finalScore - chainScoreTotal;
+  store.setDisplayScore(running);
+  for (const chain of chains) {
+    await animateChainStep(chain);
+    running += chain.score;
+    store.setDisplayScore(running);
+  }
+}
+
 async function animateSynthesisDropAndChains(plan: SynthesisAnimPlan) {
   await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
-  for (const chain of plan.regularChains) await animateChainStep(chain);
+  await animateChainsWithScore(plan.regularChains, plan.finalState.score);
 }
 
 // --- Drop + chain animations ---
 
 async function animateDropAndChains(plan: ItemAnimPlan) {
   await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
-  for (const chain of plan.regularChains) await animateChainStep(chain);
+  await animateChainsWithScore(plan.regularChains, plan.finalState.score);
 }
 
 async function animateChainStep(chain: ChainAnimData) {

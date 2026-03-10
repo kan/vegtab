@@ -386,7 +386,9 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const generatedItemTypes = ref<Set<string>>(new Set());
 
   const board = computed(() => gameState.value?.board ?? null);
-  const score = computed(() => gameState.value?.score ?? 0);
+  // displayScore overrides score during chain animations for real-time display
+  const _displayScore = ref<number | null>(null);
+  const score = computed(() => _displayScore.value ?? (gameState.value?.score ?? 0));
   const moveCount = computed(() => gameState.value?.moveCount ?? 0);
   const isGameOver = computed(() => gameState.value?.isGameOver ?? false);
   const mode = computed<GameMode>(() => gameState.value?.mode ?? 'sprint');
@@ -1007,7 +1009,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
   }
 
+  function setDisplayScore(s: number) { _displayScore.value = s; }
+  function clearDisplayScore() { _displayScore.value = null; }
+
   function applyState(state: GameState) {
+    _displayScore.value = null;
     gameState.value = state;
   }
 
@@ -1028,7 +1034,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     activateScope, applyScopeSynthesis,
     computeScopePlan, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,
-    applyState, placeItem,
+    applyState, setDisplayScore, clearDisplayScore, placeItem,
     maxChain, generatedItemTypes, recordPlanStats,
   };
 });

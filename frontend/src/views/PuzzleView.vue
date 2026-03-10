@@ -327,6 +327,7 @@ const gameOverScore = computed(() => {
   flex-direction: column;
   padding: 12px;
   overflow: hidden;
+  overscroll-behavior-x: none;
   position: relative;
 }
 .puzzle-header {
