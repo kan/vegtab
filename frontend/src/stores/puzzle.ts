@@ -68,6 +68,21 @@ function synthBasePoints(item1: ItemType, item2: ItemType): number {
   return Math.max(ITEM_BASE_POINTS[item1], ITEM_BASE_POINTS[item2]);
 }
 
+/** アイテム誘爆効果をスコア加算＆配列に記録する共通ヘルパー */
+function accumulateItemEffects(
+  effects: ItemEffectStep[],
+  outEffects: ItemEffectStep[],
+  outCleared: Position[],
+): number {
+  let score = 0;
+  for (const e of effects) {
+    score += calcItemEffectScore(e);
+    outEffects.push(e);
+    outCleared.push(e.itemPos, ...e.targets);
+  }
+  return score;
+}
+
 export interface ItemAnimPlan {
   boardBeforeActivation: (Cell | null)[][];
   effects: ItemEffectStep[];
@@ -511,17 +526,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (!ac) continue;
       if (ac.obstacle) continue; // おじゃまタイルはスキップ
       if (ac.item) {
-        const effects = computeItemEffects(board, t, ac.item);
-        for (const e of effects) {
-          totalScore += calcItemEffectScore(e);
-          itemEffects.push(e);
-          allScopeCleared.push(e.itemPos);
-          allScopeCleared.push(...e.targets);
-        }
+        totalScore += accumulateItemEffects(
+          computeItemEffects(board, t, ac.item), itemEffects, allScopeCleared);
       } else {
         board[t.row][t.col] = null;
         allScopeCleared.push(t);
-        totalScore += 10;
+        totalScore += ITEM_BASE_POINTS.scope;
       }
     }
 
@@ -539,17 +549,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         continue;
       }
       if (tc.item) {
-        const effects = computeItemEffects(board, target, tc.item);
-        for (const e of effects) {
-          totalScore += calcItemEffectScore(e);
-          itemEffects.push(e);
-          allScopeCleared.push(e.itemPos);
-          allScopeCleared.push(...e.targets);
-        }
+        totalScore += accumulateItemEffects(
+          computeItemEffects(board, target, tc.item), itemEffects, allScopeCleared);
       } else {
         board[target.row][target.col] = null;
         allScopeCleared.push(target);
-        totalScore += 10;
+        totalScore += ITEM_BASE_POINTS.scope;
       }
     }
 
@@ -618,18 +623,13 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (!ac) continue;
       if (ac.obstacle) continue; // おじゃまタイルはスキップ
       if (ac.item) {
-        const effects = computeItemEffects(board, t, ac.item);
-        for (const e of effects) {
-          totalScore += calcItemEffectScore(e);
-          itemEffects.push(e);
-          allSynthCleared.push(e.itemPos);
-          allSynthCleared.push(...e.targets);
-        }
+        totalScore += accumulateItemEffects(
+          computeItemEffects(board, t, ac.item), itemEffects, allSynthCleared);
       } else {
         board[t.row][t.col] = null;
         effectTargets.push(t);
         allSynthCleared.push(t);
-        totalScore += 10;
+        totalScore += ITEM_BASE_POINTS.scope;
       }
     }
 
@@ -648,18 +648,13 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           continue;
         }
         if (tc.item) {
-          const effects = computeItemEffects(board, target, tc.item);
-          for (const e of effects) {
-            totalScore += calcItemEffectScore(e);
-            itemEffects.push(e);
-            allSynthCleared.push(e.itemPos);
-            allSynthCleared.push(...e.targets);
-          }
+          totalScore += accumulateItemEffects(
+            computeItemEffects(board, target, tc.item), itemEffects, allSynthCleared);
         } else {
           board[target.row][target.col] = null;
           effectTargets.push(target);
           allSynthCleared.push(target);
-          totalScore += 10;
+          totalScore += ITEM_BASE_POINTS.scope;
         }
       }
     } else {
@@ -677,13 +672,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           const tKey = `${t.row},${t.col}`;
           if (!activated.has(tKey)) {
             activated.add(tKey);
-            const effects = computeItemEffects(board, t, c.item);
-            for (const e of effects) {
-              totalScore += calcItemEffectScore(e);
-              itemEffects.push(e);
-              allSynthCleared.push(e.itemPos);
-              allSynthCleared.push(...e.targets);
-            }
+            totalScore += accumulateItemEffects(
+              computeItemEffects(board, t, c.item), itemEffects, allSynthCleared);
           }
         } else {
           board[t.row][t.col] = null;
