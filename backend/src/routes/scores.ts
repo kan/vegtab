@@ -97,23 +97,22 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     scoreId = existing.id;
   }
 
-  // Invalidate ranking cache
-  await c.env.KV.delete(`ranking:${seed.id}:${data.mode}`);
-
-  // Evaluate achievements (non-blocking)
-  const achievementPromise = evaluateAchievements(c.env.DB, userId, {
-    mode: data.mode,
-    score: data.score,
-    moveCount: data.moveCount,
-    isCleared: data.isCleared,
-    date: data.date,
-    maxChain: data.maxChain,
-    generatedItemTypes: data.generatedItemTypes,
-  });
-
+  // Invalidate ranking cache + evaluate achievements in parallel
   let newAchievements: string[] = [];
   try {
-    newAchievements = await achievementPromise;
+    const [, achievements] = await Promise.all([
+      c.env.KV.delete(`ranking:${seed.id}:${data.mode}`),
+      evaluateAchievements(c.env.DB, userId, {
+        mode: data.mode,
+        score: data.score,
+        moveCount: data.moveCount,
+        isCleared: data.isCleared,
+        date: data.date,
+        maxChain: data.maxChain,
+        generatedItemTypes: data.generatedItemTypes,
+      }),
+    ]);
+    newAchievements = achievements;
   } catch {
     // Achievement evaluation failure should not break score submission
   }

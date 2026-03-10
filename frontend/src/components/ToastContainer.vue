@@ -9,6 +9,7 @@ interface Toast {
   id: number;
   type: ToastEvent['type'];
   messageKey: string;
+  params?: Record<string, string>;
   leaving: boolean;
 }
 
@@ -20,7 +21,7 @@ const timers = new Map<number, ReturnType<typeof setTimeout>>();
 onMounted(() => {
   unsubscribe = onToast((event) => {
     const id = nextId++;
-    toasts.value.push({ id, type: event.type, messageKey: event.messageKey, leaving: false });
+    toasts.value.push({ id, type: event.type, messageKey: event.messageKey, params: event.params, leaving: false });
     const duration = event.duration ?? 4000;
     timers.set(id, setTimeout(() => dismissToast(id), duration));
   });
@@ -59,7 +60,7 @@ function dismissToast(id: number) {
         <template v-else-if="toast.type === 'success'">✓</template>
         <template v-else>ℹ</template>
       </span>
-      <span class="toast-message">{{ t(toast.messageKey) }}</span>
+      <span class="toast-message">{{ t(toast.messageKey, toast.params ?? {}) }}</span>
     </div>
   </div>
 </template>

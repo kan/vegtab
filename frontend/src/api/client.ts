@@ -70,6 +70,7 @@ export type ToastType = 'error' | 'info' | 'success';
 export interface ToastEvent {
   type: ToastType;
   messageKey: string;
+  params?: Record<string, string>;
   duration?: number;
 }
 type ToastListener = (event: ToastEvent) => void;
@@ -83,8 +84,8 @@ export function onToast(listener: ToastListener): () => void {
   };
 }
 
-export function showToast(type: ToastType, messageKey: string, duration = 4000) {
-  for (const l of toastListeners) l({ type, messageKey, duration });
+export function showToast(type: ToastType, messageKey: string, params?: Record<string, string>, duration = 4000) {
+  for (const l of toastListeners) l({ type, messageKey, params, duration });
 }
 
 // --- API call ---

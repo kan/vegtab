@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { api, showToast } from '@/api/client';
-import { ACHIEVEMENT_DEFS, type AchievementDef } from '@tomado/engine';
+import { ACHIEVEMENT_DEFS, getAchievementDef, type AchievementDef } from '@tomado/engine';
+import { i18n } from '@/i18n';
 
 export interface AchievementState {
   type: string;
@@ -22,12 +23,12 @@ export const useAchievementStore = defineStore('achievements', () => {
 
   const totalCount = computed(() => ACHIEVEMENT_DEFS.length);
 
-  function getDef(type: string): AchievementDef | undefined {
-    return ACHIEVEMENT_DEFS.find(d => d.type === type);
-  }
+  const stateMap = computed(() =>
+    new Map(achievements.value.map(a => [a.type, a]))
+  );
 
   function getState(type: string): AchievementState | undefined {
-    return achievements.value.find(a => a.type === type);
+    return stateMap.value.get(type);
   }
 
   async function fetchAchievements() {
@@ -45,18 +46,27 @@ export const useAchievementStore = defineStore('achievements', () => {
   }
 
   function handleNewAchievements(types: string[]) {
+    const t = i18n.global.t;
     for (const type of types) {
-      const def = getDef(type);
+      const def = getAchievementDef(type);
       if (!def) continue;
 
-      // Update local state
+      // Update or create local state
       const existing = achievements.value.find(a => a.type === type);
       if (existing) {
         existing.isUnlocked = true;
         existing.unlockedAt = new Date().toISOString();
+      } else {
+        achievements.value.push({
+          type,
+          currentValue: def.threshold,
+          isUnlocked: true,
+          unlockedAt: new Date().toISOString(),
+        });
       }
 
-      showToast('success', `achievement.newUnlock`);
+      const name = t(`achievement.${type}`);
+      showToast('success', 'achievement.newUnlock', { name });
     }
     if (types.length > 0) saveToStorage();
   }
@@ -84,7 +94,7 @@ export const useAchievementStore = defineStore('achievements', () => {
 
   return {
     achievements, unlockedCount, totalCount, loaded,
-    getDef, getState,
+    getState,
     fetchAchievements, handleNewAchievements, reset,
   };
 });

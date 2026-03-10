@@ -22,14 +22,14 @@ export async function evaluateAchievements(
   // Compute candidate values for each achievement based on this score
   const candidates = computeCandidates(data);
 
-  // Also compute cumulative achievements (play_days, all_modes_played)
-  const cumulativeCandidates = await computeCumulativeCandidates(db, userId, data);
+  // Run cumulative queries and existing-achievements fetch in parallel
+  const [cumulativeCandidates, existing] = await Promise.all([
+    computeCumulativeCandidates(db, userId, data),
+    db.prepare(
+      'SELECT achievement_type, current_value, is_unlocked FROM achievements WHERE user_id = ?'
+    ).bind(userId).all<{ achievement_type: string; current_value: number; is_unlocked: number }>(),
+  ]);
   Object.assign(candidates, cumulativeCandidates);
-
-  // Fetch existing achievements
-  const existing = await db.prepare(
-    'SELECT achievement_type, current_value, is_unlocked FROM achievements WHERE user_id = ?'
-  ).bind(userId).all<{ achievement_type: string; current_value: number; is_unlocked: number }>();
 
   const existingMap = new Map(
     (existing.results ?? []).map(r => [r.achievement_type, r])
@@ -133,21 +133,23 @@ async function computeCumulativeCandidates(
 ): Promise<Record<string, number>> {
   const c: Record<string, number> = {};
 
-  // Play days: count distinct dates from play_scores
-  const dayResult = await db.prepare(
-    `SELECT COUNT(DISTINCT date(created_at)) as days FROM play_scores WHERE user_id = ?`
-  ).bind(userId).first<{ days: number }>();
+  // Run both queries in parallel
+  const [dayResult, modesResult] = await Promise.all([
+    db.prepare(
+      `SELECT COUNT(DISTINCT date(created_at)) as days FROM play_scores WHERE user_id = ?`
+    ).bind(userId).first<{ days: number }>(),
+    db.prepare(
+      `SELECT DISTINCT ps.mode FROM play_scores ps
+       JOIN puzzle_seeds s ON s.id = ps.seed_id
+       WHERE ps.user_id = ? AND s.daily_date = ?`
+    ).bind(userId, data.date).all<{ mode: string }>(),
+  ]);
+
   const days = dayResult?.days ?? 0;
   c['play_days_3'] = days;
   c['play_days_7'] = days;
   c['play_days_30'] = days;
 
-  // All modes played today: check if there are scores for all 3 modes on the same daily seed date
-  const modesResult = await db.prepare(
-    `SELECT DISTINCT ps.mode FROM play_scores ps
-     JOIN puzzle_seeds s ON s.id = ps.seed_id
-     WHERE ps.user_id = ? AND s.daily_date = ?`
-  ).bind(userId, data.date).all<{ mode: string }>();
   const modes = new Set((modesResult.results ?? []).map(r => r.mode));
   modes.add(data.mode); // Include current submission
   if (modes.size >= 3) c['all_modes_played'] = 1;
