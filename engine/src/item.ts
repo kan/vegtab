@@ -316,7 +316,13 @@ export function getSynthesisEffect(
   // scope + 他
   if (item1 === 'scope' || item2 === 'scope') {
     const other = item1 === 'scope' ? item2 : item1;
-    return { type: 'synthesis', effect: `scope+${other}` as SynthesisEffect };
+    switch (other) {
+      case 'v_cut': return { type: 'synthesis', effect: 'scope+v_cut' };
+      case 'h_cut': return { type: 'synthesis', effect: 'scope+h_cut' };
+      case 'burst': return { type: 'synthesis', effect: 'scope+burst' };
+      case 'flush': return { type: 'synthesis', effect: 'scope+flush' };
+      default: return null;
+    }
   }
 
   // flush + flush
@@ -327,7 +333,12 @@ export function getSynthesisEffect(
   // flush + 他
   if (item1 === 'flush' || item2 === 'flush') {
     const other = item1 === 'flush' ? item2 : item1;
-    return { type: 'synthesis', effect: `flush+${other}` as SynthesisEffect };
+    switch (other) {
+      case 'v_cut': return { type: 'synthesis', effect: 'flush+v_cut' };
+      case 'h_cut': return { type: 'synthesis', effect: 'flush+h_cut' };
+      case 'burst': return { type: 'synthesis', effect: 'flush+burst' };
+      default: return null;
+    }
   }
 
   // burst + burst
@@ -338,7 +349,11 @@ export function getSynthesisEffect(
   // v_cut/h_cut + burst
   if ((item1 === 'burst' || item2 === 'burst') && (lineItems.has(item1) || lineItems.has(item2))) {
     const lineItem = item1 === 'burst' ? item2 : item1;
-    return { type: 'synthesis', effect: `${lineItem}+burst` as SynthesisEffect };
+    switch (lineItem) {
+      case 'v_cut': return { type: 'synthesis', effect: 'v_cut+burst' };
+      case 'h_cut': return { type: 'synthesis', effect: 'h_cut+burst' };
+      default: return null;
+    }
   }
 
   // v_cut/h_cut同士

@@ -243,12 +243,13 @@ function activateCoffeeSynthesis(
 }
 
 /** おじゃまタイルへのダメージ処理（消去位置に基づく）
+ * boardを直接変更する: 隣接おじゃまの耐久値減少・破壊時のgravity・補充
  * @returns 更新後のrngState */
 export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number): number {
+  if (clearedPositions.length === 0) return rngState;
   let rng = rngState;
   const destroyed = damageObstacles(board, clearedPositions);
   if (destroyed.length > 0) {
-    // おじゃまタイルが破壊された → 上のタイルが落下 → 補充 → 連鎖チェックは呼び出し元で行う
     applyGravity(board);
     rng = fillEmptyCells(board, rng);
   }
