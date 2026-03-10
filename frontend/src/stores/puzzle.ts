@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
-  initializeGame, processAction, processScopeSynthesis,
+  initializeGame, processAction, processScopeSynthesis, processDamage,
   cloneBoard, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
   calculateStepScore, calculateRemainingItemBonus,
   determineItemFromMatches, checkGameOverState,
@@ -11,7 +11,7 @@ import {
   getScopeAdjacentTargets,
   countObstacles, damageObstacles, getQuota,
   type GameState, type GameMode, type Position, type Direction,
-  type Cell, type Color, type ItemType, type Match,
+  type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
   BOARD_SIZE,
 } from '@tomado/engine';
 
@@ -53,7 +53,7 @@ export interface ItemAnimPlan {
 }
 
 export interface SynthesisEffectStep {
-  effectType: string; // e.g. 'line+line', 'v_cut+burst', etc.
+  effectType: SynthesisEffect;
   item1: ItemType;
   item2: ItemType;
   pos1: Position; // first item position
@@ -89,7 +89,7 @@ export interface ScopeAnimPlan {
 export interface ScopeSynthesisAnimPlan {
   pos1: Position;
   pos2: Position;
-  synthEffect: string;
+  synthEffect: SynthesisEffect;
   adjacentTargets: Position[]; // 両位置の周囲4マス(統合)
   /** The effect position (user-selected cell for scope+v_cut/h_cut/burst, or multiple for scope+scope) */
   targetCells: Position[];
@@ -284,12 +284,7 @@ function buildItemPlan(
     allItemCleared.push(e.itemPos);
     allItemCleared.push(...e.targets);
   }
-  const itemDestroyed = damageObstacles(board, allItemCleared);
-  let rng = rngState;
-  if (itemDestroyed.length > 0) {
-    applyGravity(board);
-    rng = fillEmptyCells(board, rng);
-  }
+  let rng = processDamage(board, allItemCleared, rngState);
 
   const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
   applyGravity(board);
@@ -517,11 +512,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
 
     // おじゃまタイルへのダメージ
-    const scopeDestroyed = damageObstacles(board, allScopeCleared);
-    if (scopeDestroyed.length > 0) {
-      applyGravity(board);
-      rng = fillEmptyCells(board, rng);
-    }
+    rng = processDamage(board, allScopeCleared, rng);
 
     const boardAfterClear = cloneBoard(board);
 
@@ -662,11 +653,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
 
     // おじゃまタイルへのダメージ
-    const synthDestroyed = damageObstacles(board, allSynthCleared);
-    if (synthDestroyed.length > 0) {
-      applyGravity(board);
-      rng = fillEmptyCells(board, rng);
-    }
+    rng = processDamage(board, allSynthCleared, rng);
 
     const boardAfterClear = cloneBoard(board);
 
@@ -979,11 +966,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
 
     // おじゃまタイルへのダメージ
-    const synthDestroyed = damageObstacles(board, allSynthCleared);
-    if (synthDestroyed.length > 0) {
-      applyGravity(board);
-      rng = fillEmptyCells(board, rng);
-    }
+    rng = processDamage(board, allSynthCleared, rng);
 
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
     applyGravity(board);

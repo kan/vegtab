@@ -1,4 +1,4 @@
-import { Cell, ItemType, Match, Position, BOARD_SIZE } from './types.js';
+import { Cell, ItemType, Match, Position, SynthesisEffect, BOARD_SIZE } from './types.js';
 import { isValidPosition } from './board.js';
 
 /** 上から時計回りの8方向 */
@@ -305,7 +305,7 @@ export function getItemTargets(
 export function getSynthesisEffect(
   item1: ItemType,
   item2: ItemType
-): { type: 'synthesis'; effect: string } | null {
+): { type: 'synthesis'; effect: SynthesisEffect } | null {
   const lineItems = new Set(['h_cut', 'v_cut']);
 
   // scope + scope
@@ -316,7 +316,7 @@ export function getSynthesisEffect(
   // scope + 他
   if (item1 === 'scope' || item2 === 'scope') {
     const other = item1 === 'scope' ? item2 : item1;
-    return { type: 'synthesis', effect: `scope+${other}` };
+    return { type: 'synthesis', effect: `scope+${other}` as SynthesisEffect };
   }
 
   // flush + flush
@@ -327,7 +327,7 @@ export function getSynthesisEffect(
   // flush + 他
   if (item1 === 'flush' || item2 === 'flush') {
     const other = item1 === 'flush' ? item2 : item1;
-    return { type: 'synthesis', effect: `flush+${other}` };
+    return { type: 'synthesis', effect: `flush+${other}` as SynthesisEffect };
   }
 
   // burst + burst
@@ -338,7 +338,7 @@ export function getSynthesisEffect(
   // v_cut/h_cut + burst
   if ((item1 === 'burst' || item2 === 'burst') && (lineItems.has(item1) || lineItems.has(item2))) {
     const lineItem = item1 === 'burst' ? item2 : item1;
-    return { type: 'synthesis', effect: `${lineItem}+burst` };
+    return { type: 'synthesis', effect: `${lineItem}+burst` as SynthesisEffect };
   }
 
   // v_cut/h_cut同士
@@ -353,7 +353,7 @@ export function getSynthesisEffect(
 export function getSynthesisTargets(
   board: (Cell | null)[][],
   pos: Position,
-  effect: string,
+  effect: SynthesisEffect,
   targetColor?: number,
   targetCells?: Position[],
 ): Position[] {

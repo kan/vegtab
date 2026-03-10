@@ -1,5 +1,5 @@
 import {
-  Cell, Color, ItemType, Position, Direction, Action,
+  Cell, Color, ItemType, Position, Direction, Action, SynthesisEffect,
   Match, ChainStep, GameState, GameMode, GameInitParams, BOARD_SIZE, NUM_COLORS,
 } from './types.js';
 import { createRng, nextInt } from './rng.js';
@@ -242,8 +242,9 @@ function activateCoffeeSynthesis(
   return { score: totalScore, rngState: rng, chainSteps: allSteps, clearedPositions: allCleared };
 }
 
-/** おじゃまタイルへのダメージ処理（消去位置に基づく） */
-function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number): number {
+/** おじゃまタイルへのダメージ処理（消去位置に基づく）
+ * @returns 更新後のrngState */
+export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number): number {
   let rng = rngState;
   const destroyed = damageObstacles(board, clearedPositions);
   if (destroyed.length > 0) {
@@ -563,7 +564,7 @@ function processSynthesis(
   pos2: Position,
   item1: ItemType,
   item2: ItemType,
-  effect: string,
+  effect: SynthesisEffect,
   rngState: number,
 ): { score: number; rngState: number; clearedPositions: Position[] } {
   let rng = rngState;

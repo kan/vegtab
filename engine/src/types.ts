@@ -48,6 +48,14 @@ export type ChainStep = {
 /** ゲームモード */
 export type GameMode = 'sprint' | 'clear' | 'survival';
 
+/** 合成効果の種類 */
+export type SynthesisEffect =
+  | 'line+line'
+  | 'v_cut+burst' | 'h_cut+burst'
+  | 'burst+burst'
+  | 'flush+flush' | 'flush+v_cut' | 'flush+h_cut' | 'flush+burst'
+  | 'scope+scope' | 'scope+v_cut' | 'scope+h_cut' | 'scope+burst' | 'scope+flush';
+
 /** ゲーム初期化パラメータ */
 export type GameInitParams = {
   moveLimit?: number;        // Sprint: default 15

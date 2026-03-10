@@ -8,4 +8,4 @@ export * from './score.js';
 export * from './gameOver.js';
 export * from './obstacle.js';
 export * from './survival.js';
-export { initializeGame, processAction, processScopeSynthesis, cloneGameState } from './engine.js';
+export { initializeGame, processAction, processScopeSynthesis, cloneGameState, processDamage } from './engine.js';
