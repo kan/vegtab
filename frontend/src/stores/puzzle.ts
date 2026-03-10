@@ -40,6 +40,32 @@ export interface ItemEffectStep {
   itemPos: Position;
   targets: Position[];
   detonations: { pos: Position; item: ItemType }[];
+  depth: number; // 0 = direct activation, 1+ = detonation chain depth
+}
+
+/** アイテム種別ごとの基礎点 */
+const ITEM_BASE_POINTS: Record<ItemType, number> = {
+  scope: 10,
+  v_cut: 20,
+  h_cut: 20,
+  burst: 30,
+  flush: 40,
+};
+
+/** 誘爆チェーン倍率: ×(1 + 0.5 × depth) */
+function itemChainMultiplier(depth: number): number {
+  return 1 + 0.5 * depth;
+}
+
+/** アイテム効果1ステップのスコアを計算 */
+function calcItemEffectScore(step: ItemEffectStep): number {
+  const base = ITEM_BASE_POINTS[step.itemType] * step.targets.length;
+  return Math.round(base * itemChainMultiplier(step.depth));
+}
+
+/** 合成効果の基礎点（タイルあたり）: 構成アイテムの高い方を採用 */
+function synthBasePoints(item1: ItemType, item2: ItemType): number {
+  return Math.max(ITEM_BASE_POINTS[item1], ITEM_BASE_POINTS[item2]);
 }
 
 export interface ItemAnimPlan {
@@ -219,8 +245,8 @@ function computeItemEffects(
 ): ItemEffectStep[] {
   const effects: ItemEffectStep[] = [];
   const activated = new Set<string>();
-  const queue: { pos: Position; item: ItemType; targetColor?: number }[] = [
-    { pos: startPos, item: startItem, targetColor },
+  const queue: { pos: Position; item: ItemType; targetColor?: number; depth: number }[] = [
+    { pos: startPos, item: startItem, targetColor, depth: 0 },
   ];
 
   while (queue.length > 0) {
@@ -245,7 +271,7 @@ function computeItemEffects(
         const tKey = `${t.row},${t.col}`;
         if (!activated.has(tKey)) {
           detonations.push({ pos: t, item: c.item });
-          queue.push({ pos: t, item: c.item });
+          queue.push({ pos: t, item: c.item, depth: cur.depth + 1 });
         }
       } else {
         board[t.row][t.col] = null;
@@ -253,7 +279,7 @@ function computeItemEffects(
       }
     }
 
-    effects.push({ itemType: cur.item, itemPos: cur.pos, targets: cleared, detonations });
+    effects.push({ itemType: cur.item, itemPos: cur.pos, targets: cleared, detonations, depth: cur.depth });
   }
   return effects;
 }
@@ -275,7 +301,7 @@ function buildItemPlan(
   const effects = computeItemEffects(board, itemPos, itemType, targetColor);
 
   let scoreFromItems = 0;
-  for (const e of effects) scoreFromItems += 10 * e.targets.length;
+  for (const e of effects) scoreFromItems += calcItemEffectScore(e);
 
   // おじゃまタイルへのダメージ（アイテム効果で消去された全位置）
   const allItemCleared: Position[] = [];
@@ -487,7 +513,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (ac.item) {
         const effects = computeItemEffects(board, t, ac.item);
         for (const e of effects) {
-          totalScore += 10 * e.targets.length;
+          totalScore += calcItemEffectScore(e);
           itemEffects.push(e);
           allScopeCleared.push(e.itemPos);
           allScopeCleared.push(...e.targets);
@@ -515,7 +541,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (tc.item) {
         const effects = computeItemEffects(board, target, tc.item);
         for (const e of effects) {
-          totalScore += 10 * e.targets.length;
+          totalScore += calcItemEffectScore(e);
           itemEffects.push(e);
           allScopeCleared.push(e.itemPos);
           allScopeCleared.push(...e.targets);
@@ -594,7 +620,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (ac.item) {
         const effects = computeItemEffects(board, t, ac.item);
         for (const e of effects) {
-          totalScore += 10 * e.targets.length;
+          totalScore += calcItemEffectScore(e);
           itemEffects.push(e);
           allSynthCleared.push(e.itemPos);
           allSynthCleared.push(...e.targets);
@@ -624,7 +650,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         if (tc.item) {
           const effects = computeItemEffects(board, target, tc.item);
           for (const e of effects) {
-            totalScore += 10 * e.targets.length;
+            totalScore += calcItemEffectScore(e);
             itemEffects.push(e);
             allSynthCleared.push(e.itemPos);
             allSynthCleared.push(...e.targets);
@@ -653,7 +679,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
             activated.add(tKey);
             const effects = computeItemEffects(board, t, c.item);
             for (const e of effects) {
-              totalScore += 10 * e.targets.length;
+              totalScore += calcItemEffectScore(e);
               itemEffects.push(e);
               allSynthCleared.push(e.itemPos);
               allSynthCleared.push(...e.targets);
@@ -663,7 +689,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           board[t.row][t.col] = null;
           effectTargets.push(t);
           allSynthCleared.push(t);
-          totalScore += 10;
+          totalScore += synthBasePoints(cell1.item, cell2.item);
         }
       }
     }
@@ -903,7 +929,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       const colorTargets = colorTargetsRaw.filter(t => !board[t.row][t.col]?.obstacle);
       const allTargets: Position[] = [...colorTargets];
       for (const ct of colorTargets) board[ct.row][ct.col] = null;
-      totalScore += 10 * colorTargets.length;
+      totalScore += ITEM_BASE_POINTS.flush * colorTargets.length;
 
       // Each color target position fires the other item's effect
       const detonations: { pos: Position; item: ItemType }[] = [];
@@ -930,7 +956,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
             allTargets.push(t);
           }
         }
-        totalScore += 10 * subTargets.filter(t => board[t.row]?.[t.col] === null).length;
+        totalScore += ITEM_BASE_POINTS[otherItem] * subTargets.filter(t => board[t.row]?.[t.col] === null).length;
       }
 
       effects.push({
@@ -963,7 +989,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           cleared.push(t);
         }
       }
-      totalScore += 10 * cleared.length;
+      totalScore += ITEM_BASE_POINTS.flush * cleared.length;
 
       effects.push({
         effectType: effect, item1: cell1.item, item2: cell2.item,
@@ -993,7 +1019,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           cleared.push(t);
         }
       }
-      totalScore += 10 * cleared.length;
+      totalScore += synthBasePoints(cell1.item, cell2.item) * cleared.length;
 
       effects.push({
         effectType: effect, item1: cell1.item, item2: cell2.item,
@@ -1008,7 +1034,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const det of ef.detonations) {
         const detEffects = computeItemEffects(board, det.pos, det.item);
         for (const e of detEffects) {
-          totalScore += 10 * e.targets.length;
+          totalScore += calcItemEffectScore(e);
           allSynthCleared.push(e.itemPos);
           allSynthCleared.push(...e.targets);
         }
