@@ -6,7 +6,7 @@ import { generateId } from '../lib/id';
 
 const submitScoreSchema = z.object({
   seedId: z.string(),
-  mode: z.enum(['limited']),
+  mode: z.enum(['sprint', 'clear', 'survival']),
   moveLimit: z.number().int().nullable().optional(),
   moveCount: z.number().int(),
   score: z.number().int(),
@@ -37,16 +37,59 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
   const replayLogKey = `replays/${userId}/${data.seedId}/${generateId()}.json`;
   await c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog));
 
-  // Record score
-  const scoreId = generateId();
-  await c.env.DB.prepare(
-    `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, replay_log_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(
-    scoreId, userId, data.seedId, data.mode,
-    data.moveLimit ?? null, data.moveCount, data.score,
-    data.isCleared ? 1 : 0, replayLogKey
-  ).run();
+  // Check for existing record — keep only the best per user/seed/mode
+  const existing = await c.env.DB.prepare(
+    `SELECT id, score, move_count, is_cleared FROM play_scores
+     WHERE user_id = ? AND seed_id = ? AND mode = ?`
+  ).bind(userId, data.seedId, data.mode).first<{
+    id: string; score: number; move_count: number; is_cleared: number;
+  }>();
+
+  let isBetter = true;
+  if (existing) {
+    if (data.mode === 'sprint') {
+      isBetter = data.score > existing.score;
+    } else if (data.mode === 'clear') {
+      // Clear: fewer moves is better; new clear beats non-clear
+      if (data.isCleared && !existing.is_cleared) {
+        isBetter = true;
+      } else if (!data.isCleared && existing.is_cleared) {
+        isBetter = false;
+      } else if (data.isCleared && existing.is_cleared) {
+        isBetter = data.moveCount < existing.move_count;
+      } else {
+        isBetter = false; // both failed, keep existing
+      }
+    } else {
+      // Survival: more moves is better
+      isBetter = data.moveCount > existing.move_count;
+    }
+  }
+
+  let scoreId: string;
+  if (!existing) {
+    scoreId = generateId();
+    await c.env.DB.prepare(
+      `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, replay_log_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      scoreId, userId, data.seedId, data.mode,
+      data.moveLimit ?? null, data.moveCount, data.score,
+      data.isCleared ? 1 : 0, replayLogKey
+    ).run();
+  } else if (isBetter) {
+    scoreId = existing.id;
+    await c.env.DB.prepare(
+      `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, replay_log_key = ?
+       WHERE id = ?`
+    ).bind(
+      data.moveLimit ?? null, data.moveCount, data.score,
+      data.isCleared ? 1 : 0, replayLogKey,
+      scoreId
+    ).run();
+  } else {
+    scoreId = existing.id;
+  }
 
   // Invalidate ranking cache
   await c.env.KV.delete(`ranking:${data.seedId}:${data.mode}`);

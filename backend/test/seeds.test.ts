@@ -49,7 +49,7 @@ describe('Seeds & Ranking API', () => {
     expect(info.bestScores).toEqual({});
   });
 
-  it('ranking returns correct data', async () => {
+  it('sprint ranking returns correct data', async () => {
     // Generate seed
     const genRes = await SELF.fetch('http://localhost/api/seeds/generate', {
       method: 'POST',
@@ -63,7 +63,7 @@ describe('Seeds & Ranking API', () => {
       headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
       body: JSON.stringify({
         seedId,
-        mode: 'limited',
+        mode: 'sprint',
         moveLimit: 15,
         moveCount: 15,
         score: 5000,
@@ -73,7 +73,7 @@ describe('Seeds & Ranking API', () => {
     });
 
     // Check ranking
-    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=limited`, {
+    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=sprint`, {
       headers: authHeader(accessToken),
     });
     expect(rankRes.status).toBe(200);
@@ -85,5 +85,130 @@ describe('Seeds & Ranking API', () => {
     expect(rankData.ranking[0].score).toBe(5000);
     expect(rankData.userRank?.rank).toBe(1);
     expect(rankData.userRank?.score).toBe(5000);
+  });
+
+  it('clear mode ranking sorted by move_count ASC', async () => {
+    // Generate seed
+    const genRes = await SELF.fetch('http://localhost/api/seeds/generate', {
+      method: 'POST',
+      headers: authHeader(accessToken),
+    });
+    const { seedId } = await genRes.json() as { seedId: string };
+
+    // Submit two clear scores with different move counts
+    await SELF.fetch('http://localhost/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
+      body: JSON.stringify({
+        seedId,
+        mode: 'clear',
+        moveCount: 20,
+        score: 3000,
+        isCleared: true,
+        replayLog: [],
+      }),
+    });
+
+    await SELF.fetch('http://localhost/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
+      body: JSON.stringify({
+        seedId,
+        mode: 'clear',
+        moveCount: 12,
+        score: 2000,
+        isCleared: true,
+        replayLog: [],
+      }),
+    });
+
+    // Also submit a non-cleared score (should NOT appear in ranking)
+    await SELF.fetch('http://localhost/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
+      body: JSON.stringify({
+        seedId,
+        mode: 'clear',
+        moveCount: 5,
+        score: 500,
+        isCleared: false,
+        replayLog: [],
+      }),
+    });
+
+    // Check ranking — should use best (lowest) move_count of cleared plays
+    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=clear`, {
+      headers: authHeader(accessToken),
+    });
+    expect(rankRes.status).toBe(200);
+    const rankData = await rankRes.json() as {
+      ranking: Array<{ rank: number; score: number; moveCount: number; isCleared: boolean }>;
+      userRank: { rank: number; score: number; moveCount: number } | null;
+    };
+    expect(rankData.ranking).toHaveLength(1);
+    // Best cleared play is 12 moves
+    expect(rankData.ranking[0].moveCount).toBe(12);
+    expect(rankData.ranking[0].isCleared).toBe(true);
+    expect(rankData.userRank?.rank).toBe(1);
+    expect(rankData.userRank?.moveCount).toBe(12);
+  });
+
+  it('survival mode ranking sorted by move_count DESC then score DESC', async () => {
+    // Generate seed
+    const genRes = await SELF.fetch('http://localhost/api/seeds/generate', {
+      method: 'POST',
+      headers: authHeader(accessToken),
+    });
+    const { seedId } = await genRes.json() as { seedId: string };
+
+    // Register a second user
+    const reg2 = await registerUser('550e8400-e29b-41d4-a716-446655440021');
+
+    // User 1: survives 30 moves, score 8000
+    await SELF.fetch('http://localhost/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
+      body: JSON.stringify({
+        seedId,
+        mode: 'survival',
+        moveCount: 30,
+        score: 8000,
+        isCleared: false,
+        replayLog: [],
+      }),
+    });
+
+    // User 2: survives 25 moves, score 9000 (fewer moves, so ranked lower)
+    await SELF.fetch('http://localhost/api/scores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader(reg2.accessToken) },
+      body: JSON.stringify({
+        seedId,
+        mode: 'survival',
+        moveCount: 25,
+        score: 9000,
+        isCleared: false,
+        replayLog: [],
+      }),
+    });
+
+    // Check ranking
+    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=survival`, {
+      headers: authHeader(accessToken),
+    });
+    expect(rankRes.status).toBe(200);
+    const rankData = await rankRes.json() as {
+      ranking: Array<{ rank: number; userId: string; moveCount: number; score: number }>;
+      userRank: { rank: number; score: number; moveCount: number } | null;
+    };
+    expect(rankData.ranking).toHaveLength(2);
+    // User 1 (30 moves) should be ranked #1 over User 2 (25 moves)
+    expect(rankData.ranking[0].moveCount).toBe(30);
+    expect(rankData.ranking[0].score).toBe(8000);
+    expect(rankData.ranking[1].moveCount).toBe(25);
+    expect(rankData.ranking[1].score).toBe(9000);
+    // User 1's rank
+    expect(rankData.userRank?.rank).toBe(1);
+    expect(rankData.userRank?.moveCount).toBe(30);
   });
 });

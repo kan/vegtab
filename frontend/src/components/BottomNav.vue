@@ -1,25 +1,33 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router';
+import { useGameStore } from '@/stores/game';
 
 const router = useRouter();
 const route = useRoute();
+const gameStore = useGameStore();
 
-const tabs = [
-  { path: '/', label: 'HOME', icon: '\u2302' },
-  { path: '/puzzle', label: 'PUZZLE', icon: '\u25A6' },
-];
+function goToPuzzle() {
+  const seed = gameStore.generateDailySeed();
+  // Navigate without mode query so the mode selector shows
+  router.push(`/puzzle/${seed}`);
+}
 </script>
 
 <template>
   <nav class="bottom-nav">
     <button
-      v-for="tab in tabs"
-      :key="tab.path"
-      :class="['nav-btn', { active: route.path === tab.path || (tab.path !== '/' && route.path.startsWith(tab.path)) }]"
-      @click="router.push(tab.path)"
+      :class="['nav-btn', { active: route.path === '/' }]"
+      @click="router.push('/')"
     >
-      <span class="nav-icon">{{ tab.icon }}</span>
-      <span class="nav-label">{{ tab.label }}</span>
+      <span class="nav-icon">&#x2302;</span>
+      <span class="nav-label">HOME</span>
+    </button>
+    <button
+      :class="['nav-btn', { active: route.path.startsWith('/puzzle') }]"
+      @click="goToPuzzle"
+    >
+      <span class="nav-icon">&#x25A6;</span>
+      <span class="nav-label">PUZZLE</span>
     </button>
   </nav>
 </template>

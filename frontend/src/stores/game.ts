@@ -5,9 +5,11 @@ import { api, register, isAuthenticated } from '@/api/client';
 
 // --- Types ---
 
+export type GameMode = 'sprint' | 'clear' | 'survival';
+
 export interface PlayRecord {
   seed: number;
-  mode: 'limited';
+  mode: GameMode;
   score: number;
   moves: number;
   playedAt: number;
@@ -99,15 +101,30 @@ export const useGameStore = defineStore('game', () => {
     saveRecords();
   }
 
-  function getRecordsForSeed(seed: number, mode?: 'limited'): PlayRecord[] {
+  function getRecordsForSeed(seed: number, mode?: GameMode): PlayRecord[] {
     return playRecords.value.filter(r =>
       r.seed === seed && (mode === undefined || r.mode === mode)
     );
   }
 
-  function getBestScore(seed: number, mode: 'limited'): number {
+  function getBestScore(seed: number, mode: GameMode): number {
     const records = getRecordsForSeed(seed, mode);
-    return records.length > 0 ? Math.max(...records.map(r => r.score)) : 0;
+    if (records.length === 0) return 0;
+    if (mode === 'clear') {
+      // Clearモード: 最少手数が最良
+      const clearedRecords = records.filter(r => r.score > 0); // score=moveCount for cleared
+      return clearedRecords.length > 0 ? Math.min(...clearedRecords.map(r => r.score)) : 0;
+    }
+    return Math.max(...records.map(r => r.score));
+  }
+
+  function getBestMoves(seed: number, mode: GameMode): number {
+    const records = getRecordsForSeed(seed, mode);
+    if (records.length === 0) return 0;
+    if (mode === 'survival') {
+      return Math.max(...records.map(r => r.moves));
+    }
+    return 0;
   }
 
   // --- Calendar helpers ---
@@ -172,7 +189,7 @@ export const useGameStore = defineStore('game', () => {
     playRecords,
     generateDailySeed, randomSeed,
     isTodaysDailySeed,
-    addPlayRecord, getRecordsForSeed, getBestScore,
+    addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves,
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, initialized,
     getShareCode, cacheShareCode,

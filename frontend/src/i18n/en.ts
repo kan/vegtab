@@ -1,6 +1,6 @@
 export default {
   common: {
-    appName: 'Tomado',
+    appName: 'Vege-Table',
     home: 'HOME',
     cancel: 'Cancel',
     save: 'Save',
@@ -67,6 +67,25 @@ export default {
   },
   board: {
     selectCells: 'Select {count} cell | Select {count} cells',
+  },
+  mode: {
+    selectTitle: 'Select Mode',
+    sprint: 'Sprint',
+    clear: 'Clear',
+    survival: 'Survival',
+    sprintDesc: 'Get the highest score in 15 moves',
+    clearDesc: 'Remove all obstacle tiles',
+    survivalDesc: 'Meet the quota to survive',
+    moves: ' moves',
+    obstacles: 'Obstacles: {count}',
+    turnOver: 'TURN OVER',
+    cleared: 'CLEARED!',
+    failed: 'FAILED',
+    clearMoves: 'Cleared in {count} moves',
+    obstaclesLeft: 'Obstacles left: {count}',
+    survivalResult: '{moves} moves / {score} pts',
+    survivalQuota: '{target}pt in {moves} moves',
+    survivalProgress: '{current} / {target}',
   },
   ranking: {
     yourRank: 'Your Rank',

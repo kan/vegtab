@@ -1,13 +1,17 @@
-/** 付箋の色 (0-4) */
+/** 野菜の色 (0-4) */
 export type Color = 0 | 1 | 2 | 3 | 4;
 
 /** アイテム種別 */
-export type ItemType = 'magnifying_glass' | 'scissors' | 'cutter' | 'clip' | 'coffee';
+export type ItemType = 'scope' | 'v_cut' | 'h_cut' | 'burst' | 'flush';
+
+/** おじゃまタイル */
+export type Obstacle = { durability: number };
 
 /** 盤面上のセル */
 export type Cell = {
   color: Color;
   item?: ItemType;
+  obstacle?: Obstacle;
 };
 
 /** 盤面座標 */
@@ -23,7 +27,7 @@ export type Direction = 'up' | 'down' | 'left' | 'right';
 export type Action =
   | { type: 'swap'; pos: Position; dir: Direction }
   | { type: 'tap'; pos: Position }
-  | { type: 'magnifying_glass'; pos: Position; targetCells: Position[] };
+  | { type: 'scope'; pos: Position; targetCells: Position[] };
 
 /** マッチ情報 */
 export type Match = {
@@ -42,7 +46,14 @@ export type ChainStep = {
 };
 
 /** ゲームモード */
-export type GameMode = 'limited';
+export type GameMode = 'sprint' | 'clear' | 'survival';
+
+/** ゲーム初期化パラメータ */
+export type GameInitParams = {
+  moveLimit?: number;        // Sprint: default 15
+  obstacleCount?: number;    // Clear: default seed-dependent 10-20
+  quotaTable?: number[];     // Survival: default generated
+};
 
 /** ゲーム状態 */
 export type GameState = {
@@ -52,7 +63,10 @@ export type GameState = {
   moveCount: number;
   isGameOver: boolean;
   mode: GameMode;
-  moveLimit?: number;
+  moveLimit?: number;        // Sprint only
+  isCleared?: boolean;       // Clear: true when all obstacles removed
+  quotaTable?: number[];     // Survival: per-segment score quotas
+  segmentStartScore?: number; // Survival: score at start of current segment
 };
 
 export const BOARD_SIZE = 8;

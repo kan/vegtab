@@ -12,7 +12,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
     let col = 0;
     while (col < BOARD_SIZE) {
       const cell = board[row][col];
-      if (cell === null || cell.item) {
+      if (cell === null || cell.item || cell.obstacle) {
         col++;
         continue;
       }
@@ -20,7 +20,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
       let end = col + 1;
       while (end < BOARD_SIZE) {
         const next = board[row][end];
-        if (next === null || next.item || next.color !== color) break;
+        if (next === null || next.item || next.obstacle || next.color !== color) break;
         end++;
       }
       const length = end - col;
@@ -44,10 +44,10 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
       const c10 = board[row + 1][col];
       const c11 = board[row + 1][col + 1];
       if (
-        c00 && !c00.item &&
-        c01 && !c01.item &&
-        c10 && !c10.item &&
-        c11 && !c11.item &&
+        c00 && !c00.item && !c00.obstacle &&
+        c01 && !c01.item && !c01.obstacle &&
+        c10 && !c10.item && !c10.obstacle &&
+        c11 && !c11.item && !c11.obstacle &&
         c00.color === c01.color &&
         c00.color === c10.color &&
         c00.color === c11.color
@@ -69,7 +69,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
     let row = 0;
     while (row < BOARD_SIZE) {
       const cell = board[row][col];
-      if (cell === null || cell.item) {
+      if (cell === null || cell.item || cell.obstacle) {
         row++;
         continue;
       }
@@ -77,7 +77,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
       let end = row + 1;
       while (end < BOARD_SIZE) {
         const next = board[end][col];
-        if (next === null || next.item || next.color !== color) break;
+        if (next === null || next.item || next.obstacle || next.color !== color) break;
         end++;
       }
       const length = end - row;

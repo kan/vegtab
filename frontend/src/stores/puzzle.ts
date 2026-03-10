@@ -1,14 +1,16 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
-  initializeGame, processAction, processMagnifyingSynthesis,
+  initializeGame, processAction, processScopeSynthesis,
   cloneBoard, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
   calculateStepScore, calculateRemainingItemBonus,
-  determineItemFromMatches, isGameOver as checkGameOver,
-  isValidPosition, getItemTargets, findCoffeeTargetColor,
+  determineItemFromMatches, checkGameOverState,
+  isValidPosition, getItemTargets, findFlushTargetColor,
   getSynthesisEffect, getSynthesisTargets,
-  getCoffeeTargets, getScissorsTargets, getCutterTargets, getClipTargets,
-  type GameState, type Position, type Direction,
+  getFlushTargets, getVCutTargets, getHCutTargets, getBurstTargets,
+  getScopeAdjacentTargets,
+  countObstacles, damageObstacles, getQuota,
+  type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match,
   BOARD_SIZE,
 } from '@tomado/engine';
@@ -18,11 +20,12 @@ import {
 export interface ChainAnimData {
   matches: Match[];
   clearedPositions: Position[];
+  destroyedObstacles: Position[];
   itemGen: { pos: Position; item: ItemType } | null;
   score: number;
   chainIndex: number;
   dropMoves: { col: number; fromRow: number; toRow: number }[];
-  newTilesPerCol: Map<number, number>;
+  newTileEntries: { row: number; col: number; segNulls: number }[];
   boardAfterDrop: (Cell | null)[][];
 }
 
@@ -43,14 +46,14 @@ export interface ItemAnimPlan {
   boardBeforeActivation: (Cell | null)[][];
   effects: ItemEffectStep[];
   dropMoves: { col: number; fromRow: number; toRow: number }[];
-  newTilesPerCol: Map<number, number>;
+  newTileEntries: { row: number; col: number; segNulls: number }[];
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
 }
 
 export interface SynthesisEffectStep {
-  effectType: string; // e.g. 'line+line', 'scissors+clip', etc.
+  effectType: string; // e.g. 'line+line', 'v_cut+burst', etc.
   item1: ItemType;
   item2: ItemType;
   pos1: Position; // first item position
@@ -64,36 +67,38 @@ export interface SynthesisAnimPlan {
   boardBeforeActivation: (Cell | null)[][];
   effects: SynthesisEffectStep[];
   dropMoves: { col: number; fromRow: number; toRow: number }[];
-  newTilesPerCol: Map<number, number>;
+  newTileEntries: { row: number; col: number; segNulls: number }[];
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
 }
 
-export interface MagGlassAnimPlan {
-  magPos: Position;
+export interface ScopeAnimPlan {
+  scopePos: Position;
+  adjacentTargets: Position[]; // 周囲上下左右4マス
   targetCells: Position[];
   boardAfterClear: (Cell | null)[][];
   itemEffects: ItemEffectStep[];
   dropMoves: { col: number; fromRow: number; toRow: number }[];
-  newTilesPerCol: Map<number, number>;
+  newTileEntries: { row: number; col: number; segNulls: number }[];
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
 }
 
-export interface MagSynthesisAnimPlan {
+export interface ScopeSynthesisAnimPlan {
   pos1: Position;
   pos2: Position;
   synthEffect: string;
-  /** The effect position (user-selected cell for mag+scissors/cutter/clip, or multiple for mag+mag) */
+  adjacentTargets: Position[]; // 両位置の周囲4マス(統合)
+  /** The effect position (user-selected cell for scope+v_cut/h_cut/burst, or multiple for scope+scope) */
   targetCells: Position[];
   /** Targets cleared by the synthesis effect */
   effectTargets: Position[];
   itemEffects: ItemEffectStep[];
   boardAfterClear: (Cell | null)[][];
   dropMoves: { col: number; fromRow: number; toRow: number }[];
-  newTilesPerCol: Map<number, number>;
+  newTileEntries: { row: number; col: number; segNulls: number }[];
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
@@ -110,27 +115,68 @@ function adjPos(pos: Position, dir: Direction): Position {
   }
 }
 
-function computeDropMoves(board: (Cell | null)[][]) {
-  const moves: { col: number; fromRow: number; toRow: number }[] = [];
-  const newTilesPerCol = new Map<number, number>();
-  for (let col = 0; col < BOARD_SIZE; col++) {
-    let writeRow = BOARD_SIZE - 1;
-    let nullCount = 0;
-    for (let readRow = BOARD_SIZE - 1; readRow >= 0; readRow--) {
-      if (board[readRow][col] !== null) {
-        if (writeRow !== readRow) {
-          moves.push({ col, fromRow: readRow, toRow: writeRow });
-        }
-        writeRow--;
-      } else {
-        nullCount++;
+function computeDropMovesForSegment(
+  board: (Cell | null)[][],
+  col: number,
+  start: number,
+  end: number,
+  moves: { col: number; fromRow: number; toRow: number }[],
+  newTileEntries: { row: number; col: number; segNulls: number }[],
+): void {
+  let writeRow = end - 1;
+  let nullCount = 0;
+  for (let readRow = end - 1; readRow >= start; readRow--) {
+    if (board[readRow][col] !== null) {
+      if (writeRow !== readRow) {
+        moves.push({ col, fromRow: readRow, toRow: writeRow });
       }
-    }
-    if (nullCount > 0) {
-      newTilesPerCol.set(col, nullCount);
+      writeRow--;
+    } else {
+      nullCount++;
     }
   }
-  return { moves, newTilesPerCol };
+  if (nullCount > 0) {
+    // 新タイルはセグメント上部 [start, start + nullCount) に入る
+    for (let i = 0; i < nullCount; i++) {
+      newTileEntries.push({ row: start + i, col, segNulls: nullCount });
+    }
+  }
+}
+
+function computeDropMoves(board: (Cell | null)[][]) {
+  const moves: { col: number; fromRow: number; toRow: number }[] = [];
+  const newTileEntries: { row: number; col: number; segNulls: number }[] = [];
+  for (let col = 0; col < BOARD_SIZE; col++) {
+    // おじゃまタイルの有無を確認
+    let hasObstacle = false;
+    for (let row = 0; row < BOARD_SIZE; row++) {
+      if (board[row][col]?.obstacle) { hasObstacle = true; break; }
+    }
+
+    if (!hasObstacle) {
+      // 従来の単純コンパクション
+      computeDropMovesForSegment(board, col, 0, BOARD_SIZE, moves, newTileEntries);
+    } else {
+      // セグメントベース: おじゃまタイルで区切られたセグメントごとに計算
+      const obstacleRows: number[] = [];
+      for (let row = 0; row < BOARD_SIZE; row++) {
+        if (board[row][col]?.obstacle) obstacleRows.push(row);
+      }
+
+      const segments: [number, number][] = [];
+      let segStart = 0;
+      for (const obsRow of obstacleRows) {
+        if (obsRow > segStart) segments.push([segStart, obsRow]);
+        segStart = obsRow + 1;
+      }
+      if (segStart < BOARD_SIZE) segments.push([segStart, BOARD_SIZE]);
+
+      for (const [start, end] of segments) {
+        computeDropMovesForSegment(board, col, start, end, moves, newTileEntries);
+      }
+    }
+  }
+  return { moves, newTileEntries };
 }
 
 function computeItemEffects(
@@ -162,6 +208,7 @@ function computeItemEffects(
     for (const t of allTargets) {
       const c = board[t.row]?.[t.col];
       if (c === null) continue;
+      if (c.obstacle) continue; // おじゃまタイルはアイテム直接消去不可
       if (c.item) {
         const tKey = `${t.row},${t.col}`;
         if (!activated.has(tKey)) {
@@ -187,8 +234,10 @@ function buildItemPlan(
   itemPos: Position,
   itemType: ItemType,
   targetColor: number | undefined,
-  gameMode: 'limited',
+  gameMode: GameMode,
   gameMoveLimit?: number,
+  quotaTable?: number[],
+  segmentStartScore?: number,
 ): ItemAnimPlan {
   const boardBefore = cloneBoard(board);
   const effects = computeItemEffects(board, itemPos, itemType, targetColor);
@@ -196,9 +245,22 @@ function buildItemPlan(
   let scoreFromItems = 0;
   for (const e of effects) scoreFromItems += 10 * e.targets.length;
 
-  const { moves: dropMoves, newTilesPerCol } = computeDropMoves(board);
+  // おじゃまタイルへのダメージ（アイテム効果で消去された全位置）
+  const allItemCleared: Position[] = [];
+  for (const e of effects) {
+    allItemCleared.push(e.itemPos);
+    allItemCleared.push(...e.targets);
+  }
+  const itemDestroyed = damageObstacles(board, allItemCleared);
+  let rng = rngState;
+  if (itemDestroyed.length > 0) {
+    applyGravity(board);
+    rng = fillEmptyCells(board, rng);
+  }
+
+  const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
   applyGravity(board);
-  let rng = fillEmptyCells(board, rngState);
+  rng = fillEmptyCells(board, rng);
   const boardAfterDrop = cloneBoard(board);
 
   const regularChains: ChainAnimData[] = [];
@@ -215,14 +277,21 @@ function buildItemPlan(
     for (const p of clearedPositions) board[p.row][p.col] = null;
     if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
 
-    const { moves: dm, newTilesPerCol: nt } = computeDropMoves(board);
+    // おじゃまタイルへのダメージ
+    const destroyed = damageObstacles(board, clearedPositions);
+    if (destroyed.length > 0) {
+      applyGravity(board);
+      rng = fillEmptyCells(board, rng);
+    }
+
+    const { moves: dm, newTileEntries: nt } = computeDropMoves(board);
     applyGravity(board);
     rng = fillEmptyCells(board, rng);
 
     regularChains.push({
-      matches, clearedPositions, itemGen,
-      score: stepScore, chainIndex,
-      dropMoves: dm, newTilesPerCol: nt,
+      matches, clearedPositions, destroyedObstacles: destroyed,
+      itemGen, score: stepScore, chainIndex,
+      dropMoves: dm, newTileEntries: nt,
       boardAfterDrop: cloneBoard(board),
     });
     chainIndex++;
@@ -232,22 +301,31 @@ function buildItemPlan(
   return {
     boardBeforeActivation: boardBefore,
     effects,
-    dropMoves, newTilesPerCol, boardAfterDrop,
+    dropMoves, newTileEntries, boardAfterDrop,
     regularChains,
     finalState: (() => {
       const newMoveCount = moveCount + 1;
-      const gameOver = checkGameOver(board, gameMode, newMoveCount, gameMoveLimit);
+      const tempState: GameState = {
+        board, score: totalScore, rngState: rng,
+        moveCount: newMoveCount, isGameOver: false,
+        mode: gameMode, moveLimit: gameMoveLimit, quotaTable,
+        segmentStartScore,
+      };
+      const goResult = checkGameOverState(tempState);
       let finalScore = totalScore;
-      if (gameOver) finalScore += calculateRemainingItemBonus(board);
+      if (goResult.gameOver && gameMode === 'sprint') finalScore += calculateRemainingItemBonus(board);
+      if (goResult.gameOver && gameMode === 'clear') finalScore = newMoveCount;
       return {
         board: cloneBoard(board),
         score: finalScore,
         rngState: rng,
         moveCount: newMoveCount,
-
-        isGameOver: gameOver,
+        isGameOver: goResult.gameOver,
+        isCleared: goResult.isCleared,
         mode: gameMode,
         moveLimit: gameMoveLimit,
+        quotaTable,
+        segmentStartScore: tempState.segmentStartScore,
       };
     })(),
   };
@@ -267,14 +345,21 @@ function computeChainSteps(board: (Cell | null)[][], rng: number, totalScore: nu
     for (const p of clearedPositions) board[p.row][p.col] = null;
     if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
 
-    const { moves: dm, newTilesPerCol: nt } = computeDropMoves(board);
+    // おじゃまタイルへのダメージ
+    const destroyed = damageObstacles(board, clearedPositions);
+    if (destroyed.length > 0) {
+      applyGravity(board);
+      rng = fillEmptyCells(board, rng);
+    }
+
+    const { moves: dm, newTileEntries: nt } = computeDropMoves(board);
     applyGravity(board);
     rng = fillEmptyCells(board, rng);
 
     chains.push({
-      matches, clearedPositions, itemGen,
-      score: stepScore, chainIndex,
-      dropMoves: dm, newTilesPerCol: nt,
+      matches, clearedPositions, destroyedObstacles: destroyed,
+      itemGen, score: stepScore, chainIndex,
+      dropMoves: dm, newTileEntries: nt,
       boardAfterDrop: cloneBoard(board),
     });
     chainIndex++;
@@ -293,16 +378,40 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const score = computed(() => gameState.value?.score ?? 0);
   const moveCount = computed(() => gameState.value?.moveCount ?? 0);
   const isGameOver = computed(() => gameState.value?.isGameOver ?? false);
-  const mode = computed(() => gameState.value?.mode ?? 'limited');
+  const mode = computed<GameMode>(() => gameState.value?.mode ?? 'sprint');
   const moveLimit = computed(() => gameState.value?.moveLimit);
+  const isCleared = computed(() => gameState.value?.isCleared);
   const remainingMoves = computed(() => {
-    if (!gameState.value || gameState.value.mode !== 'limited' || !gameState.value.moveLimit) return undefined;
+    if (!gameState.value || gameState.value.mode !== 'sprint' || !gameState.value.moveLimit) return undefined;
     return gameState.value.moveLimit - gameState.value.moveCount;
   });
+  const obstacleCount = computed(() => {
+    if (!gameState.value) return 0;
+    return countObstacles(gameState.value.board);
+  });
+  const quotaTable = computed(() => gameState.value?.quotaTable);
+  const quotaTarget = computed(() => {
+    if (!gameState.value?.quotaTable) return undefined;
+    const mc = gameState.value.moveCount;
+    const nextCheckpoint = Math.ceil((mc + 1) / 5) * 5;
+    const idx = (nextCheckpoint / 5) - 1;
+    if (idx < 0) return getQuota(gameState.value.quotaTable, 0);
+    return getQuota(gameState.value.quotaTable, idx);
+  });
+  const movesUntilCheck = computed(() => {
+    if (!gameState.value?.quotaTable) return undefined;
+    const mc = gameState.value.moveCount;
+    return 5 - (mc % 5);
+  });
+  /** 現区間で稼いだスコア */
+  const segmentScore = computed(() => {
+    if (!gameState.value) return 0;
+    return gameState.value.score - (gameState.value.segmentStartScore ?? 0);
+  });
 
-  function startGame(newSeed?: number) {
+  function startGame(newSeed?: number, gameMode?: GameMode) {
     seed.value = newSeed ?? Math.floor(Math.random() * 0x7FFFFFFF);
-    gameState.value = initializeGame(seed.value);
+    gameState.value = initializeGame(seed.value, gameMode ?? 'sprint');
   }
 
   function swap(pos: Position, dir: Direction) {
@@ -317,54 +426,94 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     if (newState !== gameState.value) gameState.value = newState;
   }
 
-  function activateMagnifyingGlass(pos: Position, targetCells: Position[]) {
+  function activateScope(pos: Position, targetCells: Position[]) {
     if (!gameState.value) return;
     const newState = processAction(gameState.value, {
-      type: 'magnifying_glass', pos, targetCells,
+      type: 'scope', pos, targetCells,
     });
     if (newState !== gameState.value) gameState.value = newState;
   }
 
-  function applyMagnifyingSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
+  function applyScopeSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
     if (!gameState.value) return;
-    const newState = processMagnifyingSynthesis(gameState.value, pos1, pos2, targetCells);
+    const newState = processScopeSynthesis(gameState.value, pos1, pos2, targetCells);
     if (newState !== gameState.value) gameState.value = newState;
   }
 
-  function computeMagGlassPlan(magPos: Position, targetCells: Position[]): MagGlassAnimPlan | null {
+  function computeScopePlan(scopePos: Position, targetCells: Position[]): ScopeAnimPlan | null {
     if (!gameState.value) return null;
     const state = gameState.value;
-    const cell = state.board[magPos.row]?.[magPos.col];
-    if (!cell?.item || cell.item !== 'magnifying_glass') return null;
+    const cell = state.board[scopePos.row]?.[scopePos.col];
+    if (!cell?.item || cell.item !== 'scope') return null;
 
     const board = cloneBoard(state.board);
-    // Remove the magnifying glass itself
-    board[magPos.row][magPos.col] = null;
+    // Remove the scope itself
+    board[scopePos.row][scopePos.col] = null;
 
     let totalScore = state.score;
     let rng = state.rngState;
     const itemEffects: ItemEffectStep[] = [];
 
-    // Process each target cell
-    for (const target of targetCells) {
-      const tc = board[target.row]?.[target.col];
-      if (!tc) continue;
-      if (tc.item) {
-        // Item detonation: use computeItemEffects
-        const effects = computeItemEffects(board, target, tc.item);
+    // まず周囲上下左右4マスを消去
+    const adjacentTargets = getScopeAdjacentTargets(board, scopePos);
+    const allScopeCleared: Position[] = [scopePos]; // scope自身も消去済み
+    for (const t of adjacentTargets) {
+      const ac = board[t.row]?.[t.col];
+      if (!ac) continue;
+      if (ac.obstacle) continue; // おじゃまタイルはスキップ
+      if (ac.item) {
+        const effects = computeItemEffects(board, t, ac.item);
         for (const e of effects) {
           totalScore += 10 * e.targets.length;
           itemEffects.push(e);
+          allScopeCleared.push(e.itemPos);
+          allScopeCleared.push(...e.targets);
         }
       } else {
-        board[target.row][target.col] = null;
+        board[t.row][t.col] = null;
+        allScopeCleared.push(t);
         totalScore += 10;
       }
     }
 
+    // ユーザー選択マスを消去
+    for (const target of targetCells) {
+      const tc = board[target.row]?.[target.col];
+      if (!tc) continue;
+      if (tc.obstacle) {
+        // おじゃまタイルを直接選択した場合、耐久値を1減らす
+        tc.obstacle.durability--;
+        if (tc.obstacle.durability <= 0) {
+          board[target.row][target.col] = null;
+          allScopeCleared.push(target);
+        }
+        continue;
+      }
+      if (tc.item) {
+        const effects = computeItemEffects(board, target, tc.item);
+        for (const e of effects) {
+          totalScore += 10 * e.targets.length;
+          itemEffects.push(e);
+          allScopeCleared.push(e.itemPos);
+          allScopeCleared.push(...e.targets);
+        }
+      } else {
+        board[target.row][target.col] = null;
+        allScopeCleared.push(target);
+        totalScore += 10;
+      }
+    }
+
+    // おじゃまタイルへのダメージ
+    const scopeDestroyed = damageObstacles(board, allScopeCleared);
+    if (scopeDestroyed.length > 0) {
+      applyGravity(board);
+      rng = fillEmptyCells(board, rng);
+    }
+
     const boardAfterClear = cloneBoard(board);
 
-    const { moves: dropMoves, newTilesPerCol } = computeDropMoves(board);
+    const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
     applyGravity(board);
     rng = fillEmptyCells(board, rng);
     const boardAfterDrop = cloneBoard(board);
@@ -373,33 +522,43 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       computeChainSteps(board, rng, totalScore, 2);
 
     const newMoveCount = state.moveCount + 1;
-    const gameOver = checkGameOver(board, state.mode, newMoveCount, state.moveLimit);
+    const tempState: GameState = {
+      board, score: finalScore, rngState: finalRng,
+      moveCount: newMoveCount, isGameOver: false,
+      mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
+      segmentStartScore: state.segmentStartScore,
+    };
+    const goResult = checkGameOverState(tempState);
     let score = finalScore;
-    if (gameOver && state.mode === 'limited') score += calculateRemainingItemBonus(board);
+    if (goResult.gameOver && state.mode === 'sprint') score += calculateRemainingItemBonus(board);
+    if (goResult.gameOver && state.mode === 'clear') score = newMoveCount;
 
     return {
-      magPos,
+      scopePos,
+      adjacentTargets,
       targetCells,
       boardAfterClear,
       itemEffects,
-      dropMoves, newTilesPerCol, boardAfterDrop,
+      dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
       finalState: {
         board: cloneBoard(board),
         score,
         rngState: finalRng,
         moveCount: newMoveCount,
-
-        isGameOver: gameOver,
+        isGameOver: goResult.gameOver,
+        isCleared: goResult.isCleared,
         mode: state.mode,
         moveLimit: state.moveLimit,
+        quotaTable: state.quotaTable,
+        segmentStartScore: tempState.segmentStartScore,
       },
     };
   }
 
-  function computeMagSynthesisPlan(
+  function computeScopeSynthesisPlan(
     pos1: Position, pos2: Position, targetCells: Position[],
-  ): MagSynthesisAnimPlan | null {
+  ): ScopeSynthesisAnimPlan | null {
     if (!gameState.value) return null;
     const state = gameState.value;
     const cell1 = state.board[pos1.row]?.[pos1.col];
@@ -419,25 +578,67 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const itemEffects: ItemEffectStep[] = [];
     const effectTargets: Position[] = [];
 
-    if (effect === 'mag+mag') {
-      // Clear 3 user-selected cells
+    // 合成時: 両位置で周囲4マス消去を追加発動
+    const adj1 = getScopeAdjacentTargets(board, pos1);
+    const adj2 = getScopeAdjacentTargets(board, pos2);
+    const adjSet = new Set<string>();
+    const adjacentTargets: Position[] = [];
+    const allSynthCleared: Position[] = [pos1, pos2]; // 合成元も消去済み
+    for (const t of [...adj1, ...adj2]) {
+      const key = `${t.row},${t.col}`;
+      if (adjSet.has(key)) continue;
+      adjSet.add(key);
+      adjacentTargets.push(t);
+      const ac = board[t.row]?.[t.col];
+      if (!ac) continue;
+      if (ac.obstacle) continue; // おじゃまタイルはスキップ
+      if (ac.item) {
+        const effects = computeItemEffects(board, t, ac.item);
+        for (const e of effects) {
+          totalScore += 10 * e.targets.length;
+          itemEffects.push(e);
+          allSynthCleared.push(e.itemPos);
+          allSynthCleared.push(...e.targets);
+        }
+      } else {
+        board[t.row][t.col] = null;
+        effectTargets.push(t);
+        allSynthCleared.push(t);
+        totalScore += 10;
+      }
+    }
+
+    if (effect === 'scope+scope') {
+      // 3マス消去
       for (const target of targetCells) {
         const tc = board[target.row]?.[target.col];
         if (!tc) continue;
+        if (tc.obstacle) {
+          // おじゃまタイルを直接選択した場合、耐久値を1減らす
+          tc.obstacle.durability--;
+          if (tc.obstacle.durability <= 0) {
+            board[target.row][target.col] = null;
+            allSynthCleared.push(target);
+          }
+          continue;
+        }
         if (tc.item) {
           const effects = computeItemEffects(board, target, tc.item);
           for (const e of effects) {
             totalScore += 10 * e.targets.length;
             itemEffects.push(e);
+            allSynthCleared.push(e.itemPos);
+            allSynthCleared.push(...e.targets);
           }
         } else {
           board[target.row][target.col] = null;
           effectTargets.push(target);
+          allSynthCleared.push(target);
           totalScore += 10;
         }
       }
     } else {
-      // mag+scissors/cutter/clip: get synthesis targets from user-selected cell
+      // scope+v_cut/h_cut/burst: get synthesis targets from user-selected cell
       const synthTargets = getSynthesisTargets(board, pos2, effect, undefined, targetCells);
       const activated = new Set<string>();
       activated.add(`${pos1.row},${pos1.col}`);
@@ -446,6 +647,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const t of synthTargets) {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
+        if (c.obstacle) continue; // おじゃまタイルはスキップ
         if (c.item) {
           const tKey = `${t.row},${t.col}`;
           if (!activated.has(tKey)) {
@@ -454,19 +656,29 @@ export const usePuzzleStore = defineStore('puzzle', () => {
             for (const e of effects) {
               totalScore += 10 * e.targets.length;
               itemEffects.push(e);
+              allSynthCleared.push(e.itemPos);
+              allSynthCleared.push(...e.targets);
             }
           }
         } else {
           board[t.row][t.col] = null;
           effectTargets.push(t);
+          allSynthCleared.push(t);
           totalScore += 10;
         }
       }
     }
 
+    // おじゃまタイルへのダメージ
+    const synthDestroyed = damageObstacles(board, allSynthCleared);
+    if (synthDestroyed.length > 0) {
+      applyGravity(board);
+      rng = fillEmptyCells(board, rng);
+    }
+
     const boardAfterClear = cloneBoard(board);
 
-    const { moves: dropMoves, newTilesPerCol } = computeDropMoves(board);
+    const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
     applyGravity(board);
     rng = fillEmptyCells(board, rng);
     const boardAfterDrop = cloneBoard(board);
@@ -475,24 +687,33 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       computeChainSteps(board, rng, totalScore, 2);
 
     const newMoveCount = state.moveCount + 1;
-    const gameOver = checkGameOver(board, state.mode, newMoveCount, state.moveLimit);
+    const tempState: GameState = {
+      board, score: finalScore, rngState: finalRng,
+      moveCount: newMoveCount, isGameOver: false,
+      mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
+      segmentStartScore: state.segmentStartScore,
+    };
+    const goResult = checkGameOverState(tempState);
     let score = finalScore;
-    if (gameOver && state.mode === 'limited') score += calculateRemainingItemBonus(board);
+    if (goResult.gameOver && state.mode === 'sprint') score += calculateRemainingItemBonus(board);
+    if (goResult.gameOver && state.mode === 'clear') score = newMoveCount;
 
     return {
-      pos1, pos2, synthEffect: effect, targetCells, effectTargets,
+      pos1, pos2, synthEffect: effect, adjacentTargets, targetCells, effectTargets,
       itemEffects, boardAfterClear,
-      dropMoves, newTilesPerCol, boardAfterDrop,
+      dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
       finalState: {
         board: cloneBoard(board),
         score,
         rngState: finalRng,
         moveCount: newMoveCount,
-
-        isGameOver: gameOver,
+        isGameOver: goResult.gameOver,
+        isCleared: goResult.isCleared,
         mode: state.mode,
         moveLimit: state.moveLimit,
+        quotaTable: state.quotaTable,
+        segmentStartScore: tempState.segmentStartScore,
       },
     };
   }
@@ -530,30 +751,46 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const p of clearedPositions) board[p.row][p.col] = null;
       if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
 
-      const { moves: dropMoves, newTilesPerCol } = computeDropMoves(board);
+      // おじゃまタイルへのダメージ
+      const destroyed = damageObstacles(board, clearedPositions);
+      if (destroyed.length > 0) {
+        applyGravity(board);
+        rng = fillEmptyCells(board, rng);
+      }
+
+      const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
       applyGravity(board);
       rng = fillEmptyCells(board, rng);
 
       chains.push({
-        matches, clearedPositions, itemGen,
-        score: stepScore, chainIndex,
-        dropMoves, newTilesPerCol, boardAfterDrop: cloneBoard(board),
+        matches, clearedPositions, destroyedObstacles: destroyed,
+        itemGen, score: stepScore, chainIndex,
+        dropMoves, newTileEntries, boardAfterDrop: cloneBoard(board),
       });
       chainIndex++;
       matches = findMatches(board);
     }
 
     const newMoveCount = state.moveCount + 1;
-    const gameOver = checkGameOver(board, state.mode, newMoveCount, state.moveLimit);
+    const tempState: GameState = {
+      board, score: totalScore, rngState: rng,
+      moveCount: newMoveCount, isGameOver: false,
+      mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
+      segmentStartScore: state.segmentStartScore,
+    };
+    const goResult = checkGameOverState(tempState);
     let finalScore = totalScore;
-    if (gameOver && state.mode === 'limited') finalScore += calculateRemainingItemBonus(board);
+    if (goResult.gameOver && state.mode === 'sprint') finalScore += calculateRemainingItemBonus(board);
+    if (goResult.gameOver && state.mode === 'clear') finalScore = newMoveCount;
 
     return {
       boardAfterSwap, chains,
       finalState: {
         board: cloneBoard(board), score: finalScore, rngState: rng,
         moveCount: newMoveCount,
-        isGameOver: gameOver, mode: state.mode, moveLimit: state.moveLimit,
+        isGameOver: goResult.gameOver, isCleared: goResult.isCleared,
+        mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
+        segmentStartScore: tempState.segmentStartScore,
       },
     };
   }
@@ -566,15 +803,15 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     const board = cloneBoard(state.board);
     let targetColor: number | undefined;
-    if (cell.item === 'coffee') {
-      targetColor = findCoffeeTargetColor(board, pos) ?? undefined;
+    if (cell.item === 'flush') {
+      targetColor = findFlushTargetColor(board, pos) ?? undefined;
       if (targetColor === undefined) return null;
     }
 
     return buildItemPlan(
       board, state.rngState, state.score, state.moveCount,
       pos, cell.item, targetColor,
-      'limited', state.moveLimit,
+      state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
     );
   }
 
@@ -600,12 +837,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const newItemPos = cell1.item ? target : pos;
 
     let targetColor: number | undefined;
-    if (itemCell.item === 'coffee') targetColor = otherCell.color;
+    if (itemCell.item === 'flush') targetColor = otherCell.color;
 
     const plan = buildItemPlan(
       board, state.rngState, state.score, state.moveCount,
       newItemPos, itemCell.item!, targetColor,
-      'limited', state.moveLimit,
+      state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
     );
     return { boardAfterSwap, plan };
   }
@@ -639,7 +876,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     activated.add(`${pos.row},${pos.col}`);
     activated.add(`${target.row},${target.col}`);
 
-    if (effect === 'coffee+coffee') {
+    if (effect === 'flush+flush') {
       // Full clear: items remain, all regular tiles cleared
       board[pos.row][pos.col] = null;
       board[target.row][target.col] = null;
@@ -647,7 +884,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           const cell = board[r][c];
-          if (cell && !cell.item) {
+          if (cell && !cell.item && !cell.obstacle) {
             targets.push({ row: r, col: c });
             board[r][c] = null;
           }
@@ -658,17 +895,18 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         effectType: effect, item1: cell1.item, item2: cell2.item,
         pos1: target, pos2: pos, targets, detonations: [],
       });
-    } else if (effect.startsWith('coffee+')) {
-      const otherItem = effect.replace('coffee+', '') as ItemType;
-      const coffeePos = cell1.item === 'coffee' ? pos : target;
-      // Use findCoffeeTargetColor to find adjacent color (same as engine)
-      const targetColor = findCoffeeTargetColor(board, coffeePos) ?? undefined;
+    } else if (effect.startsWith('flush+')) {
+      const otherItem = effect.replace('flush+', '') as ItemType;
+      const flushPos = cell1.item === 'flush' ? pos : target;
+      // Use findFlushTargetColor to find adjacent color (same as engine)
+      const targetColor = findFlushTargetColor(board, flushPos) ?? undefined;
 
       board[pos.row][pos.col] = null;
       board[target.row][target.col] = null;
 
-      // Get color targets and clear them
-      const colorTargets = targetColor != null ? getCoffeeTargets(board, targetColor) : [];
+      // Get color targets and clear them (skip obstacles)
+      const colorTargetsRaw = targetColor != null ? getFlushTargets(board, targetColor) : [];
+      const colorTargets = colorTargetsRaw.filter(t => !board[t.row][t.col]?.obstacle);
       const allTargets: Position[] = [...colorTargets];
       for (const ct of colorTargets) board[ct.row][ct.col] = null;
       totalScore += 10 * colorTargets.length;
@@ -678,14 +916,15 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const ct of colorTargets) {
         let subTargets: Position[];
         switch (otherItem) {
-          case 'scissors': subTargets = getScissorsTargets(ct); break;
-          case 'cutter': subTargets = getCutterTargets(ct); break;
-          case 'clip': subTargets = getClipTargets(ct, 2); break;
+          case 'v_cut': subTargets = getVCutTargets(ct); break;
+          case 'h_cut': subTargets = getHCutTargets(ct); break;
+          case 'burst': subTargets = getBurstTargets(ct, 2); break;
           default: subTargets = [];
         }
         for (const t of subTargets) {
           const c = board[t.row]?.[t.col];
           if (c === null) continue;
+          if (c.obstacle) continue; // おじゃまタイルはスキップ
           if (c.item) {
             const tKey = `${t.row},${t.col}`;
             if (!activated.has(tKey)) {
@@ -704,20 +943,21 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         effectType: effect, item1: cell1.item, item2: cell2.item,
         pos1: target, pos2: pos, targets: allTargets, detonations,
       });
-    } else if (effect === 'mag+coffee') {
-      // mag+coffee: coffee color clear (same as coffee activation)
-      const coffeePos = cell1.item === 'coffee' ? pos : target;
-      const targetColor = findCoffeeTargetColor(board, coffeePos) ?? undefined;
+    } else if (effect === 'scope+flush') {
+      // scope+flush: flush color clear (same as flush activation)
+      const flushPos = cell1.item === 'flush' ? pos : target;
+      const targetColor = findFlushTargetColor(board, flushPos) ?? undefined;
 
       board[pos.row][pos.col] = null;
       board[target.row][target.col] = null;
 
-      const colorTargets = targetColor != null ? getCoffeeTargets(board, targetColor) : [];
+      const colorTargets = targetColor != null ? getFlushTargets(board, targetColor) : [];
       const cleared: Position[] = [];
       const detonations: { pos: Position; item: ItemType }[] = [];
       for (const t of colorTargets) {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
+        if (c.obstacle) continue; // おじゃまタイルはスキップ
         if (c.item) {
           const tKey = `${t.row},${t.col}`;
           if (!activated.has(tKey)) {
@@ -736,7 +976,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         pos1: target, pos2: pos, targets: cleared, detonations,
       });
     } else {
-      // Non-coffee synthesis
+      // Non-flush synthesis
       board[pos.row][pos.col] = null;
       board[target.row][target.col] = null;
 
@@ -747,6 +987,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const t of targets) {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
+        if (c.obstacle) continue; // おじゃまタイルはスキップ
         if (c.item) {
           const tKey = `${t.row},${t.col}`;
           if (!activated.has(tKey)) {
@@ -767,16 +1008,27 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
 
     // Handle detonations with computeItemEffects
-    for (const effect of effects) {
-      for (const det of effect.detonations) {
+    const allSynthCleared: Position[] = [pos, target]; // 合成元も消去済み
+    for (const ef of effects) {
+      allSynthCleared.push(...ef.targets);
+      for (const det of ef.detonations) {
         const detEffects = computeItemEffects(board, det.pos, det.item);
         for (const e of detEffects) {
           totalScore += 10 * e.targets.length;
+          allSynthCleared.push(e.itemPos);
+          allSynthCleared.push(...e.targets);
         }
       }
     }
 
-    const { moves: dropMoves, newTilesPerCol } = computeDropMoves(board);
+    // おじゃまタイルへのダメージ
+    const synthDestroyed = damageObstacles(board, allSynthCleared);
+    if (synthDestroyed.length > 0) {
+      applyGravity(board);
+      rng = fillEmptyCells(board, rng);
+    }
+
+    const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
     applyGravity(board);
     rng = fillEmptyCells(board, rng);
     const boardAfterDrop = cloneBoard(board);
@@ -788,22 +1040,31 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       boardAfterSwap,
       boardBeforeActivation: boardBefore,
       effects,
-      dropMoves, newTilesPerCol, boardAfterDrop,
+      dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
       finalState: (() => {
         const newMoveCount = state.moveCount + 1;
-        const gameOver = checkGameOver(board, state.mode, newMoveCount, state.moveLimit);
+        const tempState: GameState = {
+          board, score: finalScore, rngState: finalRng,
+          moveCount: newMoveCount, isGameOver: false,
+          mode: state.mode, moveLimit: state.moveLimit, quotaTable: state.quotaTable,
+          segmentStartScore: state.segmentStartScore,
+        };
+        const goResult = checkGameOverState(tempState);
         let score = finalScore;
-        if (gameOver && state.mode === 'limited') score += calculateRemainingItemBonus(board);
+        if (goResult.gameOver && state.mode === 'sprint') score += calculateRemainingItemBonus(board);
+        if (goResult.gameOver && state.mode === 'clear') score = newMoveCount;
         return {
           board: cloneBoard(board),
           score,
           rngState: finalRng,
           moveCount: newMoveCount,
-  
-          isGameOver: gameOver,
+          isGameOver: goResult.gameOver,
+          isCleared: goResult.isCleared,
           mode: state.mode,
           moveLimit: state.moveLimit,
+          quotaTable: state.quotaTable,
+          segmentStartScore: tempState.segmentStartScore,
         };
       })(),
     };
@@ -823,11 +1084,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   return {
     gameState, seed,
-    board, score, moveCount, isGameOver,
+    board, score, moveCount, isGameOver, isCleared,
     mode, moveLimit, remainingMoves,
+    obstacleCount, quotaTable, quotaTarget, movesUntilCheck, segmentScore,
     startGame, swap, tap,
-    activateMagnifyingGlass, applyMagnifyingSynthesis,
-    computeMagGlassPlan, computeMagSynthesisPlan,
+    activateScope, applyScopeSynthesis,
+    computeScopePlan, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,
     applyState, placeItem,
   };

@@ -1,45 +1,45 @@
 import { ref } from 'vue';
 import type { Position } from '@tomado/engine';
 
-export interface MagSynthesisInfo {
+export interface ScopeSynthesisInfo {
   pos1: Position;
   pos2: Position;
 }
 
-export function useMagGlassSelection() {
-  const magSelecting = ref(false);
-  const magSourcePos = ref<Position | null>(null);
-  const magTargetsNeeded = ref(0);
-  const magSelectedCells = ref<Position[]>([]);
-  const magSynthesisInfo = ref<MagSynthesisInfo | null>(null);
+export function useScopeSelection() {
+  const scopeSelecting = ref(false);
+  const scopeSourcePos = ref<Position | null>(null);
+  const scopeTargetsNeeded = ref(0);
+  const scopeSelectedCells = ref<Position[]>([]);
+  const scopeSynthesisInfo = ref<ScopeSynthesisInfo | null>(null);
 
-  /** Enter magnifying glass selection mode (user tapped a mag glass). */
-  function startSelection(pos: Position, targets = 1, synthesis: MagSynthesisInfo | null = null) {
-    magSelecting.value = true;
-    magSourcePos.value = pos;
-    magTargetsNeeded.value = targets;
-    magSelectedCells.value = [];
-    magSynthesisInfo.value = synthesis;
+  /** Enter scope selection mode (user tapped a scope). */
+  function startSelection(pos: Position, targets = 1, synthesis: ScopeSynthesisInfo | null = null) {
+    scopeSelecting.value = true;
+    scopeSourcePos.value = pos;
+    scopeTargetsNeeded.value = targets;
+    scopeSelectedCells.value = [];
+    scopeSynthesisInfo.value = synthesis;
   }
 
   /**
-   * Handle a cell tap during mag selection.
+   * Handle a cell tap during scope selection.
    * Returns the selected cells + synthesis info when selection is complete, or null if still selecting.
    */
-  function selectCell(pos: Position): { cells: Position[]; source: Position; synthesis: MagSynthesisInfo | null } | null {
-    if (!magSelecting.value) return null;
-    // Don't allow selecting the magnifying glass itself
-    if (magSourcePos.value && pos.row === magSourcePos.value.row && pos.col === magSourcePos.value.col) return null;
+  function selectCell(pos: Position): { cells: Position[]; source: Position; synthesis: ScopeSynthesisInfo | null } | null {
+    if (!scopeSelecting.value) return null;
+    // Don't allow selecting the scope itself
+    if (scopeSourcePos.value && pos.row === scopeSourcePos.value.row && pos.col === scopeSourcePos.value.col) return null;
     // Don't allow duplicate selections
-    if (magSelectedCells.value.some(p => p.row === pos.row && p.col === pos.col)) return null;
+    if (scopeSelectedCells.value.some(p => p.row === pos.row && p.col === pos.col)) return null;
 
-    magSelectedCells.value.push(pos);
+    scopeSelectedCells.value.push(pos);
 
-    if (magSelectedCells.value.length >= magTargetsNeeded.value) {
+    if (scopeSelectedCells.value.length >= scopeTargetsNeeded.value) {
       const result = {
-        cells: [...magSelectedCells.value],
-        source: magSourcePos.value!,
-        synthesis: magSynthesisInfo.value,
+        cells: [...scopeSelectedCells.value],
+        source: scopeSourcePos.value!,
+        synthesis: scopeSynthesisInfo.value,
       };
       reset();
       return result;
@@ -48,18 +48,18 @@ export function useMagGlassSelection() {
   }
 
   function reset() {
-    magSelecting.value = false;
-    magSourcePos.value = null;
-    magSelectedCells.value = [];
-    magSynthesisInfo.value = null;
+    scopeSelecting.value = false;
+    scopeSourcePos.value = null;
+    scopeSelectedCells.value = [];
+    scopeSynthesisInfo.value = null;
   }
 
   return {
-    magSelecting,
-    magSourcePos,
-    magTargetsNeeded,
-    magSelectedCells,
-    magSynthesisInfo,
+    scopeSelecting,
+    scopeSourcePos,
+    scopeTargetsNeeded,
+    scopeSelectedCells,
+    scopeSynthesisInfo,
     startSelection,
     selectCell,
     cancelSelection: reset,

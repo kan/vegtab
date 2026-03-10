@@ -47,7 +47,7 @@ export function useCalendar() {
   }
 
   function bestScore(seed: number): number {
-    return gameStore.getBestScore(seed, 'limited');
+    return gameStore.getBestScore(seed, 'sprint');
   }
 
   return {

@@ -24,8 +24,9 @@
   --overlay-bg: rgba(0, 0, 0, 0.5);
 
   /* Brand & accent */
-  --brand: #c0392b;
-  --brand-light: #fce0e0;
+  --brand: #2e7d32;
+  --brand-light: #ddf2dd;
+  --title-color: #2e7d32;
   --success: #27ae60;
   --success-light: #ddf2dd;
   --warning: #f39c12;
@@ -88,8 +89,9 @@
   --overlay-bg: rgba(0, 0, 0, 0.7);
 
   /* Brand & accent — slightly brighter for contrast */
-  --brand: #e04a3c;
-  --brand-light: #3d2020;
+  --brand: #66bb6a;
+  --brand-light: #1a3322;
+  --title-color: #66bb6a;
   --success: #2ecc71;
   --success-light: #1a3322;
   --warning: #f5a623;

@@ -3,66 +3,77 @@ defineProps<{ item: string; size: number }>();
 </script>
 
 <template>
-  <!-- 虫めがね -->
-  <svg v-if="item === 'magnifying_glass'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
-    <!-- レンズ -->
-    <circle cx="14" cy="14" r="8" fill="none" stroke="#5b9bd5" stroke-width="2"/>
-    <circle cx="14" cy="14" r="5" fill="#d6eaf8" opacity="0.5"/>
-    <!-- 柄 -->
-    <line x1="20" y1="20" x2="28" y2="28" stroke="#8b6914" stroke-width="3" stroke-linecap="round"/>
-    <!-- レンズの光沢 -->
-    <path d="M10 10 Q11 8 13 9" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
-  </svg>
-
-  <!-- はさみ: 刃が下を向いている (エフェクトが上→下なので) -->
-  <svg v-else-if="item === 'scissors'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
-    <!-- 左の持ち手 -->
-    <ellipse cx="11" cy="8" rx="3.5" ry="4" fill="none" stroke="#888" stroke-width="1.6" stroke-linecap="round"/>
-    <!-- 右の持ち手 -->
-    <ellipse cx="21" cy="8" rx="3.5" ry="4" fill="none" stroke="#888" stroke-width="1.6" stroke-linecap="round"/>
-    <!-- 結合部 (ネジ) -->
-    <circle cx="16" cy="15.5" r="2" fill="#999" stroke="#777" stroke-width="0.6"/>
-    <!-- 左の刃 (下向き) -->
-    <path d="M12 28 L10 16 L14 16 Z" fill="#e06b6b" stroke="#c85a5a" stroke-width="0.8"/>
-    <!-- 右の刃 (下向き) -->
-    <path d="M20 28 L18 16 L22 16 Z" fill="#e06b6b" stroke="#c85a5a" stroke-width="0.8"/>
-  </svg>
-
-  <!-- カッター: はさみを90度回転（横向き） -->
-  <svg v-else-if="item === 'cutter'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
-    <g transform="rotate(-90 16 16)">
-      <!-- 左の持ち手 -->
-      <ellipse cx="11" cy="8" rx="3.5" ry="4" fill="none" stroke="#888" stroke-width="1.6" stroke-linecap="round"/>
-      <!-- 右の持ち手 -->
-      <ellipse cx="21" cy="8" rx="3.5" ry="4" fill="none" stroke="#888" stroke-width="1.6" stroke-linecap="round"/>
-      <!-- 結合部 (ネジ) -->
-      <circle cx="16" cy="15.5" r="2" fill="#999" stroke="#777" stroke-width="0.6"/>
-      <!-- 左の刃 (下向き) -->
-      <path d="M12 28 L10 16 L14 16 Z" fill="#e06b6b" stroke="#c85a5a" stroke-width="0.8"/>
-      <!-- 右の刃 (下向き) -->
-      <path d="M20 28 L18 16 L22 16 Z" fill="#e06b6b" stroke="#c85a5a" stroke-width="0.8"/>
+  <!-- スプーン (scope) — 柄上・頭下、全体45度回転 -->
+  <svg v-if="item === 'scope'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
+    <g transform="rotate(45 16 16)">
+      <!-- 柄（まっすぐ上） -->
+      <rect x="14.5" y="1" width="3" height="13" rx="1.5" fill="#B0B0B0" stroke="#888" stroke-width="0.8"/>
+      <!-- スプーンの頭（楕円、下） -->
+      <ellipse cx="16" cy="22.5" rx="7" ry="7.5" fill="#C0C0C0" stroke="#888" stroke-width="1.2"/>
+      <!-- 内側のくぼみ -->
+      <ellipse cx="16" cy="22" rx="4.5" ry="4.8" fill="#D8D8D8"/>
+      <!-- 光沢 -->
+      <ellipse cx="14.5" cy="20.5" rx="2" ry="2.2" fill="#fff" opacity="0.4"/>
     </g>
   </svg>
 
-  <!-- クリップ: ゼムクリップ風 -->
-  <svg v-else-if="item === 'clip'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
-    <path
-      d="M12 28 L12 8 Q12 3 16 3 Q20 3 20 8 L20 24 Q20 27 17 27 Q14 27 14 24 L14 10"
-      stroke="#999" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"
-    />
+  <!-- ナイフ縦 (v_cut) — 刃は直角三角形の斜辺を膨らませたカーブ -->
+  <svg v-else-if="item === 'v_cut'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
+    <!-- 刃: 先端(上)→カーブした刃先(右に膨らむ斜辺)→底辺→背(直線) -->
+    <path d="M15 2 Q26 11 22 20 L15 20 Z" fill="#D0D0D0" stroke="#999" stroke-width="0.8"/>
+    <!-- 刃の光沢 -->
+    <path d="M15 4 Q22 10 20 18 L15 18 Z" fill="#EAEAEA" opacity="0.5"/>
+    <!-- 背（直線、左辺の強調） -->
+    <line x1="15" y1="2" x2="15" y2="20" stroke="#aaa" stroke-width="0.6"/>
+    <!-- 柄 -->
+    <rect x="13" y="20" width="5" height="10" rx="1" fill="#8B6914" stroke="#6B4E10" stroke-width="0.8"/>
+    <!-- 柄の飾り -->
+    <line x1="13.5" y1="23" x2="17.5" y2="23" stroke="#A07818" stroke-width="0.6"/>
+    <line x1="13.5" y1="25.5" x2="17.5" y2="25.5" stroke="#A07818" stroke-width="0.6"/>
   </svg>
 
-  <!-- コーヒーカップ: 横から見た図 -->
-  <svg v-else-if="item === 'coffee'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
+  <!-- ナイフ横 (h_cut): ナイフを90度回転 -->
+  <svg v-else-if="item === 'h_cut'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
+    <g transform="rotate(-90 16 16)">
+      <path d="M15 2 Q26 11 22 20 L15 20 Z" fill="#D0D0D0" stroke="#999" stroke-width="0.8"/>
+      <path d="M15 4 Q22 10 20 18 L15 18 Z" fill="#EAEAEA" opacity="0.5"/>
+      <line x1="15" y1="2" x2="15" y2="20" stroke="#aaa" stroke-width="0.6"/>
+      <rect x="13" y="20" width="5" height="10" rx="1" fill="#8B6914" stroke="#6B4E10" stroke-width="0.8"/>
+      <line x1="13.5" y1="23" x2="17.5" y2="23" stroke="#A07818" stroke-width="0.6"/>
+      <line x1="13.5" y1="25.5" x2="17.5" y2="25.5" stroke="#A07818" stroke-width="0.6"/>
+    </g>
+  </svg>
+
+  <!-- フォーク (burst) — 柄上・歯下、全体45度回転 -->
+  <svg v-else-if="item === 'burst'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
+    <g transform="rotate(45 16 16)">
+      <!-- 柄（まっすぐ上） -->
+      <rect x="14.5" y="1" width="3" height="13" rx="1.5" fill="#B0B0B0" stroke="#888" stroke-width="0.8"/>
+      <!-- 歯のつなぎ -->
+      <path d="M8 17 Q8 15 12 15 L20 15 Q24 15 24 17" fill="none" stroke="#B0B0B0" stroke-width="2.2"/>
+      <!-- 4本の歯（下向き） -->
+      <rect x="9" y="17" width="2" height="11" rx="1" fill="#C0C0C0" stroke="#888" stroke-width="0.6"/>
+      <rect x="13" y="17" width="2" height="11" rx="1" fill="#C0C0C0" stroke="#888" stroke-width="0.6"/>
+      <rect x="17" y="17" width="2" height="11" rx="1" fill="#C0C0C0" stroke="#888" stroke-width="0.6"/>
+      <rect x="21" y="17" width="2" height="11" rx="1" fill="#C0C0C0" stroke="#888" stroke-width="0.6"/>
+    </g>
+  </svg>
+
+  <!-- 鍋 (flush) — 丸みのある暖色系 -->
+  <svg v-else-if="item === 'flush'" :width="size" :height="size" viewBox="0 0 32 32" fill="none">
     <!-- 湯気 -->
-    <path d="M10 8 Q11 5 10 2" stroke="#bbb" stroke-width="1" fill="none" stroke-linecap="round"/>
-    <path d="M15 7 Q16 4 15 1" stroke="#bbb" stroke-width="1" fill="none" stroke-linecap="round"/>
-    <path d="M20 8 Q21 5 20 2" stroke="#bbb" stroke-width="1" fill="none" stroke-linecap="round"/>
-    <!-- カップ本体 -->
-    <path d="M5 11 L7 26 Q15 30 23 26 L25 11 Z" fill="#fff" stroke="#333" stroke-width="1.2"/>
-    <!-- 取っ手 -->
-    <path d="M25 14 Q30 14 30 19 Q30 24 25 23" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round"/>
-    <!-- カップの帯ライン -->
-    <path d="M6 16 Q15 18 24 16" stroke="#333" stroke-width="0.8" fill="none"/>
+    <path d="M11 8 Q12 5 11 2" stroke="#daa" stroke-width="1" fill="none" stroke-linecap="round"/>
+    <path d="M16 7 Q17 4 16 1" stroke="#daa" stroke-width="1" fill="none" stroke-linecap="round"/>
+    <path d="M21 8 Q22 5 21 2" stroke="#daa" stroke-width="1" fill="none" stroke-linecap="round"/>
+    <!-- 鍋本体（丸みのある形状） -->
+    <path d="M4 12 Q3 20 6 26 Q16 31 26 26 Q29 20 28 12 Z" fill="#C06030" stroke="#8B4020" stroke-width="1.2"/>
+    <!-- 蓋の帯ライン -->
+    <path d="M5 15 Q16 17 27 15" stroke="#A05028" stroke-width="0.8" fill="none"/>
+    <!-- 左取っ手 -->
+    <path d="M4 15 Q0 15 0 18 Q0 21 4 21" fill="none" stroke="#8B4020" stroke-width="1.8" stroke-linecap="round"/>
+    <!-- 右取っ手 -->
+    <path d="M28 15 Q32 15 32 18 Q32 21 28 21" fill="none" stroke="#8B4020" stroke-width="1.8" stroke-linecap="round"/>
+    <!-- ハイライト -->
+    <ellipse cx="13" cy="20" rx="4" ry="3" fill="#D07040" opacity="0.4"/>
   </svg>
 </template>

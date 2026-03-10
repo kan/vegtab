@@ -6,11 +6,11 @@ const SIMULTANEOUS_BONUS = 30;
 const FULL_CLEAR_BONUS = 1000;
 
 const REMAINING_ITEM_BONUS: Record<ItemType, number> = {
-  magnifying_glass: 50,
-  scissors: 150,
-  cutter: 150,
-  clip: 300,
-  coffee: 500,
+  scope: 50,
+  v_cut: 150,
+  h_cut: 150,
+  burst: 300,
+  flush: 500,
 };
 
 /** 1連鎖ステップのスコアを計算 */
@@ -31,7 +31,7 @@ export function getFullClearBonus(): number {
   return FULL_CLEAR_BONUS;
 }
 
-/** 手数制限モード終了時の残存アイテムボーナスを計算 */
+/** Sprintモード終了時の残存アイテムボーナスを計算 */
 export function calculateRemainingItemBonus(board: (Cell | null)[][]): number {
   let bonus = 0;
   for (let row = 0; row < BOARD_SIZE; row++) {

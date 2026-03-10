@@ -6,4 +6,6 @@ export * from './gravity.js';
 export * from './item.js';
 export * from './score.js';
 export * from './gameOver.js';
-export { initializeGame, processAction, processMagnifyingSynthesis, cloneGameState } from './engine.js';
+export * from './obstacle.js';
+export * from './survival.js';
+export { initializeGame, processAction, processScopeSynthesis, cloneGameState } from './engine.js';

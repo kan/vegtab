@@ -3,10 +3,12 @@ import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue
 import { useI18n } from 'vue-i18n';
 import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
 import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type ItemType } from '@tomado/engine';
-import { useMagGlassSelection } from '@/composables/useMagGlassSelection';
+import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
 import ItemIcon from './ItemIcon.vue';
+import VegetableIcon from './VegetableIcon.vue';
+import ObstacleTile from './ObstacleTile.vue';
 import type DebugPanel from './DebugPanel.vue';
 
 const props = defineProps<{
@@ -19,16 +21,11 @@ const wrapperEl = ref<HTMLElement | null>(null);
 const boardEl = ref<HTMLElement | null>(null);
 const cellSize = ref(0);
 
-// --- Magnifying glass selection ---
-const mag = useMagGlassSelection();
+// --- Scope selection ---
+const scope = useScopeSelection();
 
-const STICKY_COLORS = [
-  { band: '#e6c832', bg: '#fdf6d0', fold: '#d4b828' },
-  { band: '#5aad5e', bg: '#ddf2dd', fold: '#4a9a4e' },
-  { band: '#4088c4', bg: '#d6e8f7', fold: '#3578b0' },
-  { band: '#e06b6b', bg: '#fce0e0', fold: '#c85a5a' },
-  { band: '#a85e90', bg: '#f0dce8', fold: '#954f80' },
-];
+// Vegetable colors for check-overlay
+const VEGGIE_COLORS = ['#d4b828', '#4a9a4e', '#7B4FAA', '#c85a5a', '#8a8a7a'];
 
 /** Animation timing constants (ms) */
 const ANIM = {
@@ -65,6 +62,9 @@ function vbRemove(pos: Position) {
 const matchedCells = reactive(new Set<string>());
 const clearingCells = reactive(new Set<string>());
 
+// --- Obstacle destruction animation state ---
+const obstacleClearingCells = reactive(new Set<string>());
+
 // --- Item effect animation state ---
 const itemClearingCells = reactive(new Set<string>());
 const sweepIcon = ref<{ item: string; x: number; y: number; size: number } | null>(null);
@@ -95,16 +95,16 @@ function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() =>
 
 // --- Tap ---
 async function handleTap(pos: Position) {
-  // Magnifying glass cell selection mode
-  if (mag.magSelecting.value) {
-    handleMagSelection(pos);
+  // Scope cell selection mode
+  if (scope.scopeSelecting.value) {
+    handleScopeSelection(pos);
     return;
   }
 
-  // Check if tapping a magnifying glass → enter selection mode
+  // Check if tapping a scope → enter selection mode
   const cell = activeBoard.value?.[pos.row]?.[pos.col];
-  if (cell?.item === 'magnifying_glass') {
-    mag.startSelection(pos);
+  if (cell?.item === 'scope') {
+    scope.startSelection(pos);
     clearOff(pos.row, pos.col);
     return;
   }
@@ -124,25 +124,25 @@ async function handleTap(pos: Position) {
   drag.setLocked(false);
 }
 
-async function handleMagSelection(pos: Position) {
-  const result = mag.selectCell(pos);
+async function handleScopeSelection(pos: Position) {
+  const result = scope.selectCell(pos);
   if (!result) return;
 
   if (result.synthesis) {
-    await animateMagSynthesis(result.synthesis.pos1, result.synthesis.pos2, result.cells);
+    await animateScopeSynthesis(result.synthesis.pos1, result.synthesis.pos2, result.cells);
   } else {
-    await animateMagGlass(result.source, result.cells);
+    await animateScope(result.source, result.cells);
   }
 }
 
-function cancelMagSelection() {
-  mag.cancelSelection();
+function cancelScopeSelection() {
+  scope.cancelSelection();
   visualBoard.value = null;
 }
 
-async function animateMagGlass(magPos: Position, targetCells: Position[]) {
+async function animateScope(scopePos: Position, targetCells: Position[]) {
   // If visualBoard is set (e.g. from a swap), apply the swapped board to the store
-  // so computeMagGlassPlan sees the correct board. Save original state for undo.
+  // so computeScopePlan sees the correct board. Save original state for undo.
   let originalState: typeof store.gameState = null;
   if (visualBoard.value !== null) {
     originalState = store.gameState ? { ...store.gameState } : null;
@@ -151,30 +151,53 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
     visualBoard.value = null;
   }
 
-  const plan = store.computeMagGlassPlan(magPos, targetCells);
+  const plan = store.computeScopePlan(scopePos, targetCells);
   if (!plan) {
     // Fallback: apply instantly
     if (originalState) store.applyState(originalState);
-    store.activateMagnifyingGlass(magPos, targetCells);
+    store.activateScope(scopePos, targetCells);
     return;
   }
 
   drag.setLocked(true);
+  playSE('item_use'); vibrate(20);
 
-  // Build a board with the magnifying glass removed but targets still present
-  const boardWithoutMag = cloneBoard(store.board!);
-  boardWithoutMag[magPos.row][magPos.col] = null;
-  visualBoard.value = boardWithoutMag;
+  // Build a board with the scope removed but targets still present
+  const boardWithoutScope = cloneBoard(store.board!);
+  boardWithoutScope[scopePos.row][scopePos.col] = null;
+  visualBoard.value = boardWithoutScope;
 
-  // Show magnifying glass overlay on target cells (only non-item targets)
-  const nonItemTargets = targetCells.filter(t => {
-    const cell = boardWithoutMag[t.row]?.[t.col];
+  // 1) 周囲上下左右4マスを消去アニメーション
+  const adjNonItem = plan.adjacentTargets.filter(t => {
+    const cell = boardWithoutScope[t.row]?.[t.col];
     return cell && !cell.item;
   });
-  await animateRadial(magPos, nonItemTargets, 'magnifying_glass');
-  for (const t of nonItemTargets) vbRemove(t);
-  itemClearingCells.clear();
-  cellItemOverlay.clear();
+  if (adjNonItem.length > 0) {
+    await animateRadial(scopePos, adjNonItem, 'scope');
+    for (const t of adjNonItem) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  }
+
+  // 2) ユーザー選択マスの消去アニメーション（SE + scopeオーバーレイ点滅）
+  for (const target of targetCells) {
+    const tc = visualBoard.value?.[target.row]?.[target.col];
+    if (!tc) continue;
+    playSE('item_use'); vibrate(15);
+    // scopeアイコンを点滅オーバーレイ
+    const key = pk(target.row, target.col);
+    cellItemOverlay.set(key, 'scope');
+    await wait(120);
+    cellItemOverlay.delete(key);
+    await wait(60);
+    cellItemOverlay.set(key, 'scope');
+    await wait(120);
+    itemClearingCells.add(key);
+    vbRemove(target);
+    await wait(ANIM.ITEM_CLEAR);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  }
 
   // Switch to board after clear
   visualBoard.value = plan.boardAfterClear;
@@ -191,9 +214,7 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
   // Drop animation
   const cs = cellSize.value;
   for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const [col, count] of plan.newTilesPerCol) {
-    for (let row = 0; row < count; row++) dropOffsets[pk(row, col)] = -count * cs;
-  }
+  for (const e of plan.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
   visualBoard.value = plan.boardAfterDrop;
   await nextFrame();
   dropTransitioning.value = true;
@@ -211,15 +232,16 @@ async function animateMagGlass(magPos: Position, targetCells: Position[]) {
   drag.setLocked(false);
 }
 
-async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
-  const plan = store.computeMagSynthesisPlan(pos1, pos2, targetCells);
+async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
+  const plan = store.computeScopeSynthesisPlan(pos1, pos2, targetCells);
   if (!plan) {
     // Fallback: apply instantly
-    store.applyMagnifyingSynthesis(pos1, pos2, targetCells);
+    store.applyScopeSynthesis(pos1, pos2, targetCells);
     return;
   }
 
   drag.setLocked(true);
+  playSE('item_use'); vibrate(20);
 
   // Remove both items from visual board
   const boardWithoutItems = cloneBoard(store.board!);
@@ -227,24 +249,39 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
   boardWithoutItems[pos2.row][pos2.col] = null;
   visualBoard.value = boardWithoutItems;
 
-  if (plan.synthEffect === 'mag+mag') {
-    // mag+mag: show magnifying glass overlay on 3 selected cells, then clear
-    await animateRadial(pos1, plan.effectTargets, 'magnifying_glass');
+  // 両位置の周囲4マス消去アニメーション
+  const adjNonItem = plan.adjacentTargets.filter(t => {
+    const cell = boardWithoutItems[t.row]?.[t.col];
+    return cell && !cell.item;
+  });
+  if (adjNonItem.length > 0) {
+    await animateRadial(pos1, adjNonItem, 'scope');
+    for (const t of adjNonItem) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  }
+
+  if (plan.synthEffect === 'scope+scope') {
+    // scope+scope: show scope overlay on 3 selected cells, then clear
+    const remaining = plan.effectTargets.filter(t => visualBoard.value?.[t.row]?.[t.col]);
+    if (remaining.length > 0) {
+      await animateRadial(pos1, remaining, 'scope');
+      for (const t of remaining) vbRemove(t);
+      itemClearingCells.clear();
+      cellItemOverlay.clear();
+    }
+  } else if (plan.synthEffect === 'scope+v_cut') {
+    await animateVCut(targetCells[0], plan.effectTargets);
     for (const t of plan.effectTargets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
-  } else if (plan.synthEffect === 'mag+scissors') {
-    await animateScissors(targetCells[0], plan.effectTargets);
+  } else if (plan.synthEffect === 'scope+h_cut') {
+    await animateHCut(targetCells[0], plan.effectTargets);
     for (const t of plan.effectTargets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
-  } else if (plan.synthEffect === 'mag+cutter') {
-    await animateCutter(targetCells[0], plan.effectTargets);
-    for (const t of plan.effectTargets) vbRemove(t);
-    itemClearingCells.clear();
-    cellItemOverlay.clear();
-  } else if (plan.synthEffect === 'mag+clip') {
-    await animateRadial(targetCells[0], plan.effectTargets, 'clip');
+  } else if (plan.synthEffect === 'scope+burst') {
+    await animateRadial(targetCells[0], plan.effectTargets, 'burst');
     for (const t of plan.effectTargets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -264,9 +301,7 @@ async function animateMagSynthesis(pos1: Position, pos2: Position, targetCells: 
   // Drop animation
   const cs = cellSize.value;
   for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const [col, count] of plan.newTilesPerCol) {
-    for (let row = 0; row < count; row++) dropOffsets[pk(row, col)] = -count * cs;
-  }
+  for (const e of plan.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
   visualBoard.value = plan.boardAfterDrop;
   await nextFrame();
   dropTransitioning.value = true;
@@ -309,23 +344,23 @@ async function commitSwap(pos: Position, dir: Direction) {
     return;
   }
 
-  // Magnifying glass swap with regular tile → enter selection mode
+  // Scope swap with regular tile → enter selection mode
   {
     const cell1 = activeBoard.value?.[pos.row]?.[pos.col];
     const cell2 = activeBoard.value?.[nb.row]?.[nb.col];
     if (cell1 && cell2) {
-      const magCell = cell1.item === 'magnifying_glass' ? cell1 : cell2.item === 'magnifying_glass' ? cell2 : null;
-      if (magCell && !(cell1.item && cell2.item)) {
-        // One is magnifying glass, the other is a regular tile (not both items)
+      const scopeCell = cell1.item === 'scope' ? cell1 : cell2.item === 'scope' ? cell2 : null;
+      if (scopeCell && !(cell1.item && cell2.item)) {
+        // One is scope, the other is a regular tile (not both items)
         // After slide animation, mag moved to the neighbor's position
-        const magPos = cell1.item === 'magnifying_glass' ? nb : pos;
+        const scopePos = cell1.item === 'scope' ? nb : pos;
         clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
         // Show the swapped board visually
         const swapped = cloneBoard(store.board!);
         swapped[pos.row][pos.col] = cell2;
         swapped[nb.row][nb.col] = cell1;
         visualBoard.value = swapped;
-        mag.startSelection(magPos);
+        scope.startSelection(scopePos);
         drag.setLocked(false);
         return;
       }
@@ -348,17 +383,17 @@ async function commitSwap(pos: Position, dir: Direction) {
     return;
   }
 
-  // Magnifying glass synthesis (needs user selection)
+  // Scope synthesis (needs user selection)
   {
     const cell1 = activeBoard.value?.[pos.row]?.[pos.col];
     const cell2 = activeBoard.value?.[nb.row]?.[nb.col];
     if (cell1?.item && cell2?.item) {
-      const hasMag = cell1.item === 'magnifying_glass' || cell2.item === 'magnifying_glass';
-      if (hasMag) {
+      const hasScope = cell1.item === 'scope' || cell2.item === 'scope';
+      if (hasScope) {
         const synth = getSynthesisEffect(cell1.item, cell2.item);
-        if (synth && ['mag+mag', 'mag+scissors', 'mag+cutter', 'mag+clip'].includes(synth.effect)) {
+        if (synth && ['scope+scope', 'scope+v_cut', 'scope+h_cut', 'scope+burst'].includes(synth.effect)) {
           clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
-          mag.startSelection(pos, synth.effect === 'mag+mag' ? 3 : 1, { pos1: pos, pos2: nb });
+          scope.startSelection(pos, synth.effect === 'scope+scope' ? 3 : 1, { pos1: pos, pos2: nb });
           drag.setLocked(false);
           return;
         }
@@ -393,11 +428,11 @@ async function commitSwap(pos: Position, dir: Direction) {
 
 async function animateSingleEffect(itemType: ItemType, pos: Position, targets: Position[]) {
   switch (itemType) {
-    case 'magnifying_glass': await animateRadial(pos, targets, 'magnifying_glass'); break;
-    case 'scissors': await animateScissors(pos, targets); break;
-    case 'cutter': await animateCutter(pos, targets); break;
-    case 'clip': await animateRadial(pos, targets, 'clip'); break;
-    case 'coffee': await animateCoffee(pos, targets); break;
+    case 'scope': await animateRadial(pos, targets, 'scope'); break;
+    case 'v_cut': await animateVCut(pos, targets); break;
+    case 'h_cut': await animateHCut(pos, targets); break;
+    case 'burst': await animateRadial(pos, targets, 'burst'); break;
+    case 'flush': await animateFlush(pos, targets); break;
   }
 }
 
@@ -412,13 +447,13 @@ async function animateItemEffects(plan: ItemAnimPlan) {
   }
 }
 
-async function animateScissors(pos: Position, targets: Position[]) {
-  // Top to bottom: overlay scissors icon on each target cell sequentially
+async function animateVCut(pos: Position, targets: Position[]) {
+  // Top to bottom: overlay v_cut icon on each target cell sequentially
   const col = pos.col;
   const sorted = [...targets].filter(t => t.col === col).sort((a, b) => a.row - b.row);
 
   for (const t of sorted) {
-    cellItemOverlay.set(pk(t.row, t.col), 'scissors');
+    cellItemOverlay.set(pk(t.row, t.col), 'v_cut');
     itemClearingCells.add(pk(t.row, t.col));
     await wait(ANIM.CELL_SWEEP_INTERVAL);
   }
@@ -426,13 +461,13 @@ async function animateScissors(pos: Position, targets: Position[]) {
   await wait(ANIM.ITEM_CLEAR + 100);
 }
 
-async function animateCutter(pos: Position, targets: Position[]) {
-  // Left to right: overlay cutter icon on each target cell sequentially
+async function animateHCut(pos: Position, targets: Position[]) {
+  // Left to right: overlay h_cut icon on each target cell sequentially
   const row = pos.row;
   const sorted = [...targets].filter(t => t.row === row).sort((a, b) => a.col - b.col);
 
   for (const t of sorted) {
-    cellItemOverlay.set(pk(t.row, t.col), 'cutter');
+    cellItemOverlay.set(pk(t.row, t.col), 'h_cut');
     itemClearingCells.add(pk(t.row, t.col));
     await wait(ANIM.CELL_SWEEP_INTERVAL);
   }
@@ -463,14 +498,14 @@ async function animateRadial(pos: Position, targets: Position[], icon: ItemType)
   await wait(ANIM.ITEM_CLEAR + 100);
 }
 
-async function animateCoffee(pos: Position, targets: Position[]) {
-  // Pulse the coffee cup position
+async function animateFlush(pos: Position, targets: Position[]) {
+  // Pulse the flush item position
   const cs = cellSize.value;
   const iconSize = Math.round(cs * 0.7);
   const offsetX = pos.col * cs + (cs - iconSize) / 2;
   const offsetY = pos.row * cs + (cs - iconSize) / 2;
 
-  sweepIcon.value = { item: 'coffee', x: offsetX, y: offsetY, size: iconSize };
+  sweepIcon.value = { item: 'flush', x: offsetX, y: offsetY, size: iconSize };
   sweepTransition.value = false;
 
   // Blink 3 times
@@ -482,9 +517,9 @@ async function animateCoffee(pos: Position, targets: Position[]) {
   }
   sweepIcon.value = null;
 
-  // Show coffee overlay on all targets simultaneously
+  // Show flush overlay on all targets simultaneously
   for (const t of targets) {
-    cellItemOverlay.set(pk(t.row, t.col), 'coffee');
+    cellItemOverlay.set(pk(t.row, t.col), 'flush');
   }
   await wait(200);
 
@@ -510,24 +545,24 @@ async function animateSynthesisEffects(plan: SynthesisAnimPlan) {
       case 'line+line':
         await animateCross(center, effect.targets);
         break;
-      case 'scissors+clip':
-        await animateVerticalMulti(center, effect.targets, 'scissors');
+      case 'v_cut+burst':
+        await animateVerticalMulti(center, effect.targets, 'v_cut');
         break;
-      case 'cutter+clip':
-        await animateHorizontalMulti(center, effect.targets, 'cutter');
+      case 'h_cut+burst':
+        await animateHorizontalMulti(center, effect.targets, 'h_cut');
         break;
-      case 'clip+clip':
-        await animateClipLarge(center, effect.targets);
+      case 'burst+burst':
+        await animateBurstLarge(center, effect.targets);
         break;
-      case 'coffee+coffee':
-        await animateCoffeeAll(center, effect.targets);
+      case 'flush+flush':
+        await animateFlushAll(center, effect.targets);
         break;
-      case 'mag+coffee':
-        await animateCoffee(center, effect.targets);
+      case 'scope+flush':
+        await animateFlush(center, effect.targets);
         break;
       default:
-        if (effect.effectType.startsWith('coffee+')) {
-          await animateCoffeeSynthesis(center, effect.targets, effect.effectType);
+        if (effect.effectType.startsWith('flush+')) {
+          await animateFlushSynthesis(center, effect.targets, effect.effectType);
         }
         break;
     }
@@ -548,12 +583,12 @@ async function animateCross(pos: Position, targets: Position[]) {
   for (let i = 0; i < maxSteps; i++) {
     if (i < colTargets.length) {
       const t = colTargets[i];
-      cellItemOverlay.set(pk(t.row, t.col), 'scissors');
+      cellItemOverlay.set(pk(t.row, t.col), 'v_cut');
       itemClearingCells.add(pk(t.row, t.col));
     }
     if (i < rowTargets.length) {
       const t = rowTargets[i];
-      cellItemOverlay.set(pk(t.row, t.col), 'cutter');
+      cellItemOverlay.set(pk(t.row, t.col), 'h_cut');
       itemClearingCells.add(pk(t.row, t.col));
     }
     await wait(ANIM.CELL_SWEEP_INTERVAL);
@@ -561,7 +596,7 @@ async function animateCross(pos: Position, targets: Position[]) {
   await wait(ANIM.ITEM_CLEAR + 100);
 }
 
-// scissors+clip: 3 vertical columns
+// v_cut+burst: 3 vertical columns
 async function animateVerticalMulti(pos: Position, targets: Position[], icon: string) {
   // Group by column, animate top-to-bottom
   const byCol = new Map<number, Position[]>();
@@ -586,7 +621,7 @@ async function animateVerticalMulti(pos: Position, targets: Position[], icon: st
   await wait(ANIM.ITEM_CLEAR + 100);
 }
 
-// cutter+clip: 3 horizontal rows
+// h_cut+burst: 3 horizontal rows
 async function animateHorizontalMulti(pos: Position, targets: Position[], icon: string) {
   const byRow = new Map<number, Position[]>();
   for (const t of targets) {
@@ -610,8 +645,8 @@ async function animateHorizontalMulti(pos: Position, targets: Position[], icon: 
   await wait(ANIM.ITEM_CLEAR + 100);
 }
 
-// clip+clip: large radial expansion
-async function animateClipLarge(pos: Position, targets: Position[]) {
+// burst+burst: large radial expansion
+async function animateBurstLarge(pos: Position, targets: Position[]) {
   const sorted = [...targets].sort((a, b) => {
     const da = Math.abs(a.row - pos.row) + Math.abs(a.col - pos.col);
     const db = Math.abs(b.row - pos.row) + Math.abs(b.col - pos.col);
@@ -624,20 +659,20 @@ async function animateClipLarge(pos: Position, targets: Position[]) {
       await wait(30);
       prevDist = dist;
     }
-    cellItemOverlay.set(pk(t.row, t.col), 'clip');
+    cellItemOverlay.set(pk(t.row, t.col), 'burst');
     itemClearingCells.add(pk(t.row, t.col));
   }
   await wait(ANIM.ITEM_CLEAR + 100);
 }
 
-// coffee+coffee: all tiles blink then clear
-async function animateCoffeeAll(pos: Position, targets: Position[]) {
+// flush+flush: all tiles blink then clear
+async function animateFlushAll(pos: Position, targets: Position[]) {
   // Flash effect
   const cs = cellSize.value;
   const iconSize = Math.round(cs * 0.7);
   const offsetX = pos.col * cs + (cs - iconSize) / 2;
   const offsetY = pos.row * cs + (cs - iconSize) / 2;
-  sweepIcon.value = { item: 'coffee', x: offsetX, y: offsetY, size: iconSize };
+  sweepIcon.value = { item: 'flush', x: offsetX, y: offsetY, size: iconSize };
   for (let i = 0; i < 3; i++) {
     sweepIcon.value = { ...sweepIcon.value!, size: iconSize };
     await wait(60);
@@ -646,9 +681,9 @@ async function animateCoffeeAll(pos: Position, targets: Position[]) {
   }
   sweepIcon.value = null;
 
-  // All targets get coffee overlay
+  // All targets get flush overlay
   for (const t of targets) {
-    cellItemOverlay.set(pk(t.row, t.col), 'coffee');
+    cellItemOverlay.set(pk(t.row, t.col), 'flush');
   }
   await wait(200);
   for (const t of targets) {
@@ -657,16 +692,16 @@ async function animateCoffeeAll(pos: Position, targets: Position[]) {
   await wait(ANIM.ITEM_CLEAR + 100);
 }
 
-// coffee+item: color targets clear, then item effects from each
-async function animateCoffeeSynthesis(pos: Position, targets: Position[], effectType: string) {
-  const otherItem = effectType.replace('coffee+', '') as string;
+// flush+item: color targets clear, then item effects from each
+async function animateFlushSynthesis(pos: Position, targets: Position[], effectType: string) {
+  const otherItem = effectType.replace('flush+', '') as string;
 
   // Coffee blink
   const cs = cellSize.value;
   const iconSize = Math.round(cs * 0.7);
   const offsetX = pos.col * cs + (cs - iconSize) / 2;
   const offsetY = pos.row * cs + (cs - iconSize) / 2;
-  sweepIcon.value = { item: 'coffee', x: offsetX, y: offsetY, size: iconSize };
+  sweepIcon.value = { item: 'flush', x: offsetX, y: offsetY, size: iconSize };
   for (let i = 0; i < 2; i++) {
     sweepIcon.value = { ...sweepIcon.value!, size: iconSize };
     await wait(60);
@@ -686,9 +721,7 @@ async function animateCoffeeSynthesis(pos: Position, targets: Position[], effect
 async function animateSynthesisDropAndChains(plan: SynthesisAnimPlan) {
   const cs = cellSize.value;
   for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const [col, count] of plan.newTilesPerCol) {
-    for (let row = 0; row < count; row++) dropOffsets[pk(row, col)] = -count * cs;
-  }
+  for (const e of plan.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
   visualBoard.value = plan.boardAfterDrop;
   await nextFrame();
   dropTransitioning.value = true;
@@ -707,9 +740,7 @@ async function animateDropAndChains(plan: ItemAnimPlan) {
 
   // Drop after item effects
   for (const m of plan.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const [col, count] of plan.newTilesPerCol) {
-    for (let row = 0; row < count; row++) dropOffsets[pk(row, col)] = -count * cs;
-  }
+  for (const e of plan.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
   visualBoard.value = plan.boardAfterDrop;
   await nextFrame();
   dropTransitioning.value = true;
@@ -743,11 +774,16 @@ async function animateChainStep(chain: ChainAnimData) {
   matchedCells.clear();
   clearingCells.clear();
 
+  // Obstacle destruction
+  if (chain.destroyedObstacles.length > 0) {
+    for (const p of chain.destroyedObstacles) obstacleClearingCells.add(pk(p.row, p.col));
+    await wait(ANIM.CLEAR);
+    obstacleClearingCells.clear();
+  }
+
   // Drop
   for (const m of chain.dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
-  for (const [col, count] of chain.newTilesPerCol) {
-    for (let row = 0; row < count; row++) dropOffsets[pk(row, col)] = -count * cs;
-  }
+  for (const e of chain.newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
   visualBoard.value = chain.boardAfterDrop;
   await nextFrame();
   dropTransitioning.value = true;
@@ -801,29 +837,33 @@ function tileTransition(r: number, c: number) {
                   zIndex: getOff(row - 1, col - 1).z,
                 }"
               >
+                <!-- Obstacle tile -->
+                <div v-if="activeBoard[row - 1][col - 1]!.obstacle" class="tile obstacle-cell" :class="{ 'is-obstacle-clearing': obstacleClearingCells.has(pk(row - 1, col - 1)) }">
+                  <ObstacleTile
+                    :durability="activeBoard[row - 1][col - 1]!.obstacle!.durability"
+                    :size="cellSize - 5"
+                  />
+                </div>
+
                 <!-- Item cell -->
-                <div v-if="activeBoard[row - 1][col - 1]!.item" class="tile item-cell">
+                <div v-else-if="activeBoard[row - 1][col - 1]!.item" class="tile item-cell">
                   <ItemIcon :item="activeBoard[row - 1][col - 1]!.item!" :size="Math.round(cellSize * 0.7)" />
                 </div>
 
-                <!-- Sticky note cell -->
+                <!-- Vegetable tile -->
                 <div
                   v-else
-                  class="tile sticky-note"
+                  class="tile veggie-tile"
                   :class="{
                     'is-matched': matchedCells.has(pk(row - 1, col - 1)),
                     'is-clearing': clearingCells.has(pk(row - 1, col - 1)),
                     'is-item-clearing': itemClearingCells.has(pk(row - 1, col - 1)),
                   }"
-                  :style="{
-                    '--band-color': STICKY_COLORS[activeBoard[row - 1][col - 1]!.color].band,
-                    '--bg-color': STICKY_COLORS[activeBoard[row - 1][col - 1]!.color].bg,
-                    '--fold-color': STICKY_COLORS[activeBoard[row - 1][col - 1]!.color].fold,
-                    '--fold-size': Math.round(cellSize * 0.18) + 'px',
-                    '--check-color': STICKY_COLORS[activeBoard[row - 1][col - 1]!.color].band,
-                  }"
                 >
-                  <div class="sticky-band" />
+                  <VegetableIcon
+                    :color="activeBoard[row - 1][col - 1]!.color"
+                    :size="cellSize - 5"
+                  />
                   <span
                     v-if="matchedCells.has(pk(row - 1, col - 1)) || clearingCells.has(pk(row - 1, col - 1))"
                     class="check-overlay"
@@ -832,7 +872,7 @@ function tileTransition(r: number, c: number) {
               </div>
             </template>
 
-            <!-- Item effect overlay on cell (clip / coffee icon) -->
+            <!-- Item effect overlay on cell (burst / flush icon) -->
             <div
               v-if="cellItemOverlay.has(pk(row - 1, col - 1))"
               class="cell-effect-overlay"
@@ -846,7 +886,7 @@ function tileTransition(r: number, c: number) {
         </div>
       </template>
 
-      <!-- Sweep icon (scissors / cutter / coffee blink) -->
+      <!-- Sweep icon (v_cut / h_cut / flush blink) -->
       <div
         v-if="sweepIcon"
         class="sweep-icon"
@@ -860,17 +900,17 @@ function tileTransition(r: number, c: number) {
         <ItemIcon :item="sweepIcon.item" :size="sweepIcon.size" />
       </div>
 
-      <!-- Magnifying glass selection overlay -->
-      <template v-if="mag.magSelecting.value">
+      <!-- Scope selection overlay -->
+      <template v-if="scope.scopeSelecting.value">
         <div
-          v-for="row in BOARD_SIZE" :key="'mag-' + row"
+          v-for="row in BOARD_SIZE" :key="'scope-' + row"
         >
           <div
-            v-for="col in BOARD_SIZE" :key="'mag-' + row + '-' + col"
-            class="mag-select-cell"
+            v-for="col in BOARD_SIZE" :key="'scope-' + row + '-' + col"
+            class="scope-select-cell"
             :class="{
-              'mag-selected': mag.magSelectedCells.value.some(p => p.row === row - 1 && p.col === col - 1),
-              'mag-source': mag.magSourcePos.value && mag.magSourcePos.value.row === row - 1 && mag.magSourcePos.value.col === col - 1,
+              'scope-selected': scope.scopeSelectedCells.value.some(p => p.row === row - 1 && p.col === col - 1),
+              'scope-source': scope.scopeSourcePos.value && scope.scopeSourcePos.value.row === row - 1 && scope.scopeSourcePos.value.col === col - 1,
             }"
             :style="{
               position: 'absolute',
@@ -881,9 +921,9 @@ function tileTransition(r: number, c: number) {
             }"
           />
         </div>
-        <div class="mag-status">
-          <span>{{ t('board.selectCells', mag.magTargetsNeeded.value - mag.magSelectedCells.value.length) }}</span>
-          <button class="mag-cancel" @click="cancelMagSelection">{{ t('common.cancel') }}</button>
+        <div class="scope-status">
+          <span>{{ t('board.selectCells', scope.scopeTargetsNeeded.value - scope.scopeSelectedCells.value.length) }}</span>
+          <button class="scope-cancel" @click="cancelScopeSelection">{{ t('common.cancel') }}</button>
         </div>
       </template>
     </div>
@@ -923,31 +963,28 @@ function tileTransition(r: number, c: number) {
   height: 100%;
   position: relative;
 }
-.sticky-note {
-  background: var(--bg-color);
-  border-radius: 3px 3px 0 3px;
-  box-shadow: 1px 1px 2px rgba(0, 0, 0, 0.13);
+.veggie-tile {
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  clip-path: polygon(0% 0%, 100% 0%, 100% calc(100% - var(--fold-size)), calc(100% - var(--fold-size)) 100%, 0% 100%);
+  background: color-mix(in srgb, var(--bg-card) 40%, transparent);
 }
-.sticky-note::after {
-  content: '';
-  position: absolute;
-  right: 0; bottom: 0;
-  width: var(--fold-size);
-  height: var(--fold-size);
-  background: linear-gradient(135deg, var(--fold-color) 50%, rgba(0,0,0,0.08) 50%);
-  border-radius: 0 0 0 2px;
+.obstacle-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
-.sticky-band {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 28%;
-  background: var(--band-color);
-  opacity: 0.85;
+.obstacle-cell.is-obstacle-clearing {
+  animation: obstacle-destroy 0.35s ease-out forwards;
+}
+@keyframes obstacle-destroy {
+  0%   { transform: scale(1); opacity: 1; }
+  30%  { transform: scale(1.1) rotate(5deg); opacity: 0.8; }
+  60%  { transform: scale(0.8) rotate(-3deg); opacity: 0.5; }
+  100% { transform: scale(0) rotate(10deg); opacity: 0; }
 }
 
 /* Item cell */
@@ -1020,7 +1057,7 @@ function tileTransition(r: number, c: number) {
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
 }
 
-/* Cell effect overlay (clip/coffee icons on target cells) */
+/* Cell effect overlay (burst/flush icons on target cells) */
 .cell-effect-overlay {
   position: absolute;
   inset: 0;
@@ -1036,26 +1073,26 @@ function tileTransition(r: number, c: number) {
   70%  { transform: scale(1.2); opacity: 0.9; }
   100% { transform: scale(1); opacity: 0.8; }
 }
-.mag-select-cell {
+.scope-select-cell {
   border: 2px solid rgba(91, 155, 213, 0.5);
   background: rgba(91, 155, 213, 0.1);
   cursor: pointer;
   z-index: 20;
   box-sizing: border-box;
 }
-.mag-select-cell:hover {
+.scope-select-cell:hover {
   background: rgba(91, 155, 213, 0.3);
 }
-.mag-selected {
+.scope-selected {
   background: rgba(91, 155, 213, 0.5) !important;
   border-color: #5b9bd5;
 }
-.mag-source {
+.scope-source {
   background: rgba(91, 155, 213, 0.05);
   border-color: rgba(91, 155, 213, 0.2);
   pointer-events: none;
 }
-.mag-status {
+.scope-status {
   position: absolute;
   bottom: -32px;
   left: 0;
@@ -1068,7 +1105,7 @@ function tileTransition(r: number, c: number) {
   color: var(--info);
   font-weight: 600;
 }
-.mag-cancel {
+.scope-cancel {
   padding: 2px 10px;
   border: 1px solid var(--info);
   border-radius: 4px;

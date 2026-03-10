@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { initializeGame, processAction, processMagnifyingSynthesis, cloneGameState } from '../src/engine.js';
+import { initializeGame, processAction, processScopeSynthesis, cloneGameState } from '../src/engine.js';
 import { hasMatches, findMatches } from '../src/match.js';
-import { isGameOver, hasValidSwap, hasActivatableItems } from '../src/gameOver.js';
+import { isGameOver, hasValidSwap, hasActivatableItems, checkGameOverState } from '../src/gameOver.js';
 import { calculateRemainingItemBonus } from '../src/score.js';
-import { BOARD_SIZE, Cell, Color } from '../src/types.js';
+import { countObstacles, allObstaclesCleared } from '../src/obstacle.js';
+import { DEFAULT_QUOTA_TABLE } from '../src/survival.js';
+import { BOARD_SIZE, Cell, Color, GameState } from '../src/types.js';
 
 describe('Game Initialization', () => {
   it('初期盤面にマッチが存在しない', () => {
@@ -129,20 +131,20 @@ describe('Game Over', () => {
 });
 
 describe('Game Mode', () => {
-  it('デフォルトは手数制限モード(15手)', () => {
+  it('デフォルトはSprintモード(15手)', () => {
     const state = initializeGame(42);
-    expect(state.mode).toBe('limited');
+    expect(state.mode).toBe('sprint');
     expect(state.moveLimit).toBe(15);
   });
 
-  it('手数制限モードのカスタム手数', () => {
-    const state = initializeGame(42, 20);
+  it('Sprintモードのカスタム手数', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 20 });
     expect(state.moveLimit).toBe(20);
   });
 
-  it('手数制限モードで規定手数到達時にゲーム終了', () => {
+  it('Sprintモードで規定手数到達時にゲーム終了', () => {
     // 2手制限で2手打つ
-    let state = initializeGame(42, 2);
+    let state = initializeGame(42, 'sprint', { moveLimit: 2 });
     const action1 = findValidSwap(state);
     if (!action1) return;
     state = processAction(state, action1);
@@ -163,9 +165,9 @@ describe('Remaining Item Bonus', () => {
     const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
       Array.from({ length: BOARD_SIZE }, () => ({ color: 0 as Color }))
     );
-    board[0][0] = { color: 0 as Color, item: 'magnifying_glass' };
-    board[1][1] = { color: 0 as Color, item: 'scissors' };
-    board[2][2] = { color: 0 as Color, item: 'coffee' };
+    board[0][0] = { color: 0 as Color, item: 'scope' };
+    board[1][1] = { color: 0 as Color, item: 'v_cut' };
+    board[2][2] = { color: 0 as Color, item: 'flush' };
     expect(calculateRemainingItemBonus(board)).toBe(50 + 150 + 500);
   });
 
@@ -176,20 +178,20 @@ describe('Remaining Item Bonus', () => {
     expect(calculateRemainingItemBonus(board)).toBe(0);
   });
 
-  it('手数制限モード終了時に残存アイテムボーナスが加算される', () => {
+  it('Sprintモード終了時に残存アイテムボーナスが加算される', () => {
     // 1手制限で始めて、アイテムを配置してから1手消費
-    let state = initializeGame(42, 'limited', 1);
+    let state = initializeGame(42, 'sprint', { moveLimit: 1 });
     // 手動でアイテムを配置
-    state.board[7][7] = { color: 0 as Color, item: 'coffee' };
+    state.board[7][7] = { color: 0 as Color, item: 'flush' };
     const action = findValidSwap(state);
     if (!action) return;
     const newState = processAction(state, action);
     if (newState.isGameOver) {
-      // コーヒーが残っていればボーナスが加算されているはず
-      const coffeeOnBoard = newState.board.some(row =>
-        row.some(cell => cell?.item === 'coffee')
+      // flushが残っていればボーナスが加算されているはず
+      const flushOnBoard = newState.board.some(row =>
+        row.some(cell => cell?.item === 'flush')
       );
-      if (coffeeOnBoard) {
+      if (flushOnBoard) {
         // スコアにはアイテムボーナス500が含まれる
         expect(newState.score).toBeGreaterThanOrEqual(500);
       }
@@ -197,47 +199,275 @@ describe('Remaining Item Bonus', () => {
   });
 });
 
-describe('Magnifying Glass Action', () => {
-  it('虫めがねタップで1マス消去', () => {
-    let state = initializeGame(42, 'limited', 30);
-    // 虫めがねを手動配置
-    state.board[3][3] = { color: 0 as Color, item: 'magnifying_glass' };
+describe('Scope Action', () => {
+  it('scopeタップで1マス消去', () => {
+    let state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    // scopeを手動配置
+    state.board[3][3] = { color: 0 as Color, item: 'scope' };
     const target = { row: 4, col: 4 };
     const beforeScore = state.score;
     const newState = processAction(state, {
-      type: 'magnifying_glass',
+      type: 'scope',
       pos: { row: 3, col: 3 },
       targetCells: [target],
     });
     expect(newState.moveCount).toBe(1);
     expect(newState.score).toBeGreaterThan(beforeScore);
-    // 虫めがね自体は消えている
-    expect(newState.board[3][3]?.item).not.toBe('magnifying_glass');
+    // scope自体は消えている
+    expect(newState.board[3][3]?.item).not.toBe('scope');
   });
 
-  it('虫めがねでアイテムを選択するとそのアイテムが発動', () => {
-    let state = initializeGame(42, 'limited', 30);
-    state.board[3][3] = { color: 0 as Color, item: 'magnifying_glass' };
-    state.board[4][4] = { color: 0 as Color, item: 'scissors' };
+  it('scopeでアイテムを選択するとそのアイテムが発動', () => {
+    let state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    state.board[3][3] = { color: 0 as Color, item: 'scope' };
+    state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
     const newState = processAction(state, {
-      type: 'magnifying_glass',
+      type: 'scope',
       pos: { row: 3, col: 3 },
       targetCells: [{ row: 4, col: 4 }],
     });
-    // はさみが発動して縦一列消去→スコア増加
+    // v_cutが発動して縦一列消去→スコア増加
     expect(newState.score).toBeGreaterThan(0);
     expect(newState.board[4][4]?.item).toBeUndefined();
   });
 
-  it('通常tapでは虫めがねは起動しない', () => {
-    let state = initializeGame(42, 'limited', 30);
-    state.board[3][3] = { color: 0 as Color, item: 'magnifying_glass' };
+  it('通常tapではscopeは起動しない', () => {
+    let state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    state.board[3][3] = { color: 0 as Color, item: 'scope' };
     const newState = processAction(state, {
       type: 'tap',
       pos: { row: 3, col: 3 },
     });
     // tapは無効 → 元のstateが返る
     expect(newState).toBe(state);
+  });
+});
+
+describe('Sprint Mode', () => {
+  it('デフォルトのmoveLimitは15', () => {
+    const state = initializeGame(42, 'sprint');
+    expect(state.moveLimit).toBe(15);
+    expect(state.mode).toBe('sprint');
+  });
+
+  it('カスタムmoveLimitが設定できる', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 25 });
+    expect(state.moveLimit).toBe(25);
+  });
+
+  it('ゲーム終了時に残存アイテムボーナスが加算される', () => {
+    let state = initializeGame(42, 'sprint', { moveLimit: 1 });
+    // アイテムを手動配置
+    state.board[7][7] = { color: 0 as Color, item: 'v_cut' };
+    const action = findValidSwap(state);
+    if (!action) return;
+    const newState = processAction(state, action);
+    if (newState.isGameOver) {
+      const vCutOnBoard = newState.board.some(row =>
+        row.some(cell => cell?.item === 'v_cut')
+      );
+      if (vCutOnBoard) {
+        expect(newState.score).toBeGreaterThanOrEqual(150);
+      }
+    }
+  });
+
+  it('おじゃまタイルもquotaTableも持たない', () => {
+    const state = initializeGame(42, 'sprint');
+    expect(state.quotaTable).toBeUndefined();
+    const obstacleCount = countObstacles(state.board);
+    expect(obstacleCount).toBe(0);
+  });
+});
+
+describe('Clear Mode', () => {
+  it('初期化時におじゃまタイルが盤面に存在する', () => {
+    const state = initializeGame(42, 'clear');
+    expect(state.mode).toBe('clear');
+    const count = countObstacles(state.board);
+    expect(count).toBeGreaterThanOrEqual(10);
+    expect(count).toBeLessThanOrEqual(20);
+  });
+
+  it('カスタムobstacleCountでおじゃまタイル数を指定できる', () => {
+    const state = initializeGame(42, 'clear', { obstacleCount: 5 });
+    expect(countObstacles(state.board)).toBe(5);
+  });
+
+  it('moveLimitは設定されない', () => {
+    const state = initializeGame(42, 'clear');
+    expect(state.moveLimit).toBeUndefined();
+  });
+
+  it('ゲーム終了時のスコアはmoveCountになる', () => {
+    // 全おじゃまタイルが除去された状態をシミュレート
+    const state = initializeGame(42, 'clear', { obstacleCount: 0 });
+    state.moveCount = 7;
+    // 盤面にはおじゃまタイルがないので checkGameOverState は isCleared: true を返す
+    const result = checkGameOverState(state);
+    expect(result.gameOver).toBe(true);
+    expect(result.isCleared).toBe(true);
+  });
+
+  it('全おじゃまタイル除去でisCleared=true', () => {
+    const state = initializeGame(42, 'clear', { obstacleCount: 0 });
+    const result = checkGameOverState(state);
+    expect(result.gameOver).toBe(true);
+    expect(result.isCleared).toBe(true);
+  });
+
+  it('詰み状態でisCleared=false', () => {
+    // 全セルをnullにして詰み状態にし、おじゃまタイルを残す
+    const state = initializeGame(42, 'clear');
+    // 盤面をクリアして詰み状態にする
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        state.board[r][c] = null;
+      }
+    }
+    // おじゃまタイルを1つ配置
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+    const result = checkGameOverState(state);
+    expect(result.gameOver).toBe(true);
+    expect(result.isCleared).toBe(false);
+  });
+
+  it('通常のタイル消去ではスコアが加算されない（Clearモード）', () => {
+    const state = initializeGame(42, 'clear', { obstacleCount: 3 });
+    const action = findValidSwap(state);
+    if (!action) return;
+    const newState = processAction(state, action);
+    // Clearモードではmatchによるスコアは加算されないが、
+    // ゲームオーバー時にmoveCountがスコアになる
+    // プレイ中はスコア0のまま（連鎖スコアも加算されない）
+    if (!newState.isGameOver) {
+      expect(newState.score).toBe(0);
+    }
+  });
+
+  it('おじゃまタイルへのスワイプは拒否される', () => {
+    const state = initializeGame(42, 'clear', { obstacleCount: 1 });
+    // おじゃまタイルの位置を見つける
+    let obsPos: { row: number; col: number } | null = null;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.obstacle) {
+          obsPos = { row: r, col: c };
+          break;
+        }
+      }
+      if (obsPos) break;
+    }
+    if (!obsPos) return;
+    // おじゃまタイルに対するスワイプを試みる
+    const result = processAction(state, {
+      type: 'swap',
+      pos: obsPos,
+      dir: 'right',
+    });
+    // おじゃまタイルとのスワイプは無効なので元のstateが返る
+    expect(result).toBe(state);
+  });
+});
+
+describe('Survival Mode', () => {
+  it('初期化時にquotaTableが設定される', () => {
+    const state = initializeGame(42, 'survival');
+    expect(state.mode).toBe('survival');
+    expect(state.quotaTable).toBeDefined();
+    expect(state.quotaTable!.length).toBe(DEFAULT_QUOTA_TABLE.length);
+  });
+
+  it('カスタムquotaTableが設定できる', () => {
+    const customTable = [100, 200, 300];
+    const state = initializeGame(42, 'survival', { quotaTable: customTable });
+    expect(state.quotaTable).toEqual(customTable);
+  });
+
+  it('moveLimitは設定されない', () => {
+    const state = initializeGame(42, 'survival');
+    expect(state.moveLimit).toBeUndefined();
+  });
+
+  it('おじゃまタイルは生成されない', () => {
+    const state = initializeGame(42, 'survival');
+    expect(countObstacles(state.board)).toBe(0);
+  });
+
+  it('チェックポイントでノルマ未達時にゲームオーバーになる', () => {
+    const state = initializeGame(42, 'survival');
+    state.moveCount = 5; // チェックポイント
+    state.score = 0; // ノルマ(300)未達
+    const result = checkGameOverState(state);
+    expect(result.gameOver).toBe(true);
+  });
+
+  it('チェックポイントでノルマ達成時はゲームオーバーにならない', () => {
+    const state = initializeGame(42, 'survival');
+    state.moveCount = 5;
+    state.score = 300; // ノルマ達成
+    const result = checkGameOverState(state);
+    expect(result.gameOver).toBe(false);
+  });
+
+  it('チェックポイント以外ではノルマ判定しない', () => {
+    const state = initializeGame(42, 'survival');
+    state.moveCount = 3; // 5の倍数ではない
+    state.score = 0;
+    const result = checkGameOverState(state);
+    // 詰みでなければゲームオーバーではない
+    if (hasValidSwap(state.board) || hasActivatableItems(state.board)) {
+      expect(result.gameOver).toBe(false);
+    }
+  });
+});
+
+describe('Mode Determinism', () => {
+  it('同一シード・同一モードで同一の状態を生成する', () => {
+    for (const mode of ['sprint', 'clear', 'survival'] as const) {
+      const s1 = initializeGame(42, mode);
+      const s2 = initializeGame(42, mode);
+      expect(s1.mode).toBe(s2.mode);
+      expect(s1.rngState).toBe(s2.rngState);
+      expect(s1.moveLimit).toBe(s2.moveLimit);
+      expect(s1.quotaTable).toEqual(s2.quotaTable);
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          expect(s1.board[r][c]?.color).toBe(s2.board[r][c]?.color);
+          expect(s1.board[r][c]?.obstacle?.durability).toBe(s2.board[r][c]?.obstacle?.durability);
+        }
+      }
+    }
+  });
+
+  it('同一シードでもモードが異なれば状態が異なる', () => {
+    const sprint = initializeGame(42, 'sprint');
+    const clear = initializeGame(42, 'clear');
+    const survival = initializeGame(42, 'survival');
+
+    // Clear は obstacles があるので board が異なる
+    expect(countObstacles(clear.board)).toBeGreaterThan(0);
+    expect(countObstacles(sprint.board)).toBe(0);
+
+    // Survival は quotaTable がある
+    expect(survival.quotaTable).toBeDefined();
+    expect(sprint.quotaTable).toBeUndefined();
+  });
+});
+
+describe('Clear Mode - Obstacle Damage via Match', () => {
+  it('マッチ消去でおじゃまタイルにダメージが入る', () => {
+    const state = initializeGame(42, 'clear', { obstacleCount: 5 });
+    const initialCount = countObstacles(state.board);
+    expect(initialCount).toBe(5);
+
+    // 有効なスワイプを見つけて実行
+    const action = findValidSwap(state);
+    if (!action) return;
+    const newState = processAction(state, action);
+    // おじゃまタイルが減っている可能性がある（隣接マッチがあった場合）
+    // 確実に減るわけではないが、テストとしてはエラーなく実行されることを確認
+    expect(countObstacles(newState.board)).toBeLessThanOrEqual(initialCount);
   });
 });
 

@@ -3,10 +3,12 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { usePuzzleStore } from '@/stores/puzzle';
-import { useGameStore } from '@/stores/game';
+import { useGameStore, type GameMode } from '@/stores/game';
 import { playSE, vibrate, startBGM, stopBGM, useSound } from '@/sound';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import RankingModal from '@/components/RankingModal.vue';
+import ModeSelector from '@/components/ModeSelector.vue';
+import SurvivalGauge from '@/components/SurvivalGauge.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
 
 const isDev = import.meta.env.DEV;
@@ -20,76 +22,69 @@ const debugPanel = ref<InstanceType<typeof DebugPanel> | null>(null);
 const puzzleBoard = ref<InstanceType<typeof PuzzleBoard> | null>(null);
 const scoreRecorded = ref(false);
 
-// --- View phase (exclusive modal/overlay states) ---
-type ViewPhase =
-  | 'playing'          // normal gameplay
-  | 'abandonConfirm'   // "Abandon current game?" modal
-  ;
+// --- View phase ---
+type ViewPhase = 'modeSelect' | 'playing';
+const viewPhase = ref<ViewPhase>('modeSelect');
+const selectedMode = ref<GameMode>('sprint');
 
-const viewPhase = ref<ViewPhase>('playing');
-
-function beginGame(seed?: number) {
-  store.startGame(seed);
+function beginGame(seed: number, mode: GameMode) {
+  selectedMode.value = mode;
+  store.startGame(seed, mode);
   startBGM();
   scoreRecorded.value = false;
   viewPhase.value = 'playing';
 }
 
-function handleRoute(seed: number | undefined) {
-  if (seed === undefined && store.gameState && !store.isGameOver) {
-    // Active game exists, user wants new puzzle -- ask to abandon
-    viewPhase.value = 'abandonConfirm';
+function handleRoute() {
+  const seedParam = route.params.seed;
+  const seed = seedParam ? Number(seedParam) : undefined;
+  const modeQuery = route.query.mode as GameMode | undefined;
+
+  if (!seed) {
+    // No seed — go home
+    router.replace('/');
     return;
   }
 
-  if (seed === undefined && !store.gameState) {
-    // No seed in URL, no active game -- generate random seed and start
-    const newSeed = gameStore.randomSeed();
-    router.replace(`/puzzle/${newSeed}`);
-    beginGame(newSeed);
+  if (modeQuery && ['sprint', 'clear', 'survival'].includes(modeQuery)) {
+    // Mode specified in URL — start immediately
+    beginGame(seed, modeQuery);
     return;
   }
 
-  if (!store.gameState || (seed !== undefined && seed !== store.seed)) {
-    beginGame(seed);
-  }
+  // Show mode selector
+  viewPhase.value = 'modeSelect';
 }
 
-function confirmAbandon() {
-  const newSeed = gameStore.randomSeed();
-  router.replace(`/puzzle/${newSeed}`);
-  beginGame(newSeed);
-}
-
-function cancelAbandon() {
-  viewPhase.value = 'playing';
-  // Restore URL to current seed
-  if (store.seed !== undefined) {
-    router.replace(`/puzzle/${store.seed}`);
-  }
+function onModeSelect(mode: GameMode) {
+  const seedParam = route.params.seed;
+  const seed = seedParam ? Number(seedParam) : gameStore.generateDailySeed();
+  router.replace(`/puzzle/${seed}?mode=${mode}`);
+  beginGame(seed, mode);
 }
 
 onMounted(() => {
-  const seedParam = route.params.seed;
-  const seed = seedParam ? Number(seedParam) : undefined;
-  handleRoute(seed);
+  handleRoute();
 });
 
-watch(() => route.params.seed, (newSeedParam) => {
-  // Triggered when navigating from /puzzle/123 to /puzzle or /puzzle/456
-  const seed = newSeedParam ? Number(newSeedParam) : undefined;
-  handleRoute(seed);
+watch(() => [route.params.seed, route.query.mode], () => {
+  handleRoute();
 });
 
 // --- Record score when game ends ---
 watch(() => store.isGameOver, (ended) => {
   if (ended && !scoreRecorded.value && store.seed !== undefined) {
     stopBGM();
-    playSE('game_over'); vibrate([50, 50, 100]);
+    const isPositiveEnd = (selectedMode.value === 'sprint'
+      && store.moveLimit !== undefined
+      && store.moveCount >= store.moveLimit)
+      || store.isCleared === true;
+    playSE(isPositiveEnd ? 'complete' : 'game_over');
+    vibrate(isPositiveEnd ? [30, 30, 50] : [50, 50, 100]);
     scoreRecorded.value = true;
     gameStore.addPlayRecord({
       seed: store.seed,
-      mode: 'limited',
+      mode: selectedMode.value,
       score: store.score,
       moves: store.moveCount,
     });
@@ -105,13 +100,15 @@ const shareUrl = computed(() => shareCode.value ? `${location.origin}/s/${shareC
 
 async function shareScore() {
   if (store.seed === undefined) return;
-  // Get or create share code
   if (!shareCode.value) {
     shareCode.value = await gameStore.getShareCode(store.seed);
   }
   const code = shareCode.value ?? `#${store.seed}`;
   const url = shareUrl.value ?? '';
-  const text = `Tomado Puzzle ${code} | ${store.moveCount}moves ${store.score.toLocaleString()}pts`;
+  const modeLabel = t(`mode.${selectedMode.value}`);
+  const text = selectedMode.value === 'clear'
+    ? `Tomado ${modeLabel} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')}`
+    : `Tomado ${modeLabel} ${code} | ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
   const shareData: ShareData = { text };
   if (url) shareData.url = url;
   if (navigator.share) {
@@ -126,97 +123,135 @@ async function shareScore() {
 }
 
 function restart() {
-  beginGame(store.seed);
+  beginGame(store.seed, selectedMode.value);
 }
 
 onUnmounted(() => {
   stopBGM();
 });
 
-// --- Board grid for preparation overlay ---
+// --- Ranking ---
 const showRanking = ref(false);
 
 const myBest = computed(() => {
   if (store.seed === undefined) return 0;
-  return gameStore.getBestScore(store.seed, 'limited');
+  return gameStore.getBestScore(store.seed, selectedMode.value);
 });
 
 const { seEnabled, bgmEnabled, toggleSE, toggleBGM } = useSound();
+
+// --- Game over display ---
+const gameOverTitle = computed(() => {
+  if (selectedMode.value === 'clear') {
+    return store.isCleared ? t('mode.cleared') : t('mode.failed');
+  }
+  if (selectedMode.value === 'sprint'
+    && store.moveLimit !== undefined
+    && store.moveCount >= store.moveLimit) {
+    return t('mode.turnOver');
+  }
+  return t('puzzle.gameOver');
+});
+
+const gameOverScore = computed(() => {
+  if (selectedMode.value === 'clear') {
+    return store.isCleared
+      ? t('mode.clearMoves', { count: store.moveCount })
+      : t('mode.obstaclesLeft', { count: store.obstacleCount });
+  }
+  if (selectedMode.value === 'survival') {
+    return t('mode.survivalResult', { moves: store.moveCount, score: store.score.toLocaleString() });
+  }
+  return t('puzzle.pts', { score: store.score });
+});
 </script>
 
 <template>
   <div class="puzzle-view">
-    <header class="puzzle-header">
-      <div class="header-row">
-        <div class="seed-label">
-          {{ t('puzzle.seed', { seed: store.seed }) }}
-          <button class="btn-ranking" @click="showRanking = true" :title="t('common.ranking')">&#x1F3C6;</button>
+    <!-- Mode select overlay -->
+    <ModeSelector
+      v-if="viewPhase === 'modeSelect'"
+      :seed="Number(route.params.seed) || 0"
+      :open="true"
+      @select="onModeSelect"
+      @close="router.push('/')"
+    />
+
+    <template v-if="viewPhase === 'playing'">
+      <header class="puzzle-header">
+        <div class="header-row">
+          <div class="seed-label">
+            {{ t('puzzle.seed', { seed: store.seed }) }}
+            <span class="mode-badge">{{ t(`mode.${selectedMode}`) }}</span>
+            <button class="btn-ranking" @click="showRanking = true" :title="t('common.ranking')">&#x1F3C6;</button>
+          </div>
+          <div class="score-area">
+            <template v-if="selectedMode === 'clear'">
+              <div class="score-label">{{ t('mode.obstacles', { count: store.obstacleCount }) }}</div>
+            </template>
+            <template v-else>
+              <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
+              <div v-if="myBest > 0" class="best-label">{{ t('puzzle.best', { score: myBest.toLocaleString() }) }}</div>
+            </template>
+          </div>
         </div>
-        <div class="score-area">
-          <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
-          <div v-if="myBest > 0" class="best-label">{{ t('puzzle.best', { score: myBest.toLocaleString() }) }}</div>
+        <div class="header-row">
+          <div class="move-label">
+            <template v-if="selectedMode === 'sprint' && store.remainingMoves !== undefined">
+              {{ t('puzzle.movesRemaining', { remaining: store.remainingMoves, limit: store.moveLimit }) }}
+            </template>
+            <template v-else>
+              {{ t('puzzle.moveCount', { count: store.moveCount }) }}
+            </template>
+          </div>
         </div>
-      </div>
-      <div class="header-row">
-        <div class="move-label">
-          <template v-if="store.remainingMoves !== undefined">
-            {{ t('puzzle.movesRemaining', { remaining: store.remainingMoves, limit: store.moveLimit }) }}
-          </template>
-          <template v-else>
-            {{ t('puzzle.moveCount', { count: store.moveCount }) }}
-          </template>
+        <!-- Survival gauge -->
+        <div v-if="selectedMode === 'survival' && store.quotaTarget !== undefined && store.movesUntilCheck !== undefined" class="header-row">
+          <SurvivalGauge
+            :current-score="store.segmentScore"
+            :quota="store.quotaTarget"
+            :moves-until-check="store.movesUntilCheck"
+          />
         </div>
+      </header>
+
+      <div class="board-area">
+        <PuzzleBoard ref="puzzleBoard" :debug-panel="debugPanel" />
       </div>
-    </header>
 
-    <div class="board-area">
-      <PuzzleBoard ref="puzzleBoard" :debug-panel="debugPanel" />
-    </div>
-
-    <!-- Game over overlay -->
-    <div v-if="store.isGameOver" class="game-over-overlay">
-      <div class="game-over-card">
-        <h2>{{ t('puzzle.gameOver') }}</h2>
-        <p class="final-score">{{ t('puzzle.pts', { score: store.score }) }}</p>
-        <p class="move-info">{{ t('puzzle.moveCount', { count: store.moveCount }) }}</p>
-        <div class="game-over-actions actions-col">
-          <button class="btn" @click="restart">{{ t('common.retry') }}</button>
-          <button class="btn btn-share" @click="shareScore">{{ t('common.share') }}</button>
-          <button class="btn btn-home" @click="router.push('/')">{{ t('common.home') }}</button>
-        </div>
-      </div>
-    </div>
-
-    <footer class="puzzle-footer">
-      <div class="footer-sound">
-        <button :class="['sound-toggle', { off: !seEnabled }]" @click="toggleSE" :title="t('home.soundSE')">
-          {{ seEnabled ? '🔊' : '🔇' }}
-        </button>
-        <button :class="['sound-toggle', { off: !bgmEnabled }]" @click="toggleBGM" :title="t('home.soundBGM')">
-          🎵
-        </button>
-      </div>
-      <button class="btn btn-small" @click="restart">{{ t('common.retry') }}</button>
-      <button v-if="isDev" class="btn btn-small btn-debug" @click="debugPanel?.show()">{{ t('puzzle.debug') }}</button>
-    </footer>
-
-    <!-- Share toast -->
-    <div v-if="shareToast" class="share-toast">{{ t('common.copiedToClipboard') }}</div>
-
-    <!-- Abandon confirmation modal -->
-    <div v-if="viewPhase === 'abandonConfirm'" class="game-over-overlay">
-      <div class="game-over-card">
-        <h2>{{ t('puzzle.abandonTitle') }}</h2>
-        <p>{{ t('puzzle.abandonMessage') }}</p>
-        <div class="game-over-actions actions-col">
-          <button class="btn" @click="confirmAbandon">{{ t('home.newPuzzle') }}</button>
-          <button class="btn btn-secondary" @click="cancelAbandon">{{ t('puzzle.continuePlaying') }}</button>
+      <!-- Game over overlay -->
+      <div v-if="store.isGameOver" class="game-over-overlay">
+        <div class="game-over-card">
+          <h2>{{ gameOverTitle }}</h2>
+          <p class="final-score">{{ gameOverScore }}</p>
+          <p class="move-info">{{ t('puzzle.moveCount', { count: store.moveCount }) }}</p>
+          <div class="game-over-actions actions-col">
+            <button class="btn" @click="restart">{{ t('common.retry') }}</button>
+            <button class="btn btn-share" @click="shareScore">{{ t('common.share') }}</button>
+            <button class="btn btn-home" @click="router.push('/')">{{ t('common.home') }}</button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <RankingModal :seed="store.seed!" :open="showRanking" @close="showRanking = false" />
-    <DebugPanel v-if="isDev" ref="debugPanel" />
+      <footer class="puzzle-footer">
+        <div class="footer-sound">
+          <button :class="['sound-toggle', { off: !seEnabled }]" @click="toggleSE" :title="t('home.soundSE')">
+            {{ seEnabled ? '🔊' : '🔇' }}
+          </button>
+          <button :class="['sound-toggle', { off: !bgmEnabled }]" @click="toggleBGM" :title="t('home.soundBGM')">
+            🎵
+          </button>
+        </div>
+        <button class="btn btn-small" @click="restart">{{ t('common.retry') }}</button>
+        <button v-if="isDev" class="btn btn-small btn-debug" @click="debugPanel?.show()">{{ t('puzzle.debug') }}</button>
+      </footer>
+
+      <!-- Share toast -->
+      <div v-if="shareToast" class="share-toast">{{ t('common.copiedToClipboard') }}</div>
+
+      <RankingModal :seed="store.seed!" :open="showRanking" :mode="selectedMode" @close="showRanking = false" />
+      <DebugPanel v-if="isDev" ref="debugPanel" />
+    </template>
   </div>
 </template>
 
@@ -242,6 +277,19 @@ const { seEnabled, bgmEnabled, toggleSE, toggleBGM } = useSound();
   font-size: 11px;
   color: var(--text-tertiary);
   font-family: monospace;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mode-badge {
+  background: var(--brand);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-family: sans-serif;
 }
 .btn-ranking {
   background: none;

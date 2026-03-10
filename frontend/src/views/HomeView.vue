@@ -9,12 +9,17 @@ import { useSound } from '@/sound';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayLocal } from '@/utils/date';
 import RankingModal from '@/components/RankingModal.vue';
+import VegetableIcon from '@/components/VegetableIcon.vue';
 
 const { t, locale } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
 const { isDark, toggle: doToggleTheme } = useTheme();
 const { seEnabled, bgmEnabled, vibrationEnabled, soundPromptNeeded, acceptSound, declineSound, toggleSE, toggleBGM, toggleVibration } = useSound();
+
+// Title vegetable icons (random pair, different left/right)
+const titleVegeLeft = Math.floor(Math.random() * 5) as 0 | 1 | 2 | 3 | 4;
+const titleVegeRight = ((titleVegeLeft + 1 + Math.floor(Math.random() * 4)) % 5) as 0 | 1 | 2 | 3 | 4;
 
 // Hamburger menu
 const menuOpen = ref(false);
@@ -52,15 +57,12 @@ const showCalendar = ref(false);
 // --- Daily seed ---
 const today = todayLocal();
 const todaySeed = computed(() => gameStore.generateDailySeed(today));
-const todayBestScore = computed(() => gameStore.getBestScore(todaySeed.value, 'limited'));
+const todayBestSprint = computed(() => gameStore.getBestScore(todaySeed.value, 'sprint'));
+const todayBestClear = computed(() => gameStore.getBestScore(todaySeed.value, 'clear'));
+const todayBestSurvival = computed(() => gameStore.getBestMoves(todaySeed.value, 'survival'));
 
-function playDaily() {
-  router.push(`/puzzle/${todaySeed.value}`);
-}
-
-// --- New puzzle ---
-function newPuzzle() {
-  router.push('/puzzle');
+function playMode(mode: string) {
+  router.push(`/puzzle/${todaySeed.value}?mode=${mode}`);
 }
 
 // --- Calendar ---
@@ -98,8 +100,9 @@ function saveName() {
     <!-- Hero -->
     <div class="hero">
       <h1 class="app-title">
-        <img src="/tomado-icon.svg" alt="" class="app-icon" />
+        <VegetableIcon :color="titleVegeLeft" :size="32" class="title-vege" />
         {{ t('common.appName') }}
+        <VegetableIcon :color="titleVegeRight" :size="32" class="title-vege" />
       </h1>
       <p class="app-subtitle">{{ t('home.subtitle') }}</p>
       <div class="user-name-row">
@@ -125,31 +128,32 @@ function saveName() {
     <!-- Daily Puzzle -->
     <div class="section">
       <h2 class="section-title">{{ t('home.dailyPuzzle') }}</h2>
-      <div class="daily-card">
-        <div class="daily-info" @click="playDaily">
+      <div class="daily-card-v2">
+        <div class="daily-header">
           <span class="daily-date">{{ todayLocal() }}</span>
           <span class="daily-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
-        </div>
-        <div class="daily-right">
-          <div class="daily-score" v-if="todayBestScore > 0" @click="playDaily">
-            {{ t('home.best', { score: todayBestScore.toLocaleString() }) }}
-          </div>
-          <div class="daily-play" v-else @click="playDaily">{{ t('common.play') }}</div>
           <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('common.ranking')">&#x1F3C6;</button>
         </div>
-      </div>
-    </div>
-
-    <!-- Actions -->
-    <div class="section">
-      <h2 class="section-title">{{ t('home.newPuzzle') }}</h2>
-      <div class="actions">
-        <button
-          class="btn btn-generate"
-          @click="newPuzzle"
-        >
-          {{ t('home.newPuzzle') }}
-        </button>
+        <div class="mode-buttons">
+          <button class="mode-btn" @click="playMode('sprint')">
+            <span class="mode-btn-icon">⚡</span>
+            <span class="mode-btn-name">{{ t('mode.sprint') }}</span>
+            <span v-if="todayBestSprint > 0" class="mode-btn-best">{{ todayBestSprint.toLocaleString() }}</span>
+            <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
+          </button>
+          <button class="mode-btn" @click="playMode('clear')">
+            <span class="mode-btn-icon">🧱</span>
+            <span class="mode-btn-name">{{ t('mode.clear') }}</span>
+            <span v-if="todayBestClear > 0" class="mode-btn-best">{{ todayBestClear }}{{ t('mode.moves') }}</span>
+            <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
+          </button>
+          <button class="mode-btn" @click="playMode('survival')">
+            <span class="mode-btn-icon">♾️</span>
+            <span class="mode-btn-name">{{ t('mode.survival') }}</span>
+            <span v-if="todayBestSurvival > 0" class="mode-btn-best">{{ todayBestSurvival }}{{ t('mode.moves') }}</span>
+            <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -186,7 +190,7 @@ function saveName() {
             <template v-if="cell">
               <span class="cal-day">{{ parseInt(cell.date.slice(8)) }}</span>
               <span v-if="!isFuture(cell.date) && cal.bestScore(cell.seed) > 0" class="cal-score">{{ cal.bestScore(cell.seed) }}</span>
-              <span v-else-if="!isFuture(cell.date) && gameStore.hasPlayedDaily(cell.date)" class="cal-check">\u2713</span>
+              <span v-else-if="!isFuture(cell.date) && gameStore.hasPlayedDaily(cell.date)" class="cal-played-dot" />
             </template>
           </div>
         </div>
@@ -472,7 +476,7 @@ function saveName() {
 }
 .app-title {
   font-size: 36px;
-  color: var(--brand);
+  color: var(--title-color);
   font-weight: 800;
   letter-spacing: -1px;
   display: flex;
@@ -566,32 +570,18 @@ function saveName() {
   flex-shrink: 0;
 }
 
-/* Daily card */
-.daily-card {
+/* Daily card v2 */
+.daily-card-v2 {
   background: var(--bg-card);
   border-radius: 10px;
   padding: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   box-shadow: var(--shadow-card);
-  cursor: pointer;
-  transition: transform 0.1s;
 }
-.daily-card:active {
-  transform: scale(0.98);
-}
-.daily-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  cursor: pointer;
-  flex: 1;
-}
-.daily-right {
+.daily-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 12px;
 }
 .daily-date {
   font-size: 14px;
@@ -601,49 +591,49 @@ function saveName() {
 .daily-seed {
   font-size: 11px;
   color: var(--text-muted);
+  flex: 1;
 }
-.daily-score {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--brand);
-}
-.daily-play {
-  background: var(--brand);
-  color: #fff;
-  padding: 8px 20px;
-  border-radius: 6px;
-  font-weight: 700;
-  font-size: 13px;
-}
-
-/* Actions */
-.actions {
+.mode-buttons {
   display: flex;
-  flex-direction: column;
   gap: 8px;
 }
-.btn {
-  padding: 14px;
-  border: none;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
-  background: var(--bg-card);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-card);
-}
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.btn-generate {
-  background: var(--slate);
-  color: #fff;
+.mode-btn {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  padding: 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card-alt);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.mode-btn:hover {
+  border-color: var(--brand);
+}
+.mode-btn:active {
+  transform: scale(0.96);
+}
+.mode-btn-icon {
+  font-size: 20px;
+}
+.mode-btn-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+}
+.mode-btn-best {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand);
+}
+.mode-btn-play {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 /* Calendar */
@@ -732,11 +722,14 @@ function saveName() {
   position: absolute;
   bottom: 1px;
 }
-.cal-check {
-  font-size: 9px;
-  color: var(--check-color);
+.cal-played-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand);
+  opacity: 0.5;
   position: absolute;
-  bottom: 2px;
+  bottom: 3px;
 }
 
 /* Modal */

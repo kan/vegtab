@@ -11,23 +11,23 @@ describe('Item Generation', () => {
     expect(determineItem(match)).toBeNull();
   });
 
-  it('横4マスではさみを生成', () => {
+  it('横4マスでv_cutを生成', () => {
     const match: Match = {
       positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }],
       color: 0 as Color,
     };
-    expect(determineItem(match)).toBe('scissors');
+    expect(determineItem(match)).toBe('v_cut');
   });
 
-  it('縦4マスでカッターを生成', () => {
+  it('縦4マスでh_cutを生成', () => {
     const match: Match = {
       positions: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }],
       color: 0 as Color,
     };
-    expect(determineItem(match)).toBe('cutter');
+    expect(determineItem(match)).toBe('h_cut');
   });
 
-  it('5マス直線でコーヒーカップを生成', () => {
+  it('5マス直線でflushを生成', () => {
     const match: Match = {
       positions: [
         { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 },
@@ -35,10 +35,10 @@ describe('Item Generation', () => {
       ],
       color: 0 as Color,
     };
-    expect(determineItem(match)).toBe('coffee');
+    expect(determineItem(match)).toBe('flush');
   });
 
-  it('5マス非直線でクリップを生成', () => {
+  it('5マス非直線でburstを生成', () => {
     const match: Match = {
       positions: [
         { row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 },
@@ -46,12 +46,12 @@ describe('Item Generation', () => {
       ],
       color: 0 as Color,
     };
-    expect(determineItem(match)).toBe('clip');
+    expect(determineItem(match)).toBe('burst');
   });
 });
 
 describe('determineItemFromMatches - connected groups', () => {
-  it('L字型5マス（横3+縦3共有1）でクリップを生成', () => {
+  it('L字型5マス（横3+縦3共有1）でburstを生成', () => {
     // H: (0,0)(0,1)(0,2)  V: (0,2)(1,2)(2,2) → 5 connected non-straight
     const matches: Match[] = [
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }], color: 1 as Color },
@@ -59,21 +59,21 @@ describe('determineItemFromMatches - connected groups', () => {
     ];
     const result = determineItemFromMatches(matches);
     expect(result).not.toBeNull();
-    expect(result!.item).toBe('clip');
+    expect(result!.item).toBe('burst');
   });
 
-  it('T字型7マス（横5+縦3共有1）でコーヒーが優先', () => {
-    // H5: (0,0)-(0,4) → coffee from straight match; also T-shape but coffee > clip
+  it('T字型7マス（横5+縦3共有1）でflushが優先', () => {
+    // H5: (0,0)-(0,4) → flush from straight match; also T-shape but flush > burst
     const matches: Match[] = [
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 0, col: 4 }], color: 2 as Color },
       { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 2 as Color },
     ];
     const result = determineItemFromMatches(matches);
     expect(result).not.toBeNull();
-    expect(result!.item).toBe('coffee');
+    expect(result!.item).toBe('flush');
   });
 
-  it('同色3+3共有なし（4マス）はクリップ生成しない', () => {
+  it('同色3+3共有なし（4マス）はburst生成しない', () => {
     // Two separate 3-matches of same color, no overlap → group of 6 but not connected
     const matches: Match[] = [
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }], color: 1 as Color },
@@ -94,15 +94,15 @@ describe('determineItemFromMatches - connected groups', () => {
     expect(result).toBeNull();
   });
 
-  it('横4マス+縦3マス共有1（6マス）でクリップよりはさみを選択しない（クリップ優先）', () => {
-    // H4: (0,0)-(0,3) → scissors; but merged group is 6 non-straight → clip (priority 3 > 2)
+  it('横4マス+縦3マス共有1（6マス）でburstよりv_cutを選択しない（burst優先）', () => {
+    // H4: (0,0)-(0,3) → v_cut; but merged group is 6 non-straight → burst (priority 3 > 2)
     const matches: Match[] = [
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }], color: 1 as Color },
       { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 1 as Color },
     ];
     const result = determineItemFromMatches(matches);
     expect(result).not.toBeNull();
-    expect(result!.item).toBe('clip');
+    expect(result!.item).toBe('burst');
   });
 });
 
@@ -140,8 +140,8 @@ describe('determineItemFromMatches - swap position', () => {
   });
 });
 
-describe('determineItemFromMatches - 2×2 magnifying glass', () => {
-  it('2×2マッチのみで虫めがねを生成', () => {
+describe('determineItemFromMatches - 2×2 scope', () => {
+  it('2×2マッチのみでscopeを生成', () => {
     const matches: Match[] = [
       {
         positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }],
@@ -151,10 +151,10 @@ describe('determineItemFromMatches - 2×2 magnifying glass', () => {
     ];
     const result = determineItemFromMatches(matches);
     expect(result).not.toBeNull();
-    expect(result!.item).toBe('magnifying_glass');
+    expect(result!.item).toBe('scope');
   });
 
-  it('2×2 + 3直線の重複では虫めがねが成立', () => {
+  it('2×2 + 3直線の重複ではscopeが成立', () => {
     const matches: Match[] = [
       {
         positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }],
@@ -168,10 +168,10 @@ describe('determineItemFromMatches - 2×2 magnifying glass', () => {
     ];
     const result = determineItemFromMatches(matches);
     expect(result).not.toBeNull();
-    expect(result!.item).toBe('magnifying_glass');
+    expect(result!.item).toBe('scope');
   });
 
-  it('2×2 + 4直線の重複では上位アイテム（はさみ）が優先', () => {
+  it('2×2 + 4直線の重複では上位アイテム（v_cut）が優先', () => {
     const matches: Match[] = [
       {
         positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }],
@@ -185,76 +185,76 @@ describe('determineItemFromMatches - 2×2 magnifying glass', () => {
     ];
     const result = determineItemFromMatches(matches);
     expect(result).not.toBeNull();
-    expect(result!.item).toBe('scissors');
+    expect(result!.item).toBe('v_cut');
   });
 
-  it('2×2 + L字5マス以上の重複では上位アイテム（クリップ）が優先', () => {
+  it('2×2 + L字5マス以上の重複では上位アイテム（burst）が優先', () => {
     const matches: Match[] = [
       {
         positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 1, col: 0 }, { row: 1, col: 1 }],
         color: 1 as Color,
         shape: '2x2',
       },
-      // L字: 横3 + 縦3 (共有1) = 5マス非直線 → clip
+      // L字: 横3 + 縦3 (共有1) = 5マス非直線 → burst
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }], color: 1 as Color },
       { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 1 as Color },
     ];
     const result = determineItemFromMatches(matches);
     expect(result).not.toBeNull();
-    expect(result!.item).toBe('clip');
+    expect(result!.item).toBe('burst');
   });
 });
 
 describe('Item Synthesis', () => {
-  it('はさみ+はさみ → line+line', () => {
-    expect(getSynthesisEffect('scissors', 'scissors')?.effect).toBe('line+line');
+  it('v_cut+v_cut → line+line', () => {
+    expect(getSynthesisEffect('v_cut', 'v_cut')?.effect).toBe('line+line');
   });
 
-  it('はさみ+カッター → line+line', () => {
-    expect(getSynthesisEffect('scissors', 'cutter')?.effect).toBe('line+line');
+  it('v_cut+h_cut → line+line', () => {
+    expect(getSynthesisEffect('v_cut', 'h_cut')?.effect).toBe('line+line');
   });
 
-  it('カッター+カッター → line+line', () => {
-    expect(getSynthesisEffect('cutter', 'cutter')?.effect).toBe('line+line');
+  it('h_cut+h_cut → line+line', () => {
+    expect(getSynthesisEffect('h_cut', 'h_cut')?.effect).toBe('line+line');
   });
 
-  it('はさみ+クリップ → scissors+clip', () => {
-    expect(getSynthesisEffect('scissors', 'clip')?.effect).toBe('scissors+clip');
+  it('v_cut+burst → v_cut+burst', () => {
+    expect(getSynthesisEffect('v_cut', 'burst')?.effect).toBe('v_cut+burst');
   });
 
-  it('カッター+クリップ → cutter+clip', () => {
-    expect(getSynthesisEffect('cutter', 'clip')?.effect).toBe('cutter+clip');
+  it('h_cut+burst → h_cut+burst', () => {
+    expect(getSynthesisEffect('h_cut', 'burst')?.effect).toBe('h_cut+burst');
   });
 
-  it('クリップ+クリップ → clip+clip', () => {
-    expect(getSynthesisEffect('clip', 'clip')?.effect).toBe('clip+clip');
+  it('burst+burst → burst+burst', () => {
+    expect(getSynthesisEffect('burst', 'burst')?.effect).toBe('burst+burst');
   });
 
-  it('コーヒー+はさみ → coffee+scissors', () => {
-    expect(getSynthesisEffect('coffee', 'scissors')?.effect).toBe('coffee+scissors');
+  it('flush+v_cut → flush+v_cut', () => {
+    expect(getSynthesisEffect('flush', 'v_cut')?.effect).toBe('flush+v_cut');
   });
 
-  it('コーヒー+コーヒー → coffee+coffee', () => {
-    expect(getSynthesisEffect('coffee', 'coffee')?.effect).toBe('coffee+coffee');
+  it('flush+flush → flush+flush', () => {
+    expect(getSynthesisEffect('flush', 'flush')?.effect).toBe('flush+flush');
   });
 
-  it('虫めがね+虫めがね → mag+mag', () => {
-    expect(getSynthesisEffect('magnifying_glass', 'magnifying_glass')?.effect).toBe('mag+mag');
+  it('scope+scope → scope+scope', () => {
+    expect(getSynthesisEffect('scope', 'scope')?.effect).toBe('scope+scope');
   });
 
-  it('虫めがね+はさみ → mag+scissors', () => {
-    expect(getSynthesisEffect('magnifying_glass', 'scissors')?.effect).toBe('mag+scissors');
+  it('scope+v_cut → scope+v_cut', () => {
+    expect(getSynthesisEffect('scope', 'v_cut')?.effect).toBe('scope+v_cut');
   });
 
-  it('虫めがね+カッター → mag+cutter', () => {
-    expect(getSynthesisEffect('magnifying_glass', 'cutter')?.effect).toBe('mag+cutter');
+  it('scope+h_cut → scope+h_cut', () => {
+    expect(getSynthesisEffect('scope', 'h_cut')?.effect).toBe('scope+h_cut');
   });
 
-  it('虫めがね+クリップ → mag+clip', () => {
-    expect(getSynthesisEffect('magnifying_glass', 'clip')?.effect).toBe('mag+clip');
+  it('scope+burst → scope+burst', () => {
+    expect(getSynthesisEffect('scope', 'burst')?.effect).toBe('scope+burst');
   });
 
-  it('虫めがね+コーヒー → mag+coffee', () => {
-    expect(getSynthesisEffect('magnifying_glass', 'coffee')?.effect).toBe('mag+coffee');
+  it('scope+flush → scope+flush', () => {
+    expect(getSynthesisEffect('scope', 'flush')?.effect).toBe('scope+flush');
   });
 });

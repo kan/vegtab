@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useGameStore, type PlayRecord } from '@/stores/game';
+import { useGameStore, type PlayRecord, type GameMode } from '@/stores/game';
 
 const { t } = useI18n();
 
 const props = defineProps<{
   seed: number;
   open: boolean;
+  mode?: GameMode;
 }>();
 
 const emit = defineEmits<{
@@ -15,6 +16,10 @@ const emit = defineEmits<{
 }>();
 
 const gameStore = useGameStore();
+const activeMode = ref<GameMode>(props.mode ?? 'sprint');
+
+watch(() => props.mode, (m) => { if (m) activeMode.value = m; });
+watch(() => props.open, (o) => { if (o && props.mode) activeMode.value = props.mode; });
 
 interface RankEntry {
   rank: number;
@@ -26,9 +31,22 @@ interface RankEntry {
 }
 
 const rankings = computed<RankEntry[]>(() => {
-  const records = gameStore.getRecordsForSeed(props.seed, 'limited');
+  const records = gameStore.getRecordsForSeed(props.seed, activeMode.value);
   const myName = gameStore.effectiveName;
-  const sorted = [...records].sort((a, b) => b.score - a.score);
+
+  let sorted: PlayRecord[];
+  if (activeMode.value === 'clear') {
+    // Clear: sort by fewest moves (score = moveCount for cleared)
+    const cleared = records.filter(r => r.score > 0);
+    sorted = [...cleared].sort((a, b) => a.score - b.score);
+  } else if (activeMode.value === 'survival') {
+    // Survival: sort by most moves, then score
+    sorted = [...records].sort((a, b) => b.moves - a.moves || b.score - a.score);
+  } else {
+    // Sprint: sort by highest score
+    sorted = [...records].sort((a, b) => b.score - a.score);
+  }
+
   return sorted.map((r, i) => ({
     rank: i + 1,
     score: r.score,
@@ -62,6 +80,14 @@ function rankIcon(rank: number): string {
   if (rank === 3) return '\u{1F949}';
   return `#${rank}`;
 }
+
+function displayValue(entry: RankEntry): string {
+  if (activeMode.value === 'clear') return `${entry.score} ${t('mode.moves')}`;
+  if (activeMode.value === 'survival') return `${entry.moves} ${t('mode.moves')}`;
+  return entry.score.toLocaleString();
+}
+
+const modes: GameMode[] = ['sprint', 'clear', 'survival'];
 </script>
 
 <template>
@@ -74,6 +100,16 @@ function rankIcon(rank: number): string {
           <button class="ranking-close" @click="emit('close')">&times;</button>
         </div>
 
+        <!-- Mode tabs -->
+        <div class="mode-tabs">
+          <button
+            v-for="m in modes"
+            :key="m"
+            :class="['mode-tab', { active: activeMode === m }]"
+            @click="activeMode = m"
+          >{{ t(`mode.${m}`) }}</button>
+        </div>
+
         <!-- My rank highlight -->
         <div v-if="myBestRank !== null" class="my-rank-card">
           <div class="my-rank-left">
@@ -81,7 +117,7 @@ function rankIcon(rank: number): string {
             <span class="my-rank-num">{{ myBestRank }}<span class="my-rank-total"> / {{ totalEntries }}</span></span>
           </div>
           <div class="my-rank-right">
-            <span class="my-rank-score">{{ myBestScore.toLocaleString() }}</span>
+            <span class="my-rank-score">{{ displayValue(rankings.find(r => r.isMe)!) }}</span>
             <span class="my-rank-name">{{ gameStore.effectiveName }}</span>
           </div>
         </div>
@@ -102,7 +138,7 @@ function rankIcon(rank: number): string {
               <span class="rank-meta">{{ t('ranking.moves', { count: entry.moves }) }} &middot; {{ formatDate(entry.playedAt) }}</span>
             </div>
             <div class="rank-right">
-              <span class="rank-score">{{ entry.score.toLocaleString() }}</span>
+              <span class="rank-score">{{ displayValue(entry) }}</span>
             </div>
           </div>
         </div>
@@ -161,6 +197,30 @@ function rankIcon(rank: number): string {
   cursor: pointer;
   line-height: 1;
   padding: 0 4px;
+}
+
+/* Mode tabs */
+.mode-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.mode-tab {
+  flex: 1;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+.mode-tab.active {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
 }
 
 /* My rank card */

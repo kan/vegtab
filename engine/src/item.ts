@@ -9,7 +9,7 @@ const CLOCKWISE_8: readonly [number, number][] = [
 
 /**
  * 個別マッチパターンからアイテム生成を判定（直線マッチのみ）
- * 優先順: コーヒーカップ > クリップ > カッター = はさみ
+ * 優先順: flush > burst > h_cut = v_cut
  * 2×2は別途 determineItemFromMatches で処理
  */
 export function determineItem(match: Match): ItemType | null {
@@ -24,12 +24,12 @@ export function determineItem(match: Match): ItemType | null {
   const isVertical = positions.every(p => p.col === positions[0].col);
   const isStraight = isHorizontal || isVertical;
 
-  if (len >= 5 && isStraight) return 'coffee';
-  if (len >= 5) return 'clip'; // 5以上の非直線
+  if (len >= 5 && isStraight) return 'flush';
+  if (len >= 5) return 'burst'; // 5以上の非直線
   // len === 4
-  if (isHorizontal) return 'scissors'; // 横4 → はさみ（縦一列消去）
-  if (isVertical) return 'cutter'; // 縦4 → カッター（横一列消去）
-  return 'clip'; // 4マスの非直線（L字等）→ クリップ
+  if (isHorizontal) return 'v_cut'; // 横4 → 縦一列消去
+  if (isVertical) return 'h_cut'; // 縦4 → 横一列消去
+  return 'burst'; // 4マスの非直線（L字等）→ burst
 }
 
 /**
@@ -104,19 +104,19 @@ function mergeConnectedMatches(matches: Match[]): { positions: Position[]; color
  *   - originを優先し、originがマッチに含まれなければtargetを使う
  *
  * 2×2マッチと直線マッチの重複ルール:
- *   - 2×2と3直線の重複 → 虫めがね成立
- *   - 2×2と4直線以上 or L/T字5マス以上の重複 → 上位アイテム優先、虫めがね消滅
+ *   - 2×2と3直線の重複 → scope成立
+ *   - 2×2と4直線以上 or L/T字5マス以上の重複 → 上位アイテム優先、scope消滅
  */
 export function determineItemFromMatches(
   matches: Match[],
   swapPositions?: [Position, Position]
 ): { item: ItemType; pos: Position } | null {
   const priority: Record<ItemType, number> = {
-    coffee: 5,
-    clip: 4,
-    cutter: 3,
-    scissors: 3,
-    magnifying_glass: 1,
+    flush: 5,
+    burst: 4,
+    h_cut: 3,
+    v_cut: 3,
+    scope: 1,
   };
 
   // 全マッチの位置をセットにまとめる
@@ -140,7 +140,7 @@ export function determineItemFromMatches(
 
   let best: { item: ItemType; pos: Position; priority: number } | null = null;
 
-  // 1. 個別マッチから直線アイテム判定 (scissors, cutter, coffee)
+  // 1. 個別マッチから直線アイテム判定 (v_cut, h_cut, flush)
   for (const match of matches) {
     const item = determineItem(match);
     if (item === null) continue;
@@ -152,9 +152,9 @@ export function determineItemFromMatches(
     }
   }
 
-  // 2. 連結グループからクリップ判定 (5+マス非直線)
+  // 2. 連結グループからburst判定 (5+マス非直線)
   //    2×2マッチは除外して直線マッチのみでグループ化する
-  if (!best || best.priority < priority.clip) {
+  if (!best || best.priority < priority.burst) {
     const straightMatches = matches.filter(m => m.shape !== '2x2');
     const groups = mergeConnectedMatches(straightMatches);
     for (const group of groups) {
@@ -162,27 +162,26 @@ export function determineItemFromMatches(
         const isH = group.positions.every(p => p.row === group.positions[0].row);
         const isV = group.positions.every(p => p.col === group.positions[0].col);
         if (!isH && !isV) {
-          const p = priority.clip;
+          const p = priority.burst;
           if (!best || p > best.priority) {
             const pos = swapPos ?? getCenterPosition(group.positions);
-            best = { item: 'clip', pos, priority: p };
+            best = { item: 'burst', pos, priority: p };
           }
         }
       }
     }
   }
 
-  // 3. 2×2マッチから虫めがね判定
+  // 3. 2×2マッチからscope判定
   const has2x2 = matches.some(m => m.shape === '2x2');
   if (has2x2) {
-    // 2×2が上位アイテム(4直線以上 or L/T字5+)と重複していなければ虫めがね成立
-    // best が scissors/cutter 以上 (priority >= 3) なら上位優先で虫めがね消滅
-    // best が null または priority < 3 なら虫めがね成立
-    // ただし「3直線のみ」との重複なら虫めがね成立 → 3直線はアイテム生成なし(determineItem returns null for len<4)
-    if (!best || best.priority < priority.scissors) {
+    // 2×2が上位アイテム(4直線以上 or L/T字5+)と重複していなければscope成立
+    // best が v_cut/h_cut 以上 (priority >= 3) なら上位優先でscope消滅
+    // best が null または priority < 3 ならscope成立
+    if (!best || best.priority < priority.v_cut) {
       const match2x2 = matches.find(m => m.shape === '2x2')!;
       const pos = swapPos ?? getCenterPosition(match2x2.positions);
-      best = { item: 'magnifying_glass', pos, priority: priority.magnifying_glass };
+      best = { item: 'scope', pos, priority: priority.scope };
     }
   }
 
@@ -199,8 +198,8 @@ function getCenterPosition(positions: Position[]): Position {
   return sorted[midIndex];
 }
 
-/** はさみの効果: 縦一列消去 */
-export function getScissorsTargets(pos: Position): Position[] {
+/** v_cutの効果: 縦一列消去 */
+export function getVCutTargets(pos: Position): Position[] {
   const targets: Position[] = [];
   for (let row = 0; row < BOARD_SIZE; row++) {
     targets.push({ row, col: pos.col });
@@ -208,8 +207,8 @@ export function getScissorsTargets(pos: Position): Position[] {
   return targets;
 }
 
-/** カッターの効果: 横一列消去 */
-export function getCutterTargets(pos: Position): Position[] {
+/** h_cutの効果: 横一列消去 */
+export function getHCutTargets(pos: Position): Position[] {
   const targets: Position[] = [];
   for (let col = 0; col < BOARD_SIZE; col++) {
     targets.push({ row: pos.row, col });
@@ -217,8 +216,8 @@ export function getCutterTargets(pos: Position): Position[] {
   return targets;
 }
 
-/** クリップの効果: 周囲Nマス消去 */
-export function getClipTargets(pos: Position, radius: number): Position[] {
+/** burstの効果: 周囲Nマス消去 */
+export function getBurstTargets(pos: Position, radius: number): Position[] {
   const targets: Position[] = [];
   for (let dr = -radius; dr <= radius; dr++) {
     for (let dc = -radius; dc <= radius; dc++) {
@@ -231,8 +230,8 @@ export function getClipTargets(pos: Position, radius: number): Position[] {
   return targets;
 }
 
-/** コーヒーカップの効果: 対象色の全消し */
-export function getCoffeeTargets(board: (Cell | null)[][], targetColor: number): Position[] {
+/** flushの効果: 対象色の全消し */
+export function getFlushTargets(board: (Cell | null)[][], targetColor: number): Position[] {
   const targets: Position[] = [];
   for (let row = 0; row < BOARD_SIZE; row++) {
     for (let col = 0; col < BOARD_SIZE; col++) {
@@ -245,20 +244,24 @@ export function getCoffeeTargets(board: (Cell | null)[][], targetColor: number):
   return targets;
 }
 
-/** コーヒーカップのタップ/連鎖時: 上隣から時計回りで最初の付箋の色を取得 */
-/** 誘爆時の虫めがね: 上から時計回りで最初に見つかる隣接セル1マスを返す */
-function getMagnifyingGlassAutoTarget(board: (Cell | null)[][], pos: Position): Position[] {
-  for (const [dr, dc] of CLOCKWISE_8) {
+/** 上下左右4方向 */
+const CROSS_4: readonly [number, number][] = [
+  [-1, 0], [0, 1], [1, 0], [0, -1],
+];
+
+/** scopeの周囲4マス(上下左右)を返す */
+export function getScopeAdjacentTargets(board: (Cell | null)[][], pos: Position): Position[] {
+  const targets: Position[] = [];
+  for (const [dr, dc] of CROSS_4) {
     const p = { row: pos.row + dr, col: pos.col + dc };
-    if (isValidPosition(p)) {
-      const cell = board[p.row][p.col];
-      if (cell) return [p];
+    if (isValidPosition(p) && board[p.row][p.col]) {
+      targets.push(p);
     }
   }
-  return [];
+  return targets;
 }
 
-export function findCoffeeTargetColor(board: (Cell | null)[][], pos: Position): number | null {
+export function findFlushTargetColor(board: (Cell | null)[][], pos: Position): number | null {
   // 上隣から時計回り: 上, 右上, 右, 右下, 下, 左下, 左, 左上
   for (const [dr, dc] of CLOCKWISE_8) {
     const p = { row: pos.row + dr, col: pos.col + dc };
@@ -281,20 +284,19 @@ export function getItemTargets(
   targetCells?: Position[],
 ): Position[] {
   switch (item) {
-    case 'magnifying_glass':
-      // User-selected targets for direct activation; auto-pick 1 adjacent cell for detonation
-      if (targetCells) return targetCells;
-      return getMagnifyingGlassAutoTarget(board, pos);
-    case 'scissors':
-      return getScissorsTargets(pos);
-    case 'cutter':
-      return getCutterTargets(pos);
-    case 'clip':
-      return getClipTargets(pos, 2);
-    case 'coffee': {
-      const color = targetColor ?? findCoffeeTargetColor(board, pos);
+    case 'scope':
+      // 連鎖発動時: 周囲上下左右4マス消去のみ
+      return getScopeAdjacentTargets(board, pos);
+    case 'v_cut':
+      return getVCutTargets(pos);
+    case 'h_cut':
+      return getHCutTargets(pos);
+    case 'burst':
+      return getBurstTargets(pos, 2);
+    case 'flush': {
+      const color = targetColor ?? findFlushTargetColor(board, pos);
       if (color === null) return [];
-      return getCoffeeTargets(board, color);
+      return getFlushTargets(board, color);
     }
   }
 }
@@ -304,42 +306,42 @@ export function getSynthesisEffect(
   item1: ItemType,
   item2: ItemType
 ): { type: 'synthesis'; effect: string } | null {
-  const lineItems = new Set(['cutter', 'scissors']);
+  const lineItems = new Set(['h_cut', 'v_cut']);
 
-  // 虫めがね + 虫めがね
-  if (item1 === 'magnifying_glass' && item2 === 'magnifying_glass') {
-    return { type: 'synthesis', effect: 'mag+mag' };
+  // scope + scope
+  if (item1 === 'scope' && item2 === 'scope') {
+    return { type: 'synthesis', effect: 'scope+scope' };
   }
 
-  // 虫めがね + 他
-  if (item1 === 'magnifying_glass' || item2 === 'magnifying_glass') {
-    const other = item1 === 'magnifying_glass' ? item2 : item1;
-    return { type: 'synthesis', effect: `mag+${other}` };
+  // scope + 他
+  if (item1 === 'scope' || item2 === 'scope') {
+    const other = item1 === 'scope' ? item2 : item1;
+    return { type: 'synthesis', effect: `scope+${other}` };
   }
 
-  // コーヒー + コーヒー
-  if (item1 === 'coffee' && item2 === 'coffee') {
-    return { type: 'synthesis', effect: 'coffee+coffee' };
+  // flush + flush
+  if (item1 === 'flush' && item2 === 'flush') {
+    return { type: 'synthesis', effect: 'flush+flush' };
   }
 
-  // コーヒー + 他
-  if (item1 === 'coffee' || item2 === 'coffee') {
-    const other = item1 === 'coffee' ? item2 : item1;
-    return { type: 'synthesis', effect: `coffee+${other}` };
+  // flush + 他
+  if (item1 === 'flush' || item2 === 'flush') {
+    const other = item1 === 'flush' ? item2 : item1;
+    return { type: 'synthesis', effect: `flush+${other}` };
   }
 
-  // クリップ + クリップ
-  if (item1 === 'clip' && item2 === 'clip') {
-    return { type: 'synthesis', effect: 'clip+clip' };
+  // burst + burst
+  if (item1 === 'burst' && item2 === 'burst') {
+    return { type: 'synthesis', effect: 'burst+burst' };
   }
 
-  // はさみ/カッター + クリップ
-  if ((item1 === 'clip' || item2 === 'clip') && (lineItems.has(item1) || lineItems.has(item2))) {
-    const lineItem = item1 === 'clip' ? item2 : item1;
-    return { type: 'synthesis', effect: `${lineItem}+clip` };
+  // v_cut/h_cut + burst
+  if ((item1 === 'burst' || item2 === 'burst') && (lineItems.has(item1) || lineItems.has(item2))) {
+    const lineItem = item1 === 'burst' ? item2 : item1;
+    return { type: 'synthesis', effect: `${lineItem}+burst` };
   }
 
-  // はさみ/カッター同士
+  // v_cut/h_cut同士
   if (lineItems.has(item1) && lineItems.has(item2)) {
     return { type: 'synthesis', effect: 'line+line' };
   }
@@ -360,7 +362,7 @@ export function getSynthesisTargets(
       // 十字消去
       const targets = new Set<string>();
       const result: Position[] = [];
-      for (const p of [...getScissorsTargets(pos), ...getCutterTargets(pos)]) {
+      for (const p of [...getVCutTargets(pos), ...getHCutTargets(pos)]) {
         const key = `${p.row},${p.col}`;
         if (!targets.has(key)) {
           targets.add(key);
@@ -369,7 +371,7 @@ export function getSynthesisTargets(
       }
       return result;
     }
-    case 'scissors+clip': {
+    case 'v_cut+burst': {
       // 縦3列消去
       const targets = new Set<string>();
       const result: Position[] = [];
@@ -387,7 +389,7 @@ export function getSynthesisTargets(
       }
       return result;
     }
-    case 'cutter+clip': {
+    case 'h_cut+burst': {
       // 横3列消去
       const targets = new Set<string>();
       const result: Position[] = [];
@@ -405,44 +407,43 @@ export function getSynthesisTargets(
       }
       return result;
     }
-    case 'clip+clip': {
+    case 'burst+burst': {
       // 周囲3マス消去
-      return getClipTargets(pos, 3);
+      return getBurstTargets(pos, 3);
     }
-    case 'coffee+scissors': {
-      // 対象色タイルから縦一列消去 → 対象位置は後でactivateで処理
+    case 'flush+v_cut': {
       return []; // 特殊処理が必要
     }
-    case 'coffee+cutter': {
+    case 'flush+h_cut': {
       return []; // 特殊処理が必要
     }
-    case 'coffee+clip': {
+    case 'flush+burst': {
       return []; // 特殊処理が必要
     }
-    case 'coffee+coffee': {
+    case 'flush+flush': {
       return []; // 特殊処理: 全消し
     }
-    case 'mag+mag': {
+    case 'scope+scope': {
       // ユーザーが選んだ3マス
       return targetCells ?? [];
     }
-    case 'mag+scissors': {
+    case 'scope+v_cut': {
       // ユーザーが選んだ1マスから縦一列
       if (!targetCells || targetCells.length === 0) return [];
-      return getScissorsTargets(targetCells[0]);
+      return getVCutTargets(targetCells[0]);
     }
-    case 'mag+cutter': {
+    case 'scope+h_cut': {
       // ユーザーが選んだ1マスから横一列
       if (!targetCells || targetCells.length === 0) return [];
-      return getCutterTargets(targetCells[0]);
+      return getHCutTargets(targetCells[0]);
     }
-    case 'mag+clip': {
+    case 'scope+burst': {
       // ユーザーが選んだ1マスから周囲2マス
       if (!targetCells || targetCells.length === 0) return [];
-      return getClipTargets(targetCells[0], 2);
+      return getBurstTargets(targetCells[0], 2);
     }
-    case 'mag+coffee': {
-      // コーヒーの隣接色で全消し → 特殊処理で対応
+    case 'scope+flush': {
+      // flushの隣接色で全消し → 特殊処理で対応
       return [];
     }
     default:

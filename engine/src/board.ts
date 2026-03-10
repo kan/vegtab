@@ -47,7 +47,7 @@ export function fillEmptyCells(board: (Cell | null)[][], rngState: number): numb
 /** 盤面のディープコピー */
 export function cloneBoard(board: (Cell | null)[][]): (Cell | null)[][] {
   return board.map(row => row.map(cell =>
-    cell === null ? null : { ...cell }
+    cell === null ? null : { ...cell, obstacle: cell.obstacle ? { ...cell.obstacle } : undefined }
   ));
 }
 

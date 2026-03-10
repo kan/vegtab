@@ -1,6 +1,6 @@
 export default {
   common: {
-    appName: 'Tomado',
+    appName: 'Vege-Table',
     home: 'HOME',
     cancel: 'キャンセル',
     save: '保存',
@@ -67,6 +67,25 @@ export default {
   },
   board: {
     selectCells: '{count}マスを選択',
+  },
+  mode: {
+    selectTitle: 'モードを選択',
+    sprint: 'Sprint',
+    clear: 'Clear',
+    survival: 'Survival',
+    sprintDesc: '15手でハイスコアを目指せ',
+    clearDesc: 'おじゃまタイルを全て除去しよう',
+    survivalDesc: 'ノルマをクリアして生き残れ',
+    moves: '手',
+    obstacles: 'おじゃま: {count}',
+    turnOver: 'ターンオーバー',
+    cleared: 'クリア！',
+    failed: '失敗...',
+    clearMoves: '{count}手でクリア',
+    obstaclesLeft: '残りおじゃま: {count}',
+    survivalResult: '{moves}手 / {score} pts',
+    survivalQuota: 'あと{moves}手で {target}pt',
+    survivalProgress: '{current} / {target}',
   },
   ranking: {
     yourRank: 'あなたの順位',

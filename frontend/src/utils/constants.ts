@@ -1,15 +1,15 @@
 import type { ItemType } from '@tomado/engine';
 
 export const ALL_ITEM_TYPES: readonly ItemType[] = [
-  'magnifying_glass', 'scissors', 'cutter', 'clip', 'coffee',
+  'scope', 'v_cut', 'h_cut', 'burst', 'flush',
 ] as const;
 
 export const ITEM_INFO: Record<ItemType, { label: string; desc: string }> = {
-  magnifying_glass: { label: 'Magnifying Glass', desc: 'Tap to remove 1 tile' },
-  scissors: { label: 'Scissors', desc: 'Clears a vertical line' },
-  cutter: { label: 'Cutter', desc: 'Clears a horizontal line' },
-  clip: { label: 'Clip', desc: 'Clears surrounding tiles' },
-  coffee: { label: 'Coffee Cup', desc: 'Clears all tiles of one color' },
+  scope: { label: 'Spoon', desc: 'Tap to remove 1 tile' },
+  v_cut: { label: 'Knife', desc: 'Clears a vertical line' },
+  h_cut: { label: 'Knife (H)', desc: 'Clears a horizontal line' },
+  burst: { label: 'Fork', desc: 'Clears surrounding tiles' },
+  flush: { label: 'Pot', desc: 'Clears all tiles of one color' },
 };
 
 /** Shorthand for ITEM_INFO[type].label */

@@ -114,4 +114,36 @@ describe('Match Detection', () => {
     const color1Matches = findMatches(board).filter(m => m.color === 1);
     expect(color1Matches.length).toBe(0);
   });
+
+  it('おじゃまタイルは横マッチ検出から除外される', () => {
+    const board = emptyBoard();
+    // row 0: 色1, obstacle(色1), 色1, ... (残りは色0)
+    board[0][0] = { color: 1 };
+    board[0][1] = { color: 1, obstacle: { durability: 1 } };
+    board[0][2] = { color: 1 };
+    const color1Matches = findMatches(board).filter(m => m.color === 1);
+    // おじゃまタイルが間にあるのでマッチしない
+    expect(color1Matches.length).toBe(0);
+  });
+
+  it('おじゃまタイルは縦マッチ検出から除外される', () => {
+    const board = emptyBoard();
+    board[0][0] = { color: 2 };
+    board[1][0] = { color: 2, obstacle: { durability: 2 } };
+    board[2][0] = { color: 2 };
+    const color2VertMatches = findMatches(board).filter(
+      m => m.color === 2 && m.positions.every(p => p.col === 0)
+    );
+    expect(color2VertMatches.length).toBe(0);
+  });
+
+  it('おじゃまタイルは2x2マッチ検出から除外される', () => {
+    const board = emptyBoard();
+    board[0][0] = { color: 3 };
+    board[0][1] = { color: 3 };
+    board[1][0] = { color: 3 };
+    board[1][1] = { color: 3, obstacle: { durability: 1 } };
+    const match2x2 = findMatches(board).find(m => m.shape === '2x2' && m.color === 3);
+    expect(match2x2).toBeUndefined();
+  });
 });

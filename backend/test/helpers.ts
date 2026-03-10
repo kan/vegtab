@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS play_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_play_scores_user_id ON play_scores(user_id);
 CREATE INDEX IF NOT EXISTS idx_play_scores_seed_mode ON play_scores(seed_id, mode);
-CREATE INDEX IF NOT EXISTS idx_play_scores_ranking ON play_scores(seed_id, mode, score DESC);
+CREATE INDEX IF NOT EXISTS idx_play_scores_sprint ON play_scores(seed_id, mode, score DESC);
+CREATE INDEX IF NOT EXISTS idx_play_scores_clear ON play_scores(seed_id, mode, is_cleared, move_count ASC);
+CREATE INDEX IF NOT EXISTS idx_play_scores_survival ON play_scores(seed_id, mode, move_count DESC, score DESC);
 
 CREATE TABLE IF NOT EXISTS achievements (
   id TEXT PRIMARY KEY,
