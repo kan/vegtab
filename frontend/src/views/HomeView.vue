@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore, type PlayRecord } from '@/stores/game';
+import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
 import { generateTransferCode, redeemTransferCode, showToast } from '@/api/client';
 import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
@@ -76,6 +77,7 @@ async function doGenerateCode() {
     const result = await generateTransferCode();
     transferCode.value = result.code;
   } catch {
+    showToast('error', 'transfer.failed');
     showTransferMenu.value = false;
   }
   transferLoading.value = false;
@@ -95,8 +97,9 @@ async function doRedeem() {
     const result = await redeemTransferCode(code);
     await gameStore.resetAfterTransfer(result.displayName);
     showRedeemInput.value = false;
+    showToast('success', 'transfer.success');
   } catch {
-    // Error shown via toast or alert
+    showToast('error', 'transfer.failed');
   }
   redeemLoading.value = false;
 }
@@ -176,7 +179,7 @@ const rankingMode = ref<'sprint' | 'clear' | 'survival'>('sprint');
 function bestPerUser(records: PlayRecord[], mode: string) {
   const best = new Map<string, PlayRecord>();
   for (const r of records) {
-    const name = r.playerName || 'NO NAME';
+    const name = r.playerName || DEFAULT_DISPLAY_NAME;
     const prev = best.get(name);
     if (!prev) { best.set(name, r); continue; }
     if (mode === 'clear') {
@@ -204,7 +207,7 @@ const rankingPreview = computed(() => {
   }
   return sorted.slice(0, 5).map((r, i) => ({
     rank: i + 1,
-    playerName: r.playerName || 'NO NAME',
+    playerName: r.playerName || DEFAULT_DISPLAY_NAME,
     score: r.score,
     moves: r.moves,
   }));

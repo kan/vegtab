@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useGameStore, type PlayRecord, type GameMode } from '@/stores/game';
+import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
 
 const { t } = useI18n();
 
@@ -52,8 +53,8 @@ const rankings = computed<RankEntry[]>(() => {
     score: r.score,
     moves: r.moves,
     playedAt: r.playedAt,
-    playerName: r.playerName || 'NO NAME',
-    isMe: (r.playerName || 'NO NAME') === myName,
+    playerName: r.playerName || DEFAULT_DISPLAY_NAME,
+    isMe: (r.playerName || DEFAULT_DISPLAY_NAME) === myName,
   }));
 });
 

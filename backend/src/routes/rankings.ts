@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 
+const DEFAULT_DISPLAY_NAME = 'NO NAME';
+
 const RANKING_CACHE_TTL = 300; // 5 minutes
 const RANKING_LIMIT = 100;
 
@@ -112,7 +114,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Pro
     return (entries.results ?? []).map((e, i) => ({
       rank: i + 1,
       userId: e.user_id,
-      displayName: e.display_name ?? 'NO NAME',
+      displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
       score: e.best_score,
       moveCount: e.move_count,
     }));
@@ -125,7 +127,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Pro
     return (entries.results ?? []).map((e, i) => ({
       rank: i + 1,
       userId: e.user_id,
-      displayName: e.display_name ?? 'NO NAME',
+      displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
       score: e.score,
       moveCount: e.best_move_count,
       isCleared: true,
@@ -139,7 +141,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Pro
   return (entries.results ?? []).map((e, i) => ({
     rank: i + 1,
     userId: e.user_id,
-    displayName: e.display_name ?? 'NO NAME',
+    displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
     score: e.score,
     moveCount: e.best_move_count,
   }));

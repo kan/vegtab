@@ -1,5 +1,7 @@
 import type { ItemType } from '@tomado/engine';
 
+export const DEFAULT_DISPLAY_NAME = 'NO NAME';
+
 export const ALL_ITEM_TYPES: readonly ItemType[] = [
   'scope', 'v_cut', 'h_cut', 'burst', 'flush',
 ] as const;

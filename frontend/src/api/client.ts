@@ -228,5 +228,3 @@ export async function redeemTransferCode(code: string): Promise<{
   saveTokens(data.accessToken, data.refreshToken, data.userId);
   return data;
 }
-
-export { saveTokens };

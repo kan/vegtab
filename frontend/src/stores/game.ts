@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { formatDateLocal, todayLocal } from '@/utils/date';
 import { api, register, isAuthenticated, showToast } from '@/api/client';
 import { generateDailySeed } from '@tomado/engine';
+import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
 
 // --- Types ---
 
@@ -37,8 +38,7 @@ export const useGameStore = defineStore('game', () => {
       if (!isAuthenticated()) {
         await register();
       }
-      await syncProfile();
-      await syncScoresFromServer();
+      await Promise.all([syncProfile(), syncScoresFromServer()]);
       initialized.value = true;
     } catch (e) {
       console.warn('Failed to initialize with server, using local data', e);
@@ -75,12 +75,11 @@ export const useGameStore = defineStore('game', () => {
         }>;
       }>('/api/scores/my');
 
+      const localKeys = new Set(
+        playRecords.value.map(r => `${r.seed}:${r.mode}`),
+      );
       for (const s of data.scores) {
-        // Skip if local already has a record for this seed+mode
-        const exists = playRecords.value.some(
-          r => r.seed === s.seedValue && r.mode === s.mode,
-        );
-        if (exists) continue;
+        if (localKeys.has(`${s.seedValue}:${s.mode}`)) continue;
 
         playRecords.value.push({
           seed: s.seedValue,
@@ -123,7 +122,7 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  const effectiveName = computed(() => displayName.value || 'NO NAME');
+  const effectiveName = computed(() => displayName.value || DEFAULT_DISPLAY_NAME);
 
   // --- Seeds ---
 

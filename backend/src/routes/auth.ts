@@ -132,22 +132,28 @@ authRoutes.post('/redeem-transfer', zValidator('json', redeemSchema), async (c) 
     return c.json({ error: 'User not found' }, 400);
   }
 
-  // Link new device to user (ignore if already linked)
-  try {
+  // Link device to user (update if already linked to a different user)
+  const existingLink = await c.env.DB.prepare(
+    'SELECT user_id FROM user_devices WHERE device_id = ?'
+  ).bind(deviceId).first<{ user_id: string }>();
+
+  if (existingLink) {
+    if (existingLink.user_id !== userId) {
+      await c.env.DB.prepare(
+        'UPDATE user_devices SET user_id = ? WHERE device_id = ?'
+      ).bind(userId, deviceId).run();
+    }
+  } else {
     await c.env.DB.prepare(
       'INSERT INTO user_devices (id, user_id, device_id) VALUES (?, ?, ?)'
     ).bind(generateId(), userId, deviceId).run();
-  } catch {
-    // Device already linked to this user — ok
   }
 
-  // Delete the transfer code (one-time use)
-  await c.env.KV.delete(`transfer:${code.toUpperCase()}`);
-
-  // Issue new tokens
+  // Issue new tokens and delete the transfer code (one-time use) in parallel
   const [accessToken, refreshToken] = await Promise.all([
     createAccessToken(userId, c.env.JWT_SECRET),
     createRefreshToken(userId, c.env.JWT_SECRET),
+    c.env.KV.delete(`transfer:${code.toUpperCase()}`),
   ]);
 
   return c.json({
