@@ -243,7 +243,7 @@ const gameOverScore = computed(() => {
       : t('mode.obstaclesLeft', { count: store.obstacleCount });
   }
   if (selectedMode.value === 'survival') {
-    return t('mode.survivalResult', { moves: store.moveCount, score: store.score.toLocaleString() });
+    return t('puzzle.moveCount', { count: store.moveCount });
   }
   return t('puzzle.pts', { score: store.score });
 });
