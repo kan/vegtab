@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan, type ScopeAnimPlan, type ScopeSynthesisAnimPlan } from '@/stores/puzzle';
+import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
 import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type ItemType } from '@tomado/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
@@ -39,7 +39,12 @@ const ANIM = {
 
 // --- Layout ---
 onMounted(() => { updateCellSize(); window.addEventListener('resize', updateCellSize); });
-onUnmounted(() => window.removeEventListener('resize', updateCellSize));
+onUnmounted(() => {
+  window.removeEventListener('resize', updateCellSize);
+  floatingTimers.forEach(t => clearTimeout(t));
+  floatingTimers.length = 0;
+  floatingScores.length = 0;
+});
 
 function updateCellSize() {
   if (wrapperEl.value) {
@@ -87,6 +92,7 @@ let scopeHintTimer: ReturnType<typeof setTimeout> | undefined;
 // --- Floating score ---
 const floatingScores = reactive<{ id: number; x: number; y: number; text: string }[]>([]);
 let floatingId = 0;
+const floatingTimers: ReturnType<typeof setTimeout>[] = [];
 
 function addFloatingScore(positions: Position[], score: number) {
   if (score <= 0 || positions.length === 0) return;
@@ -97,10 +103,15 @@ function addFloatingScore(positions: Position[], score: number) {
   const y = (cy + 0.5) * cs;
   const id = floatingId++;
   floatingScores.push({ id, x, y, text: `+${score}` });
-  setTimeout(() => {
+  const timerId = setTimeout(() => {
     const idx = floatingScores.findIndex(f => f.id === id);
     if (idx !== -1) floatingScores.splice(idx, 1);
   }, 800);
+  floatingTimers.push(timerId);
+}
+
+function showItemEffectScore(effect: ItemEffectStep) {
+  addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.itemPos], calcItemEffectScore(effect));
 }
 
 function showScopeHint(key: string) {
@@ -267,7 +278,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   for (const effect of plan.itemEffects) {
     vbRemove(effect.itemPos);
     await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
-    addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.itemPos], calcItemEffectScore(effect));
+    showItemEffectScore(effect);
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -348,7 +359,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   for (const effect of plan.itemEffects) {
     vbRemove(effect.itemPos);
     await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
-    addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.itemPos], calcItemEffectScore(effect));
+    showItemEffectScore(effect);
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -504,7 +515,7 @@ async function animateItemEffects(plan: ItemAnimPlan) {
     playSE('item_use'); vibrate(20);
     vbRemove(effect.itemPos);
     await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
-    addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.itemPos], calcItemEffectScore(effect));
+    showItemEffectScore(effect);
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
