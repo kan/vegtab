@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { formatDateJST, todayJST } from '@/utils/date';
 import { api, register, isAuthenticated, showToast } from '@/api/client';
 import { generateDailySeed } from '@tomado/engine';
+import { type ReplayAction } from '@/stores/puzzle';
 import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
 
 // --- Types ---
@@ -20,6 +21,7 @@ export interface PlayRecord {
   moveLimit?: number;
   maxChain?: number;
   generatedItemTypes?: string[];
+  replayLog?: ReplayAction[];
 }
 
 // --- Store ---
@@ -43,6 +45,8 @@ export const useGameStore = defineStore('game', () => {
       const { useAchievementStore } = await import('@/stores/achievements');
       await Promise.all([syncProfile(), syncScoresFromServer(), useAchievementStore().fetchAchievements()]);
       initialized.value = true;
+      // After sync, try to submit any local scores that were never sent to backend
+      resubmitUnsentScores();
     } catch (e) {
       console.warn('Failed to initialize with server, using local data', e);
       initialized.value = true;
@@ -63,6 +67,9 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
+  // Track which seed:mode combos are known to exist on the server
+  const serverScoreKeys = new Set<string>();
+
   /** Fetch user's scores from server and merge into local playRecords */
   async function syncScoresFromServer() {
     try {
@@ -78,10 +85,12 @@ export const useGameStore = defineStore('game', () => {
         }>;
       }>('/api/scores/my');
 
+      serverScoreKeys.clear();
       const localKeys = new Set(
         playRecords.value.map(r => `${r.seed}:${r.mode}`),
       );
       for (const s of data.scores) {
+        serverScoreKeys.add(`${s.seedValue}:${s.mode}`);
         if (localKeys.has(`${s.seedValue}:${s.mode}`)) continue;
 
         playRecords.value.push({
@@ -141,10 +150,19 @@ export const useGameStore = defineStore('game', () => {
     return ((Date.now() & 0x7fffffff) ^ (Math.random() * 0x7fffffff)) >>> 0;
   }
 
-  /** Find the date string for a daily seed number, or null if not a daily seed */
+  /** Find the date string for a daily seed number, or null if not a daily seed.
+   *  Searches today ±1 day first (common case), then up to 60 days back for calendar plays. */
   function findDailyDate(seed: number): string | null {
     const today = new Date();
+    // Fast path: today ±1 day (covers timezone edge cases)
     for (let offset = -1; offset <= 1; offset++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + offset);
+      const dateStr = formatDateJST(d);
+      if (generateDailySeed(dateStr) === seed) return dateStr;
+    }
+    // Extended search for calendar plays (up to 60 days back)
+    for (let offset = -2; offset >= -60; offset--) {
       const d = new Date(today);
       d.setDate(d.getDate() + offset);
       const dateStr = formatDateJST(d);
@@ -184,7 +202,7 @@ export const useGameStore = defineStore('game', () => {
           isCleared: record.isCleared ?? false,
           maxChain: record.maxChain ?? 0,
           generatedItemTypes: record.generatedItemTypes ?? [],
-          replayLog: [],
+          replayLog: record.replayLog ?? [],
         }),
         offlineQueue: true,
       });
@@ -202,6 +220,41 @@ export const useGameStore = defineStore('game', () => {
       }
     } catch {
       // Error already handled by api() (toast shown, or queued offline)
+    }
+  }
+
+  /** Re-submit local scores that are missing from the server (e.g., due to findDailyDate bug). */
+  async function resubmitUnsentScores() {
+    if (serverScoreKeys.size === 0 && playRecords.value.length === 0) return;
+    for (const record of playRecords.value) {
+      const key = `${record.seed}:${record.mode}`;
+      if (serverScoreKeys.has(key)) continue;
+      // Only submit daily seeds (findDailyDate returns null for non-daily)
+      const date = findDailyDate(record.seed);
+      if (!date) continue;
+      try {
+        const res = await api<{ scoreId: string; shareCode: string; newAchievements: string[] }>('/api/scores', {
+          method: 'POST',
+          body: JSON.stringify({
+            date,
+            mode: record.mode,
+            moveLimit: record.moveLimit ?? null,
+            moveCount: record.moves,
+            score: record.score,
+            isCleared: record.isCleared ?? false,
+            maxChain: record.maxChain ?? 0,
+            generatedItemTypes: record.generatedItemTypes ?? [],
+            replayLog: record.replayLog ?? [],
+          }),
+        });
+        serverScoreKeys.add(key);
+        if (res.shareCode) {
+          shareCodeCache.value[record.seed] = res.shareCode;
+          saveShareCodeCache();
+        }
+      } catch {
+        // Skip failures silently — will retry on next init
+      }
     }
   }
 

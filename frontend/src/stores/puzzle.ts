@@ -12,8 +12,14 @@ import {
   countObstacles, damageObstacles, damageObstacleAt, getQuota,
   type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
+  type Action, type Position as EnginePosition,
   BOARD_SIZE,
 } from '@tomado/engine';
+
+/** Replay action — extends engine Action with scope synthesis and scope swap */
+export type ReplayAction = Action
+  | { type: 'scope_synthesis'; pos1: EnginePosition; pos2: EnginePosition; targetCells: EnginePosition[] }
+  | { type: 'scope_swap'; pos: EnginePosition; dir: Direction; targetCells: EnginePosition[] };
 
 // --- Animation plan types ---
 
@@ -428,6 +434,9 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const gameState = ref<GameState | null>(null);
   const seed = ref(0);
 
+  // Replay log: records every player action for replay viewer
+  const replayLog = ref<ReplayAction[]>([]);
+
   // Stats tracking for achievements
   const maxChain = ref(0);
   const generatedItemTypes = ref<Set<string>>(new Set());
@@ -473,32 +482,42 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   function startGame(newSeed?: number, gameMode?: GameMode) {
     seed.value = newSeed ?? Math.floor(Math.random() * 0x7FFFFFFF);
+    replayLog.value = [];
     maxChain.value = 0;
     generatedItemTypes.value = new Set();
     gameState.value = initializeGame(seed.value, gameMode ?? 'sprint');
   }
 
-  function restoreState(savedSeed: number, state: GameState, savedMaxChain: number, savedItemTypes: string[]) {
+  function restoreState(savedSeed: number, state: GameState, savedMaxChain: number, savedItemTypes: string[], savedReplayLog?: ReplayAction[]) {
     seed.value = savedSeed;
+    replayLog.value = savedReplayLog ?? [];
     maxChain.value = savedMaxChain;
     generatedItemTypes.value = new Set(savedItemTypes);
     gameState.value = state;
   }
 
+  /** Record an action to the replay log (called by PuzzleBoard before applyState) */
+  function recordAction(action: ReplayAction) {
+    replayLog.value.push(action);
+  }
+
   function swap(pos: Position, dir: Direction) {
     if (!gameState.value) return;
+    recordAction({ type: 'swap', pos, dir });
     const newState = processAction(gameState.value, { type: 'swap', pos, dir });
     if (newState !== gameState.value) gameState.value = newState;
   }
 
   function tap(pos: Position) {
     if (!gameState.value) return;
+    recordAction({ type: 'tap', pos });
     const newState = processAction(gameState.value, { type: 'tap', pos });
     if (newState !== gameState.value) gameState.value = newState;
   }
 
   function activateScope(pos: Position, targetCells: Position[]) {
     if (!gameState.value) return;
+    recordAction({ type: 'scope', pos, targetCells });
     const newState = processAction(gameState.value, {
       type: 'scope', pos, targetCells,
     });
@@ -507,6 +526,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   function applyScopeSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
     if (!gameState.value) return;
+    recordAction({ type: 'scope_synthesis', pos1, pos2, targetCells });
     const newState = processScopeSynthesis(gameState.value, pos1, pos2, targetCells);
     if (newState !== gameState.value) gameState.value = newState;
   }
@@ -1153,11 +1173,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   }
 
   return {
-    gameState, seed,
+    gameState, seed, replayLog,
     board, score, moveCount, autoActivating, isGameOver, isCleared,
     mode, moveLimit, remainingMoves,
     obstacleCount, quotaTable, quotaTarget, movesUntilCheck, segmentScore,
-    startGame, restoreState, swap, tap,
+    startGame, restoreState, recordAction, swap, tap,
     activateScope, applyScopeSynthesis,
     computeScopePlan, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,

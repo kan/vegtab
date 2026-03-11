@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import { type GameMode } from '@/stores/game';
 import { api, getUserId } from '@/api/client';
 
 const { t } = useI18n();
+const router = useRouter();
 
 const props = defineProps<{
   seed: number;
@@ -25,6 +27,7 @@ interface RankEntry {
   moves: number;
   playerName: string;
   isMe: boolean;
+  scoreId?: string;
 }
 
 const rankings = ref<RankEntry[]>([]);
@@ -57,6 +60,7 @@ async function fetchRanking() {
         score: number;
         moveCount: number;
         isCleared?: boolean;
+        scoreId?: string;
       }>;
       userRank: { rank: number; score: number; moveCount?: number } | null;
     }>(`/api/rankings/by-value/${props.seed}?mode=${activeMode.value}`);
@@ -68,6 +72,7 @@ async function fetchRanking() {
       moves: e.moveCount,
       playerName: e.displayName,
       isMe: e.userId === userId,
+      scoreId: e.scoreId,
     }));
     myRank.value = data.userRank;
   } catch {
@@ -113,6 +118,11 @@ function subDisplayValue(entry: RankEntry): string | null {
     return entry.score.toLocaleString();
   }
   return null;
+}
+
+function goToReplay(scoreId: string) {
+  emit('close');
+  router.push(`/replay/${scoreId}`);
 }
 
 const modes: GameMode[] = ['sprint', 'clear', 'survival'];
@@ -188,6 +198,12 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
               <span class="rank-score">{{ displayValue(entry) }}</span>
               <span v-if="subDisplayValue(entry)" class="rank-sub">{{ subDisplayValue(entry) }}</span>
             </div>
+            <button
+              v-if="entry.isMe && entry.scoreId"
+              class="btn-replay"
+              @click="goToReplay(entry.scoreId!)"
+              :title="t('replay.viewReplay')"
+            >&#x25B6;</button>
           </div>
         </div>
         <div v-else class="ranking-empty">
@@ -392,6 +408,20 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
   font-size: 13px;
   color: var(--text-muted);
   font-weight: 500;
+}
+.btn-replay {
+  background: var(--brand);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 .ranking-empty {
   text-align: center;

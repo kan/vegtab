@@ -59,6 +59,7 @@ function saveSession() {
       state: store.gameState,
       maxChain: store.maxChain,
       generatedItemTypes: [...store.generatedItemTypes],
+      replayLog: store.replayLog,
     }));
   } catch { /* ignore quota errors */ }
 }
@@ -76,7 +77,7 @@ function tryRestoreSession(seed: number, mode: GameMode): boolean {
     const s = saved.state;
     if (!s?.board || typeof s.score !== 'number' || !Array.isArray(s.rngState)) { clearSession(); return false; }
     if (s.isGameOver) { clearSession(); return false; }
-    store.restoreState(seed, s, saved.maxChain ?? 0, saved.generatedItemTypes ?? []);
+    store.restoreState(seed, s, saved.maxChain ?? 0, saved.generatedItemTypes ?? [], saved.replayLog ?? []);
     selectedMode.value = mode;
     scoreRecorded.value = false;
     viewPhase.value = 'playing';
@@ -170,6 +171,7 @@ watch([() => store.isGameOver, () => store.autoActivating], ([ended, activating]
       moveLimit: store.moveLimit,
       maxChain: store.maxChain,
       generatedItemTypes: [...store.generatedItemTypes],
+      replayLog: [...store.replayLog],
     });
     // Prompt for name if not set
     if (!gameStore.displayName) {

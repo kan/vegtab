@@ -35,10 +35,10 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
   const seed = await findOrCreateDailySeed(c.env.DB, data.date);
 
   const existing = await c.env.DB.prepare(
-    `SELECT id, score, move_count, is_cleared FROM play_scores
+    `SELECT id, score, move_count, is_cleared, replay_log_key FROM play_scores
      WHERE user_id = ? AND seed_id = ? AND mode = ?`
   ).bind(userId, seed.id, data.mode).first<{
-    id: string; score: number; move_count: number; is_cleared: number;
+    id: string; score: number; move_count: number; is_cleared: number; replay_log_key: string | null;
   }>();
 
   // Determine if new score is better
@@ -157,5 +157,39 @@ scoreRoutes.get('/my', async (c) => {
       isCleared: !!s.is_cleared,
       createdAt: s.created_at,
     })),
+  });
+});
+
+// GET /api/scores/:scoreId/replay - Get replay data for a score
+scoreRoutes.get('/:scoreId/replay', async (c) => {
+  const userId = c.get('userId');
+  const scoreId = c.req.param('scoreId');
+
+  const score = await c.env.DB.prepare(
+    `SELECT ps.replay_log_key, ps.mode, ps.move_limit, s.seed_value
+     FROM play_scores ps JOIN puzzle_seeds s ON s.id = ps.seed_id
+     WHERE ps.id = ? AND ps.user_id = ?`
+  ).bind(scoreId, userId).first<{
+    replay_log_key: string | null; mode: string; move_limit: number | null; seed_value: string;
+  }>();
+
+  if (!score) return c.json({ error: 'Not found' }, 404);
+  if (!score.replay_log_key) return c.json({ error: 'No replay data' }, 404);
+
+  const obj = await c.env.R2.get(score.replay_log_key);
+  if (!obj) return c.json({ error: 'Replay not found' }, 404);
+
+  const replayLog = JSON.parse(await obj.text());
+
+  // Empty replay logs are not playable
+  if (!Array.isArray(replayLog) || replayLog.length === 0) {
+    return c.json({ error: 'No replay data' }, 404);
+  }
+
+  return c.json({
+    replayLog,
+    seed: Number(score.seed_value),
+    mode: score.mode,
+    moveLimit: score.move_limit,
   });
 });

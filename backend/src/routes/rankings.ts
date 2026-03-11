@@ -30,7 +30,7 @@ async function fetchRanking(
   }
 
   const [rankingEntries, userRank] = await Promise.all([
-    queryRanking(db, seedId, mode as GameMode),
+    queryRanking(db, seedId, mode as GameMode, userId),
     getUserRank(db, userId, seedId, mode as GameMode),
   ]);
 
@@ -71,6 +71,7 @@ interface RankingEntry {
   score: number;
   moveCount: number;
   isCleared?: boolean;
+  scoreId?: string;
 }
 
 interface RankingData {
@@ -80,7 +81,7 @@ interface RankingData {
 // --- Mode-specific ranking queries ---
 
 function sprintRankingSQL(): string {
-  return `SELECT r.user_id, u.display_name, r.best_score, ps2.move_count
+  return `SELECT r.user_id, u.display_name, r.best_score, ps2.move_count, ps2.id as score_id
      FROM (
        SELECT user_id, MAX(score) as best_score
        FROM play_scores
@@ -95,7 +96,7 @@ function sprintRankingSQL(): string {
 }
 
 function clearRankingSQL(): string {
-  return `SELECT r.user_id, u.display_name, r.best_move_count, ps2.score, ps2.is_cleared
+  return `SELECT r.user_id, u.display_name, r.best_move_count, ps2.score, ps2.is_cleared, ps2.id as score_id
      FROM (
        SELECT user_id, MIN(move_count) as best_move_count
        FROM play_scores
@@ -110,7 +111,7 @@ function clearRankingSQL(): string {
 }
 
 function survivalRankingSQL(): string {
-  return `SELECT r.user_id, u.display_name, r.best_move_count, ps2.score
+  return `SELECT r.user_id, u.display_name, r.best_move_count, ps2.score, ps2.id as score_id
      FROM (
        SELECT user_id, MAX(move_count) as best_move_count
        FROM play_scores
@@ -124,24 +125,25 @@ function survivalRankingSQL(): string {
      LIMIT ?`;
 }
 
-async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Promise<RankingEntry[]> {
+async function queryRanking(db: D1Database, seedId: string, mode: GameMode, userId: string): Promise<RankingEntry[]> {
   if (mode === 'sprint') {
     const entries = await db.prepare(sprintRankingSQL())
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
-      .all<{ user_id: string; display_name: string | null; best_score: number; move_count: number }>();
+      .all<{ user_id: string; display_name: string | null; best_score: number; move_count: number; score_id: string }>();
     return (entries.results ?? []).map((e, i) => ({
       rank: i + 1,
       userId: e.user_id,
       displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
       score: e.best_score,
       moveCount: e.move_count,
+      scoreId: e.user_id === userId ? e.score_id : undefined,
     }));
   }
 
   if (mode === 'clear') {
     const entries = await db.prepare(clearRankingSQL())
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
-      .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; is_cleared: number }>();
+      .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; is_cleared: number; score_id: string }>();
     return (entries.results ?? []).map((e, i) => ({
       rank: i + 1,
       userId: e.user_id,
@@ -149,19 +151,21 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode): Pro
       score: e.score,
       moveCount: e.best_move_count,
       isCleared: true,
+      scoreId: e.user_id === userId ? e.score_id : undefined,
     }));
   }
 
   // survival
   const entries = await db.prepare(survivalRankingSQL())
     .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
-    .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number }>();
+    .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; score_id: string }>();
   return (entries.results ?? []).map((e, i) => ({
     rank: i + 1,
     userId: e.user_id,
     displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
     score: e.score,
     moveCount: e.best_move_count,
+    scoreId: e.user_id === userId ? e.score_id : undefined,
   }));
 }
 

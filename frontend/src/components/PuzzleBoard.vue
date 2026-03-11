@@ -23,6 +23,8 @@ const cellSize = ref(0);
 
 // --- Scope selection ---
 const scope = useScopeSelection();
+/** Tracks pending scope swap info for replay recording */
+let pendingScopeSwap: { pos: Position; dir: Direction } | null = null;
 
 // Vegetable colors for check-overlay
 const VEGGIE_COLORS = ['#d4b828', '#4a9a4e', '#7B4FAA', '#c85a5a', '#8a8a7a'];
@@ -177,6 +179,7 @@ async function handleTap(pos: Position) {
   const plan = store.computeItemTapPlan(pos);
   if (!plan) { store.tap(pos); return; }
 
+  store.recordAction({ type: 'tap', pos });
   drag.setLocked(true);
   clearOff(pos.row, pos.col);
   visualBoard.value = plan.boardBeforeActivation;
@@ -205,6 +208,7 @@ async function handleScopeSelection(pos: Position) {
 
 function cancelScopeSelection() {
   scope.cancelSelection();
+  pendingScopeSwap = null;
   visualBoard.value = null;
   showScopeTapHint.value = false;
 }
@@ -228,6 +232,12 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
     return;
   }
 
+  if (pendingScopeSwap) {
+    store.recordAction({ type: 'scope_swap', pos: pendingScopeSwap.pos, dir: pendingScopeSwap.dir, targetCells });
+    pendingScopeSwap = null;
+  } else {
+    store.recordAction({ type: 'scope', pos: scopePos, targetCells });
+  }
   drag.setLocked(true);
   playSE('item_use'); vibrate(20);
 
@@ -303,6 +313,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
     return;
   }
 
+  store.recordAction({ type: 'scope_synthesis', pos1, pos2, targetCells });
   drag.setLocked(true);
   playSE('item_use'); vibrate(20);
 
@@ -392,6 +403,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   // Try normal swap
   const swapPlan = store.computeSwapPlan(pos, dir);
   if (swapPlan) {
+    store.recordAction({ type: 'swap', pos, dir });
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = swapPlan.boardAfterSwap;
     await animateChainsWithScore(swapPlan.chains, swapPlan.finalState.score);
@@ -413,6 +425,7 @@ async function commitSwap(pos: Position, dir: Direction) {
         // One is scope, the other is a regular tile (not both items)
         // After slide animation, mag moved to the neighbor's position
         const scopePos = cell1.item === 'scope' ? nb : pos;
+        pendingScopeSwap = { pos, dir };
         clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
         // Show the swapped board visually
         const swapped = cloneBoard(store.board!);
@@ -430,6 +443,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   // Try item swap
   const itemSwap = store.computeItemSwapPlan(pos, dir);
   if (itemSwap) {
+    store.recordAction({ type: 'swap', pos, dir });
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = itemSwap.boardAfterSwap;
     // Animate pre-chains (matches from the vegetable swap) before item activation
@@ -476,6 +490,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   // Synthesis
   const synthPlan = store.computeSynthesisPlan(pos, dir);
   if (synthPlan) {
+    store.recordAction({ type: 'swap', pos, dir });
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = synthPlan.boardAfterSwap;
     await wait(50);

@@ -16,12 +16,14 @@ export function generateDailySeed(dateStr: string): number {
   return Math.abs(hash);
 }
 
-/** Check if a date string is within ±1 day of JST today (timezone tolerance). */
+/** Check if a date string is valid for score submission.
+ *  Accepts today ±1 day (timezone tolerance) and up to 60 days in the past (calendar plays). */
 export function isDateNearToday(dateStr: string): boolean {
   const today = new Date(todayJST() + 'T00:00:00Z');
   const target = new Date(dateStr + 'T00:00:00Z');
-  const diffMs = Math.abs(today.getTime() - target.getTime());
-  return diffMs <= 24 * 60 * 60 * 1000; // ±1 day
+  const diffDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
+  // Allow 1 day into the future (timezone) and up to 60 days in the past (calendar plays)
+  return diffDays >= -1 && diffDays <= 60;
 }
 
 // Legacy alias for imports
