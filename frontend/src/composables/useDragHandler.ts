@@ -22,6 +22,7 @@ export function useDragHandler(
   boardEl: { value: HTMLElement | null },
   onSwap: (pos: Position, dir: Direction) => void,
   onTap: (pos: Position) => void,
+  options?: { isDragSuppressed?: () => boolean },
 ) {
   const cellOffsets = reactive<Record<string, { x: number; y: number; transition: boolean; z: number }>>({});
   let ptrX = 0, ptrY = 0;
@@ -80,6 +81,7 @@ export function useDragHandler(
 
   function onPointerMove(e: PointerEvent) {
     if (!ptrPos || handled || locked) return;
+    if (options?.isDragSuppressed?.()) return;
     const dx = e.clientX - ptrX, dy = e.clientY - ptrY;
     const cs = cellSize.value;
     if (!dragAxis) {

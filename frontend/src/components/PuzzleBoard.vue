@@ -124,7 +124,9 @@ function showScopeHint(key: string) {
 }
 
 // --- Drag handling ---
-const drag = useDragHandler(cellSize, boardEl, commitSwap, handleTap);
+const drag = useDragHandler(cellSize, boardEl, commitSwap, handleTap, {
+  isDragSuppressed: () => scope.scopeSelecting.value,
+});
 const { cellOffsets, getOff, setOff, clearOff } = drag;
 
 function onPointerUpWithDebug(e: PointerEvent) {
@@ -396,6 +398,8 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
 
 // --- Swap ---
 async function commitSwap(pos: Position, dir: Direction) {
+  // Block swipes while scope selection is active (waiting for user to tap target)
+  if (scope.scopeSelecting.value) return;
   drag.setLocked(true);
   const cs = cellSize.value;
   const nb = adj(pos, dir);
