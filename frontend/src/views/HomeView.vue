@@ -203,9 +203,17 @@ watch(rankingMode, () => fetchRankingPreview());
 onMounted(() => { fetchRankingPreview(); });
 
 function rankingDisplayValue(entry: { score: number; moves: number }) {
-  if (rankingMode.value === 'clear') return `${entry.moves} ${t('mode.moves')}`;
-  if (rankingMode.value === 'survival') return `${entry.moves} ${t('mode.moves')}`;
+  if (rankingMode.value === 'clear' || rankingMode.value === 'survival') {
+    return `${entry.moves} ${t('mode.moves')}`;
+  }
   return entry.score.toLocaleString();
+}
+
+function rankingSubValue(entry: { score: number; moves: number }): string | null {
+  if (rankingMode.value === 'clear' || rankingMode.value === 'survival') {
+    return entry.score.toLocaleString();
+  }
+  return null;
 }
 </script>
 
@@ -305,6 +313,7 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
               <span class="ranking-preview-rank">{{ entry.rank }}</span>
               <span class="ranking-preview-name">{{ entry.playerName }}</span>
               <span class="ranking-preview-score">{{ rankingDisplayValue(entry) }}</span>
+              <span v-if="rankingSubValue(entry)" class="ranking-preview-sub">{{ rankingSubValue(entry) }}</span>
             </div>
           </template>
           <div v-else class="ranking-preview-empty">{{ t('common.noRecords') }}</div>
@@ -941,6 +950,11 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
 .ranking-preview-score {
   font-weight: 700;
   color: var(--brand);
+}
+.ranking-preview-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 .ranking-mode-tabs {
   display: flex;

@@ -269,11 +269,9 @@ function resolveFinalState(
     isGameOver: false, mode, moveLimit, quotaTable, segmentStartScore,
   };
   const goResult = checkGameOverState(tempState);
-  let finalScore = score;
-  if (goResult.gameOver && mode === 'clear') finalScore = moveCount;
   return {
     board: cloneBoard(board),
-    score: finalScore,
+    score,
     rngState,
     moveCount,
     isGameOver: goResult.gameOver,

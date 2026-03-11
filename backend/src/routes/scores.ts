@@ -47,19 +47,21 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     if (data.mode === 'sprint') {
       isBetter = data.score > existing.score;
     } else if (data.mode === 'clear') {
-      // Clear: fewer moves is better; new clear beats non-clear
+      // Clear: fewer moves is better; new clear beats non-clear; same moves → higher score
       if (data.isCleared && !existing.is_cleared) {
         isBetter = true;
       } else if (!data.isCleared && existing.is_cleared) {
         isBetter = false;
       } else if (data.isCleared && existing.is_cleared) {
-        isBetter = data.moveCount < existing.move_count;
+        isBetter = data.moveCount < existing.move_count
+          || (data.moveCount === existing.move_count && data.score > existing.score);
       } else {
         isBetter = false; // both failed, keep existing
       }
     } else {
-      // Survival: more moves is better
-      isBetter = data.moveCount > existing.move_count;
+      // Survival: more moves is better; same moves → higher score
+      isBetter = data.moveCount > existing.move_count
+        || (data.moveCount === existing.move_count && data.score > existing.score);
     }
   }
 

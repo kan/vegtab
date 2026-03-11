@@ -272,12 +272,6 @@ function applyGameOver(state: GameState): void {
   if (result.isCleared !== undefined) state.isCleared = result.isCleared;
   if (result.newSegmentStartScore !== undefined) state.segmentStartScore = result.newSegmentStartScore;
 
-  if (state.isGameOver) {
-    if (state.mode === 'clear') {
-      // Clearモード: スコアは手数（少ないほど良い）
-      state.score = state.moveCount;
-    }
-  }
 }
 
 /** プレイヤーの操作を処理して新しいGameStateを返す */

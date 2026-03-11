@@ -105,7 +105,7 @@ function clearRankingSQL(): string {
      JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.move_count = r.best_move_count
        AND ps2.seed_id = ? AND ps2.mode = ? AND ps2.is_cleared = 1
      JOIN users u ON u.id = r.user_id
-     ORDER BY r.best_move_count ASC
+     ORDER BY r.best_move_count ASC, ps2.score DESC
      LIMIT ?`;
 }
 
@@ -208,16 +208,17 @@ async function getClearUserRank(
   const userBest = await db.prepare(
     `SELECT MIN(move_count) as best_move_count, score FROM play_scores
      WHERE user_id = ? AND seed_id = ? AND mode = 'clear' AND is_cleared = 1
-     ORDER BY move_count ASC LIMIT 1`
+     ORDER BY move_count ASC, score DESC LIMIT 1`
   ).bind(userId, seedId).first<{ best_move_count: number | null; score: number | null }>();
 
   if (!userBest?.best_move_count) return null;
 
+  // Count users with strictly better results (fewer moves, or same moves but higher score)
   const rankResult = await db.prepare(
     `SELECT COUNT(DISTINCT user_id) + 1 as rank FROM play_scores
      WHERE seed_id = ? AND mode = 'clear' AND is_cleared = 1
-     AND move_count < ?`
-  ).bind(seedId, userBest.best_move_count).first<{ rank: number }>();
+     AND (move_count < ? OR (move_count = ? AND score > ?))`
+  ).bind(seedId, userBest.best_move_count, userBest.best_move_count, userBest.score ?? 0).first<{ rank: number }>();
   if (!rankResult) return null;
 
   return { rank: rankResult.rank, score: userBest.score ?? 0, moveCount: userBest.best_move_count };

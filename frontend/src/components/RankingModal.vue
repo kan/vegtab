@@ -80,9 +80,18 @@ async function fetchRanking() {
 
 const myRankDisplay = computed(() => {
   if (!myRank.value) return '';
-  if (activeMode.value === 'clear') return `${myRank.value.moveCount ?? myRank.value.score} ${t('mode.moves')}`;
-  if (activeMode.value === 'survival') return `${myRank.value.moveCount ?? 0} ${t('mode.moves')}`;
+  if (activeMode.value === 'clear' || activeMode.value === 'survival') {
+    return `${myRank.value.moveCount ?? 0} ${t('mode.moves')}`;
+  }
   return myRank.value.score.toLocaleString();
+});
+
+const myRankSubDisplay = computed(() => {
+  if (!myRank.value) return '';
+  if (activeMode.value === 'clear' || activeMode.value === 'survival') {
+    return myRank.value.score.toLocaleString();
+  }
+  return '';
 });
 
 function rankIcon(rank: number): string {
@@ -93,9 +102,17 @@ function rankIcon(rank: number): string {
 }
 
 function displayValue(entry: RankEntry): string {
-  if (activeMode.value === 'clear') return `${entry.moves} ${t('mode.moves')}`;
-  if (activeMode.value === 'survival') return `${entry.moves} ${t('mode.moves')}`;
+  if (activeMode.value === 'clear' || activeMode.value === 'survival') {
+    return `${entry.moves} ${t('mode.moves')}`;
+  }
   return entry.score.toLocaleString();
+}
+
+function subDisplayValue(entry: RankEntry): string | null {
+  if (activeMode.value === 'clear' || activeMode.value === 'survival') {
+    return entry.score.toLocaleString();
+  }
+  return null;
 }
 
 const modes: GameMode[] = ['sprint', 'clear', 'survival'];
@@ -148,6 +165,7 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
           </div>
           <div class="my-rank-right">
             <span class="my-rank-score">{{ myRankDisplay }}</span>
+            <span v-if="myRankSubDisplay" class="my-rank-sub">{{ myRankSubDisplay }}</span>
           </div>
         </div>
         <div v-else class="my-rank-card my-rank-empty">
@@ -168,6 +186,7 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
             </div>
             <div class="rank-right">
               <span class="rank-score">{{ displayValue(entry) }}</span>
+              <span v-if="subDisplayValue(entry)" class="rank-sub">{{ subDisplayValue(entry) }}</span>
             </div>
           </div>
         </div>
@@ -355,11 +374,24 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
 .rank-right {
   text-align: right;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 .rank-score {
   font-weight: 700;
   color: var(--text-primary);
   font-size: 14px;
+}
+.rank-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.my-rank-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 .ranking-empty {
   text-align: center;
