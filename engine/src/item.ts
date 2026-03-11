@@ -1,4 +1,4 @@
-import { Cell, ItemType, Match, Position, SynthesisEffect, BOARD_SIZE } from './types.js';
+import { Cell, Color, ItemType, Match, Position, SynthesisEffect, BOARD_SIZE } from './types.js';
 import { isValidPosition } from './board.js';
 
 /** 上から時計回りの8方向 */
@@ -106,6 +106,21 @@ export const ITEM_PRIORITY: Record<ItemType, number> = {
   v_cut: 3,
   scope: 1,
 };
+
+/** 遅延アイテムを盤面に配置（同一セルは高優先を採用） */
+export function placeDeferredItems(board: (Cell | null)[][], items: { pos: Position; item: ItemType }[]): void {
+  const bestAt = new Map<string, { pos: Position; item: ItemType }>();
+  for (const entry of items) {
+    const key = `${entry.pos.row},${entry.pos.col}`;
+    const existing = bestAt.get(key);
+    if (!existing || ITEM_PRIORITY[entry.item] > ITEM_PRIORITY[existing.item]) {
+      bestAt.set(key, entry);
+    }
+  }
+  for (const entry of bestAt.values()) {
+    board[entry.pos.row][entry.pos.col] = { color: 0 as Color, item: entry.item };
+  }
+}
 
 /**
  * 複数のマッチから最も優先度の高いアイテムを1つ決定
