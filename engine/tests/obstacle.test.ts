@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateObstacles, damageObstacles, countObstacles, allObstaclesCleared } from '../src/obstacle.js';
 import { createRng } from '../src/rng.js';
+import { createColumnRngStates } from '../src/board.js';
 import { Cell, Color, BOARD_SIZE } from '../src/types.js';
 
 function makeEmptyBoard(): (Cell | null)[][] {
@@ -13,12 +14,12 @@ describe('generateObstacles', () => {
   it('同一シードで同一のおじゃまタイル配置を生成する（決定性）', () => {
     const board1 = makeEmptyBoard();
     const board2 = makeEmptyBoard();
-    const rng = createRng(42);
+    const colRng = createColumnRngStates(createRng(42));
 
-    const r1 = generateObstacles(board1, rng);
-    const r2 = generateObstacles(board2, rng);
+    const r1 = generateObstacles(board1, colRng);
+    const r2 = generateObstacles(board2, colRng);
 
-    expect(r1.rngState).toBe(r2.rngState);
+    expect(r1.rngState).toEqual(r2.rngState);
     for (let row = 0; row < BOARD_SIZE; row++) {
       for (let col = 0; col < BOARD_SIZE; col++) {
         expect(board1[row][col]?.obstacle?.durability).toBe(
@@ -32,8 +33,8 @@ describe('generateObstacles', () => {
     // 複数のシードで検証
     for (const seed of [1, 42, 100, 999, 12345]) {
       const board = makeEmptyBoard();
-      const rng = createRng(seed);
-      generateObstacles(board, rng);
+      const colRng = createColumnRngStates(createRng(seed));
+      generateObstacles(board, colRng);
       const count = countObstacles(board);
       expect(count).toBeGreaterThanOrEqual(10);
       expect(count).toBeLessThanOrEqual(20);
@@ -42,23 +43,20 @@ describe('generateObstacles', () => {
 
   it('カスタム数を指定するとその数のおじゃまタイルが生成される', () => {
     const board = makeEmptyBoard();
-    const rng = createRng(42);
-    generateObstacles(board, rng, 5);
+    generateObstacles(board, createColumnRngStates(createRng(42)), 5);
     expect(countObstacles(board)).toBe(5);
   });
 
   it('カスタム数0を指定するとおじゃまタイルが生成されない', () => {
     const board = makeEmptyBoard();
-    const rng = createRng(42);
-    generateObstacles(board, rng, 0);
+    generateObstacles(board, createColumnRngStates(createRng(42)), 0);
     expect(countObstacles(board)).toBe(0);
   });
 
   it('耐久値の分布がおおよそ50%/33%/17%になる', () => {
     // 大量生成して統計的に検証
     const board = makeEmptyBoard();
-    const rng = createRng(42);
-    generateObstacles(board, rng, 60); // 60個生成（64マス中）
+    generateObstacles(board, createColumnRngStates(createRng(42)), 60); // 60個生成（64マス中）
 
     let dur1 = 0, dur2 = 0, dur3 = 0;
     for (let row = 0; row < BOARD_SIZE; row++) {
@@ -86,8 +84,8 @@ describe('generateObstacles', () => {
   it('異なるシードで異なる配置が生成される', () => {
     const board1 = makeEmptyBoard();
     const board2 = makeEmptyBoard();
-    generateObstacles(board1, createRng(42), 10);
-    generateObstacles(board2, createRng(999), 10);
+    generateObstacles(board1, createColumnRngStates(createRng(42)), 10);
+    generateObstacles(board2, createColumnRngStates(createRng(999)), 10);
 
     let same = true;
     for (let row = 0; row < BOARD_SIZE; row++) {

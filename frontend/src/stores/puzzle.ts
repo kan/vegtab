@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
-  initializeGame, processAction, processScopeSynthesis, processDamage,
+  initializeGame, processAction, processScopeSynthesis,
   cloneBoard, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
   calculateStepScore,
   determineItemFromMatches, checkGameOverState,
@@ -184,7 +184,7 @@ function computeDropMovesForSegment(
   }
 }
 
-function computeDropMoves(board: (Cell | null)[][]) {
+function computeDropMoves(board: (Cell | null)[][], passThroughObstacles = false) {
   const moves: { col: number; fromRow: number; toRow: number }[] = [];
   const newTileEntries: { row: number; col: number; segNulls: number }[] = [];
   for (let col = 0; col < BOARD_SIZE; col++) {
@@ -197,6 +197,36 @@ function computeDropMoves(board: (Cell | null)[][]) {
     if (!hasObstacle) {
       // 従来の単純コンパクション
       computeDropMovesForSegment(board, col, 0, BOARD_SIZE, moves, newTileEntries);
+    } else if (passThroughObstacles) {
+      // Clearモード: タイルがおじゃまをすり抜けて落下
+      // おじゃま位置を除外した空きスロットを下から収集
+      const freeRows: number[] = [];
+      const tiles: { row: number; cell: Cell }[] = [];
+      for (let row = BOARD_SIZE - 1; row >= 0; row--) {
+        if (board[row][col]?.obstacle) continue;
+        freeRows.push(row);
+        if (board[row][col] !== null) {
+          tiles.push({ row, cell: board[row][col]! });
+        }
+      }
+      // 落下移動を記録
+      let nullCount = 0;
+      for (let i = 0; i < freeRows.length; i++) {
+        if (i < tiles.length) {
+          if (freeRows[i] !== tiles[i].row) {
+            moves.push({ col, fromRow: tiles[i].row, toRow: freeRows[i] });
+          }
+        } else {
+          nullCount++;
+        }
+      }
+      // 新タイルは列の最上部（おじゃま位置を除く）に入る
+      if (nullCount > 0) {
+        const topFreeRows = freeRows.slice(freeRows.length - nullCount);
+        for (const row of topFreeRows) {
+          newTileEntries.push({ row, col, segNulls: nullCount });
+        }
+      }
     } else {
       // セグメントベース: おじゃまタイルで区切られたセグメントごとに計算
       const obstacleRows: number[] = [];
@@ -224,7 +254,7 @@ function computeDropMoves(board: (Cell | null)[][]) {
 function resolveFinalState(
   board: (Cell | null)[][],
   score: number,
-  rngState: number,
+  rngState: number[],
   moveCount: number,
   mode: GameMode,
   moveLimit: number | undefined,
@@ -281,7 +311,15 @@ function computeItemEffects(
     for (const t of allTargets) {
       const c = board[t.row]?.[t.col];
       if (c === null) continue;
-      if (c.obstacle) continue; // おじゃまタイルはアイテム直接消去不可
+      if (c.obstacle) {
+        // おじゃまタイルが効果範囲内なら耐久値を1減らす
+        c.obstacle.durability--;
+        if (c.obstacle.durability <= 0) {
+          board[t.row][t.col] = null;
+          cleared.push(t);
+        }
+        continue;
+      }
       if (c.item) {
         const tKey = `${t.row},${t.col}`;
         if (!activated.has(tKey)) {
@@ -301,7 +339,7 @@ function computeItemEffects(
 
 function buildItemPlan(
   board: (Cell | null)[][],
-  rngState: number,
+  rngState: number[],
   baseScore: number,
   moveCount: number,
   itemPos: Position,
@@ -318,17 +356,12 @@ function buildItemPlan(
   let scoreFromItems = 0;
   for (const e of effects) scoreFromItems += calcItemEffectScore(e);
 
-  // おじゃまタイルへのダメージ（アイテム効果で消去された全位置）
-  const allItemCleared: Position[] = [];
-  for (const e of effects) {
-    allItemCleared.push(e.itemPos);
-    allItemCleared.push(...e.targets);
-  }
-  let rng = processDamage(board, allItemCleared, rngState);
+  // おじゃまダメージはcomputeItemEffects内で直接処理済み
+  const passThrough = gameMode === 'clear';
 
-  const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
-  applyGravity(board);
-  rng = fillEmptyCells(board, rng);
+  const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
+  applyGravity(board, passThrough);
+  let rng = fillEmptyCells(board, rngState);
   const boardAfterDrop = cloneBoard(board);
 
   const regularChains: ChainAnimData[] = [];
@@ -345,15 +378,11 @@ function buildItemPlan(
     for (const p of clearedPositions) board[p.row][p.col] = null;
     if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
 
-    // おじゃまタイルへのダメージ
+    // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
     const destroyed = damageObstacles(board, clearedPositions);
-    if (destroyed.length > 0) {
-      applyGravity(board);
-      rng = fillEmptyCells(board, rng);
-    }
 
-    const { moves: dm, newTileEntries: nt } = computeDropMoves(board);
-    applyGravity(board);
+    const { moves: dm, newTileEntries: nt } = computeDropMoves(board, passThrough);
+    applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng);
 
     regularChains.push({
@@ -378,8 +407,9 @@ function buildItemPlan(
   };
 }
 
-function computeChainSteps(board: (Cell | null)[][], rng: number, totalScore: number, startChain: number) {
+function computeChainSteps(board: (Cell | null)[][], rng: number[], totalScore: number, startChain: number, gameMode: GameMode = 'sprint') {
   const chains: ChainAnimData[] = [];
+  const passThrough = gameMode === 'clear';
   let chainIndex = startChain;
   let matches = findMatches(board);
 
@@ -392,15 +422,11 @@ function computeChainSteps(board: (Cell | null)[][], rng: number, totalScore: nu
     for (const p of clearedPositions) board[p.row][p.col] = null;
     if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
 
-    // おじゃまタイルへのダメージ
+    // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
     const destroyed = damageObstacles(board, clearedPositions);
-    if (destroyed.length > 0) {
-      applyGravity(board);
-      rng = fillEmptyCells(board, rng);
-    }
 
-    const { moves: dm, newTileEntries: nt } = computeDropMoves(board);
-    applyGravity(board);
+    const { moves: dm, newTileEntries: nt } = computeDropMoves(board, passThrough);
+    applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng);
 
     chains.push({
@@ -524,7 +550,14 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     for (const t of adjacentTargets) {
       const ac = board[t.row]?.[t.col];
       if (!ac) continue;
-      if (ac.obstacle) continue; // おじゃまタイルはスキップ
+      if (ac.obstacle) {
+        ac.obstacle.durability--;
+        if (ac.obstacle.durability <= 0) {
+          board[t.row][t.col] = null;
+          allScopeCleared.push(t);
+        }
+        continue;
+      }
       if (ac.item) {
         totalScore += accumulateItemEffects(
           computeItemEffects(board, t, ac.item), itemEffects, allScopeCleared);
@@ -558,18 +591,18 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       }
     }
 
-    // おじゃまタイルへのダメージ
-    rng = processDamage(board, allScopeCleared, rng);
+    // おじゃまダメージはアイテム効果内で直接処理済み
+    const passThrough = state.mode === 'clear';
 
     const boardAfterClear = cloneBoard(board);
 
-    const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
-    applyGravity(board);
+    const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
+    applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng);
     const boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
-      computeChainSteps(board, rng, totalScore, 2);
+      computeChainSteps(board, rng, totalScore, 2, state.mode);
 
     return {
       scopePos,
@@ -621,7 +654,14 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       adjacentTargets.push(t);
       const ac = board[t.row]?.[t.col];
       if (!ac) continue;
-      if (ac.obstacle) continue; // おじゃまタイルはスキップ
+      if (ac.obstacle) {
+        ac.obstacle.durability--;
+        if (ac.obstacle.durability <= 0) {
+          board[t.row][t.col] = null;
+          allSynthCleared.push(t);
+        }
+        continue;
+      }
       if (ac.item) {
         totalScore += accumulateItemEffects(
           computeItemEffects(board, t, ac.item), itemEffects, allSynthCleared);
@@ -667,7 +707,14 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const t of synthTargets) {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
-        if (c.obstacle) continue; // おじゃまタイルはスキップ
+        if (c.obstacle) {
+          c.obstacle.durability--;
+          if (c.obstacle.durability <= 0) {
+            board[t.row][t.col] = null;
+            allSynthCleared.push(t);
+          }
+          continue;
+        }
         if (c.item) {
           const tKey = `${t.row},${t.col}`;
           if (!activated.has(tKey)) {
@@ -684,18 +731,18 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       }
     }
 
-    // おじゃまタイルへのダメージ
-    rng = processDamage(board, allSynthCleared, rng);
+    // おじゃまダメージはアイテム効果内で直接処理済み
+    const passThrough = state.mode === 'clear';
 
     const boardAfterClear = cloneBoard(board);
 
-    const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
-    applyGravity(board);
+    const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
+    applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng);
     const boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
-      computeChainSteps(board, rng, totalScore, 2);
+      computeChainSteps(board, rng, totalScore, 2, state.mode);
 
     return {
       pos1, pos2, synthEffect: effect, adjacentTargets, targetCells, effectTargets,
@@ -729,6 +776,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     if (matches.length === 0) return null;
 
     const chains: ChainAnimData[] = [];
+    const passThrough = state.mode === 'clear';
     let rng = state.rngState;
     let totalScore = state.score;
     let chainIndex = 1;
@@ -742,15 +790,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const p of clearedPositions) board[p.row][p.col] = null;
       if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
 
-      // おじゃまタイルへのダメージ
+      // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
       const destroyed = damageObstacles(board, clearedPositions);
-      if (destroyed.length > 0) {
-        applyGravity(board);
-        rng = fillEmptyCells(board, rng);
-      }
 
-      const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
-      applyGravity(board);
+      const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
+      applyGravity(board, passThrough);
       rng = fillEmptyCells(board, rng);
 
       chains.push({
@@ -820,7 +864,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     // Process pre-chains: matches created by the vegetable's new position
     const { chains: preChains, rng: preRng, totalScore: preScore } =
-      computeChainSteps(board, state.rngState, state.score, 1);
+      computeChainSteps(board, state.rngState, state.score, 1, state.mode);
 
     // Find the item's current position after gravity (it may have dropped).
     // Items never participate in matches, so the original item is still on the board.
@@ -914,11 +958,25 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       board[pos.row][pos.col] = null;
       board[target.row][target.col] = null;
 
-      // Get color targets and clear them (skip obstacles)
+      // Get color targets and clear them (obstacles take damage)
       const colorTargetsRaw = targetColor != null ? getFlushTargets(board, targetColor) : [];
-      const colorTargets = colorTargetsRaw.filter(t => !board[t.row][t.col]?.obstacle);
-      const allTargets: Position[] = [...colorTargets];
-      for (const ct of colorTargets) board[ct.row][ct.col] = null;
+      const allTargets: Position[] = [];
+      const colorTargets: Position[] = [];
+      for (const t of colorTargetsRaw) {
+        const c = board[t.row]?.[t.col];
+        if (!c) continue;
+        if (c.obstacle) {
+          c.obstacle.durability--;
+          if (c.obstacle.durability <= 0) {
+            board[t.row][t.col] = null;
+            allTargets.push(t);
+          }
+          continue;
+        }
+        colorTargets.push(t);
+        allTargets.push(t);
+        board[t.row][t.col] = null;
+      }
       totalScore += ITEM_BASE_POINTS.flush * colorTargets.length;
 
       // Each color target position fires the other item's effect
@@ -934,7 +992,14 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         for (const t of subTargets) {
           const c = board[t.row]?.[t.col];
           if (c === null) continue;
-          if (c.obstacle) continue; // おじゃまタイルはスキップ
+          if (c.obstacle) {
+            c.obstacle.durability--;
+            if (c.obstacle.durability <= 0) {
+              board[t.row][t.col] = null;
+              allTargets.push(t);
+            }
+            continue;
+          }
           if (c.item) {
             const tKey = `${t.row},${t.col}`;
             if (!activated.has(tKey)) {
@@ -967,7 +1032,14 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const t of colorTargets) {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
-        if (c.obstacle) continue; // おじゃまタイルはスキップ
+        if (c.obstacle) {
+          c.obstacle.durability--;
+          if (c.obstacle.durability <= 0) {
+            board[t.row][t.col] = null;
+            cleared.push(t);
+          }
+          continue;
+        }
         if (c.item) {
           const tKey = `${t.row},${t.col}`;
           if (!activated.has(tKey)) {
@@ -997,7 +1069,14 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       for (const t of targets) {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
-        if (c.obstacle) continue; // おじゃまタイルはスキップ
+        if (c.obstacle) {
+          c.obstacle.durability--;
+          if (c.obstacle.durability <= 0) {
+            board[t.row][t.col] = null;
+            cleared.push(t);
+          }
+          continue;
+        }
         if (c.item) {
           const tKey = `${t.row},${t.col}`;
           if (!activated.has(tKey)) {
@@ -1031,16 +1110,16 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       }
     }
 
-    // おじゃまタイルへのダメージ
-    rng = processDamage(board, allSynthCleared, rng);
+    // おじゃまダメージはアイテム効果内で直接処理済み
+    const passThrough = state.mode === 'clear';
 
-    const { moves: dropMoves, newTileEntries } = computeDropMoves(board);
-    applyGravity(board);
+    const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
+    applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng);
     const boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
-      computeChainSteps(board, rng, totalScore, 2);
+      computeChainSteps(board, rng, totalScore, 2, state.mode);
 
     return {
       boardAfterSwap,

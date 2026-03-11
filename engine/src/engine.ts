@@ -5,6 +5,7 @@ import {
 import { createRng, nextInt } from './rng.js';
 import {
   generateRawBoard, fillEmptyCells, cloneBoard, getCell, isValidPosition, nextColor,
+  createColumnRngStates,
 } from './board.js';
 import { findMatches, getUniquePositions, hasMatches } from './match.js';
 import { applyGravity } from './gravity.js';
@@ -38,16 +39,18 @@ export function initializeGame(
   mode: GameMode = 'sprint',
   params?: GameInitParams,
 ): GameState {
-  let { board, rngState } = generateRawBoard(seed);
+  const { board, rngState: mainRng } = generateRawBoard(seed);
+  let rngState = createColumnRngStates(mainRng);
 
   // 自動消去ループ: マッチがなくなるまで繰り返す
+  const passThrough = mode === 'clear';
   while (hasMatches(board)) {
     const matches = findMatches(board);
     const positions = getUniquePositions(matches);
     for (const pos of positions) {
       board[pos.row][pos.col] = null;
     }
-    applyGravity(board);
+    applyGravity(board, passThrough);
     rngState = fillEmptyCells(board, rngState);
   }
 
@@ -83,7 +86,7 @@ export function cloneGameState(state: GameState): GameState {
   return {
     board: cloneBoard(state.board),
     score: state.score,
-    rngState: state.rngState,
+    rngState: [...state.rngState],
     moveCount: state.moveCount,
     isGameOver: state.isGameOver,
     mode: state.mode,
@@ -101,13 +104,13 @@ function activateItem(
   item: ItemType,
   targetColor: number | undefined,
   chainIndex: number,
-  rngState: number,
+  rngState: number[],
   targetCells?: Position[],
-): { score: number; rngState: number; chainSteps: ChainStep[]; clearedPositions: Position[] } {
+): { score: number; rngState: number[]; chainSteps: ChainStep[]; clearedPositions: Position[] } {
   const activated = new Set<string>();
   const chainSteps: ChainStep[] = [];
   let totalScore = 0;
-  let rng = rngState;
+  const rng = rngState; // アイテム発動中はRNG不使用（補充なし）
   const allCleared: Position[] = [];
 
   // 再帰的に誘爆を処理するキュー
@@ -133,7 +136,15 @@ function activateItem(
     for (const t of targets) {
       const tCell = board[t.row]?.[t.col];
       if (tCell === null) continue;
-      if (tCell.obstacle) continue; // おじゃまタイルはアイテム直接消去不可
+      if (tCell.obstacle) {
+        // おじゃまタイルが効果範囲内なら耐久値を1減らす
+        tCell.obstacle.durability--;
+        if (tCell.obstacle.durability <= 0) {
+          board[t.row][t.col] = null;
+          allCleared.push(t);
+        }
+        continue;
+      }
       if (tCell.item) {
         // 誘爆キューに追加
         const tKey = `${t.row},${t.col}`;
@@ -172,8 +183,8 @@ function activateCoffeeSynthesis(
   otherItem: ItemType,
   targetColor: number,
   chainIndex: number,
-  rngState: number,
-): { score: number; rngState: number; chainSteps: ChainStep[]; clearedPositions: Position[] } {
+  rngState: number[],
+): { score: number; rngState: number[]; chainSteps: ChainStep[]; clearedPositions: Position[] } {
   // まず両方のアイテムを消去
   board[pos.row][pos.col] = null;
   board[coffeePos.row][coffeePos.col] = null;
@@ -215,7 +226,14 @@ function activateCoffeeSynthesis(
     for (const t of targets) {
       const cell = board[t.row]?.[t.col];
       if (cell === null) continue;
-      if (cell.obstacle) continue; // おじゃまタイルはスキップ
+      if (cell.obstacle) {
+        cell.obstacle.durability--;
+        if (cell.obstacle.durability <= 0) {
+          board[t.row][t.col] = null;
+          allCleared.push(t);
+        }
+        continue;
+      }
       if (cell.item) {
         // 誘爆
         const key = `${t.row},${t.col}`;
@@ -245,18 +263,18 @@ function activateCoffeeSynthesis(
 /** おじゃまタイルへのダメージ処理（消去位置に基づく）
  * boardを直接変更する: 隣接おじゃまの耐久値減少・破壊時のgravity・補充
  * @returns 更新後のrngState */
-export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number): number {
+export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number[], mode: GameMode = 'sprint'): number[] {
   if (clearedPositions.length === 0) return rngState;
   let rng = rngState;
   const destroyed = damageObstacles(board, clearedPositions);
   if (destroyed.length > 0) {
-    applyGravity(board);
+    applyGravity(board, mode === 'clear');
     rng = fillEmptyCells(board, rng);
   }
   return rng;
 }
 
-/** ゲーム終了チェック＋残存アイテムボーナス加算 */
+/** ゲーム終了チェック */
 function applyGameOver(state: GameState): void {
   const result = checkGameOverState(state);
   state.isGameOver = result.gameOver;
@@ -293,7 +311,14 @@ export function processAction(state: GameState, action: Action): GameState {
     for (const t of adjTargets) {
       const adjCell = getCell(board, t);
       if (!adjCell) continue;
-      if (adjCell.obstacle) continue;
+      if (adjCell.obstacle) {
+        adjCell.obstacle.durability--;
+        if (adjCell.obstacle.durability <= 0) {
+          board[t.row][t.col] = null;
+          allCleared.push(t);
+        }
+        continue;
+      }
       if (adjCell.item) {
         let tc: number | undefined;
         if (adjCell.item === 'flush') {
@@ -339,11 +364,8 @@ export function processAction(state: GameState, action: Action): GameState {
       }
     }
 
-    // おじゃまタイルへのダメージ
-    newState.rngState = processDamage(board, allCleared, newState.rngState);
-
-    // 落下 → 補充 → 連鎖
-    applyGravity(board);
+    // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
+    applyGravity(board, newState.mode === 'clear');
     newState.rngState = fillEmptyCells(board, newState.rngState);
     const chainResult = processChains(board, newState.rngState, 2, newState.mode);
     newState.score += chainResult.score;
@@ -375,11 +397,8 @@ export function processAction(state: GameState, action: Action): GameState {
     newState.rngState = result.rngState;
     newState.moveCount++;
 
-    // おじゃまタイルへのダメージ
-    newState.rngState = processDamage(board, result.clearedPositions, newState.rngState);
-
-    // 落下 → 補充 → 連鎖
-    applyGravity(board);
+    // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
+    applyGravity(board, newState.mode === 'clear');
     newState.rngState = fillEmptyCells(board, newState.rngState);
     const chainResult = processChains(board, newState.rngState, 2, newState.mode);
     newState.score += chainResult.score;
@@ -411,16 +430,14 @@ export function processAction(state: GameState, action: Action): GameState {
 
         const synthResult = processSynthesis(
           board, action.pos, targetPos, cell1.item, cell2.item,
-          synthesis.effect, newState.rngState
+          synthesis.effect, newState.rngState, newState.mode
         );
         newState.score += synthResult.score;
         newState.rngState = synthResult.rngState;
         newState.moveCount++;
 
-        // おじゃまタイルへのダメージ
-        newState.rngState = processDamage(board, synthResult.clearedPositions, newState.rngState);
-
-        applyGravity(board);
+        // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
+        applyGravity(board, newState.mode === 'clear');
         newState.rngState = fillEmptyCells(board, newState.rngState);
         const chainResult = processChains(board, newState.rngState, 2, newState.mode);
         newState.score += chainResult.score;
@@ -456,10 +473,8 @@ export function processAction(state: GameState, action: Action): GameState {
       newState.rngState = result.rngState;
       newState.moveCount++;
 
-      // おじゃまタイルへのダメージ
-      newState.rngState = processDamage(board, result.clearedPositions, newState.rngState);
-
-      applyGravity(board);
+      // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
+      applyGravity(board, newState.mode === 'clear');
       newState.rngState = fillEmptyCells(board, newState.rngState);
       const chainResult = processChains(board, newState.rngState, 2, newState.mode);
       newState.score += chainResult.score;
@@ -504,10 +519,10 @@ export function processAction(state: GameState, action: Action): GameState {
     }
 
     // おじゃまタイルへのダメージ
-    newState.rngState = processDamage(board, cleared, newState.rngState);
+    newState.rngState = processDamage(board, cleared, newState.rngState, newState.mode);
 
     // 落下 → 補充 → 連鎖
-    applyGravity(board);
+    applyGravity(board, newState.mode === 'clear');
     newState.rngState = fillEmptyCells(board, newState.rngState);
     const chainResult = processChains(board, newState.rngState, 2, newState.mode);
     newState.score += chainResult.score;
@@ -523,9 +538,9 @@ export function processAction(state: GameState, action: Action): GameState {
 function clearTargets(
   board: (Cell | null)[][],
   targets: Position[],
-  rngState: number,
+  rngState: number[],
   excludePositions?: Set<string>,
-): { score: number; rngState: number; clearedPositions: Position[] } {
+): { score: number; rngState: number[]; clearedPositions: Position[] } {
   let rng = rngState;
   let score = 0;
   let cleared = 0;
@@ -535,7 +550,15 @@ function clearTargets(
   for (const t of targets) {
     const cell = board[t.row]?.[t.col];
     if (cell === null) continue;
-    if (cell.obstacle) continue; // おじゃまタイルはスキップ
+    if (cell.obstacle) {
+      // おじゃまタイルが効果範囲内なら耐久値を1減らす
+      cell.obstacle.durability--;
+      if (cell.obstacle.durability <= 0) {
+        board[t.row][t.col] = null;
+        allCleared.push(t);
+      }
+      continue;
+    }
     if (cell.item) {
       const key = `${t.row},${t.col}`;
       if (!activated.has(key)) {
@@ -563,8 +586,9 @@ function processSynthesis(
   item1: ItemType,
   item2: ItemType,
   effect: SynthesisEffect,
-  rngState: number,
-): { score: number; rngState: number; clearedPositions: Position[] } {
+  rngState: number[],
+  mode: GameMode = 'sprint',
+): { score: number; rngState: number[]; clearedPositions: Position[] } {
   let rng = rngState;
   let totalScore = 0;
   const allCleared: Position[] = [];
@@ -587,7 +611,7 @@ function processSynthesis(
     }
 
     totalScore += getFullClearBonus();
-    applyGravity(board);
+    applyGravity(board, mode === 'clear');
     rng = fillEmptyCells(board, rng);
 
     return { score: totalScore, rngState: rng, clearedPositions: allCleared };
@@ -607,7 +631,14 @@ function processSynthesis(
     for (const t of targets) {
       const cell = board[t.row]?.[t.col];
       if (cell === null) continue;
-      if (cell.obstacle) continue;
+      if (cell.obstacle) {
+        cell.obstacle.durability--;
+        if (cell.obstacle.durability <= 0) {
+          board[t.row][t.col] = null;
+          allCleared.push(t);
+        }
+        continue;
+      }
       if (cell.item) {
         const result = activateItem(board, t, cell.item, undefined, 1, rng);
         totalScore += result.score;
@@ -692,7 +723,14 @@ export function processScopeSynthesis(
     for (const t of adjTargets) {
       const adjCell = getCell(board, t);
       if (!adjCell) continue;
-      if (adjCell.obstacle) continue;
+      if (adjCell.obstacle) {
+        adjCell.obstacle.durability--;
+        if (adjCell.obstacle.durability <= 0) {
+          board[t.row][t.col] = null;
+          allCleared.push(t);
+        }
+        continue;
+      }
       if (adjCell.item) {
         let tc: number | undefined;
         if (adjCell.item === 'flush') {
@@ -749,11 +787,8 @@ export function processScopeSynthesis(
     allCleared.push(...result.clearedPositions);
   }
 
-  // おじゃまタイルへのダメージ
-  newState.rngState = processDamage(board, allCleared, newState.rngState);
-
-  // 落下 → 補充 → 連鎖
-  applyGravity(board);
+  // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
+  applyGravity(board, newState.mode === 'clear');
   newState.rngState = fillEmptyCells(board, newState.rngState);
   const chainResult = processChains(board, newState.rngState, 2, newState.mode);
   newState.score += chainResult.score;
@@ -766,10 +801,10 @@ export function processScopeSynthesis(
 /** 落下後の連鎖を処理 */
 function processChains(
   board: (Cell | null)[][],
-  rngState: number,
+  rngState: number[],
   startChain: number,
   mode: GameMode = 'sprint',
-): { score: number; rngState: number; steps: ChainStep[] } {
+): { score: number; rngState: number[]; steps: ChainStep[] } {
   let rng = rngState;
   let totalScore = 0;
   const steps: ChainStep[] = [];
@@ -810,10 +845,10 @@ function processChains(
     chainIndex++;
 
     // おじゃまタイルへのダメージ
-    rng = processDamage(board, cleared, rng);
+    rng = processDamage(board, cleared, rng, mode);
 
     // 落下 → 補充
-    applyGravity(board);
+    applyGravity(board, mode === 'clear');
     rng = fillEmptyCells(board, rng);
   }
 

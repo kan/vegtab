@@ -1,19 +1,24 @@
 import { Cell, Color, Obstacle, Position, BOARD_SIZE } from './types.js';
-import { nextInt } from './rng.js';
+import { createRng, nextInt } from './rng.js';
 
 /**
  * 盤面上におじゃまタイルを生成する
  * @param board 自動消去済みの盤面
- * @param rngState RNG状態
+ * @param columnRngStates 列ごとRNG状態（おじゃま生成用に先頭列のRNGから派生）
  * @param count おじゃまタイルの数（省略時: 10-20のランダム）
- * @returns 更新された盤面とRNG状態
+ * @returns 更新された盤面と更新されたRNG状態
  */
 export function generateObstacles(
   board: (Cell | null)[][],
-  rngState: number,
+  columnRngStates: number[],
   count?: number,
-): { board: (Cell | null)[][]; rngState: number } {
-  let rng = rngState;
+): { board: (Cell | null)[][]; rngState: number[] } {
+  // おじゃま配置用に列RNGの先頭から専用RNGを派生
+  let [derivedSeed] = nextInt(columnRngStates[0], 0x7fffffff);
+  let rng = createRng(derivedSeed);
+  // 先頭列のRNGも進める（派生で1回消費）
+  const newStates = [...columnRngStates];
+  newStates[0] = derivedSeed;
 
   // デフォルト数: 10-20
   let obstacleCount: number;
@@ -57,7 +62,7 @@ export function generateObstacles(
     board[pos.row][pos.col] = { color, obstacle: { durability } };
   }
 
-  return { board, rngState: rng };
+  return { board, rngState: newStates };
 }
 
 /** おじゃまタイルの数をカウント */

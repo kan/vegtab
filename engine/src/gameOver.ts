@@ -104,7 +104,7 @@ export function isGameOver(
     moveCount,
     moveLimit,
     score: score ?? 0,
-    rngState: 0,
+    rngState: [],
     isGameOver: false,
     quotaTable,
   }).gameOver;

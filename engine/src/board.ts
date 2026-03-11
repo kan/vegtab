@@ -14,6 +14,18 @@ export function createEmptyBoard(): (Cell | null)[][] {
   );
 }
 
+/** メインRNGから列ごとの独立RNGシードを生成 */
+export function createColumnRngStates(rngState: number): number[] {
+  let rng = rngState;
+  const states: number[] = [];
+  for (let col = 0; col < BOARD_SIZE; col++) {
+    let seed: number;
+    [rng, seed] = nextInt(rng, 0x7fffffff);
+    states.push(createRng(seed));
+  }
+  return states;
+}
+
 /** シード値から初期盤面を生成（自動消去前） */
 export function generateRawBoard(seed: number): { board: (Cell | null)[][]; rngState: number } {
   let rng = createRng(seed);
@@ -28,11 +40,14 @@ export function generateRawBoard(seed: number): { board: (Cell | null)[][]; rngS
   return { board, rngState: rng };
 }
 
-/** 盤面上の空きマスにシード値に基づく新しい付箋を補充する（上から降ってくる） */
-export function fillEmptyCells(board: (Cell | null)[][], rngState: number): number {
-  let rng = rngState;
-  // 各列を上から順に処理
+/**
+ * 盤面上の空きマスを列ごとのRNGストリームで補充する。
+ * 各列の補充タイル列はシードにより一意に決まる（操作順に依存しない）。
+ */
+export function fillEmptyCells(board: (Cell | null)[][], columnRngStates: number[]): number[] {
+  const states = [...columnRngStates];
   for (let col = 0; col < BOARD_SIZE; col++) {
+    let rng = states[col];
     for (let row = 0; row < BOARD_SIZE; row++) {
       if (board[row][col] === null) {
         let color: Color;
@@ -40,8 +55,9 @@ export function fillEmptyCells(board: (Cell | null)[][], rngState: number): numb
         board[row][col] = { color };
       }
     }
+    states[col] = rng;
   }
-  return rng;
+  return states;
 }
 
 /** 盤面のディープコピー */

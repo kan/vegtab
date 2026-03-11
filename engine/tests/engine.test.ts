@@ -34,7 +34,7 @@ describe('Game Initialization', () => {
         expect(s1.board[r][c]!.color).toBe(s2.board[r][c]!.color);
       }
     }
-    expect(s1.rngState).toBe(s2.rngState);
+    expect(s1.rngState).toEqual(s2.rngState);
   });
 
   it('異なるシードで異なる盤面を生成する', () => {
@@ -98,7 +98,7 @@ describe('Process Action - Swap', () => {
       const r1 = processAction(s1, action);
       const r2 = processAction(s2, action);
       expect(r1.score).toBe(r2.score);
-      expect(r1.rngState).toBe(r2.rngState);
+      expect(r1.rngState).toEqual(r2.rngState);
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           expect(r1.board[r][c]?.color).toBe(r2.board[r][c]?.color);
@@ -408,7 +408,7 @@ describe('Mode Determinism', () => {
       const s1 = initializeGame(42, mode);
       const s2 = initializeGame(42, mode);
       expect(s1.mode).toBe(s2.mode);
-      expect(s1.rngState).toBe(s2.rngState);
+      expect(s1.rngState).toEqual(s2.rngState);
       expect(s1.moveLimit).toBe(s2.moveLimit);
       expect(s1.quotaTable).toEqual(s2.quotaTable);
       for (let r = 0; r < BOARD_SIZE; r++) {

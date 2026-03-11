@@ -74,7 +74,7 @@ function tryRestoreSession(seed: number, mode: GameMode): boolean {
     const saved = JSON.parse(raw);
     if (saved.seed !== seed || saved.mode !== mode) return false;
     const s = saved.state;
-    if (!s?.board || typeof s.score !== 'number' || typeof s.rngState !== 'number') { clearSession(); return false; }
+    if (!s?.board || typeof s.score !== 'number' || !Array.isArray(s.rngState)) { clearSession(); return false; }
     if (s.isGameOver) { clearSession(); return false; }
     store.restoreState(seed, s, saved.maxChain ?? 0, saved.generatedItemTypes ?? []);
     selectedMode.value = mode;

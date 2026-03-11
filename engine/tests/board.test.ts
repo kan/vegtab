@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateRawBoard, cloneBoard, createEmptyBoard, fillEmptyCells } from '../src/board.js';
+import { generateRawBoard, cloneBoard, createEmptyBoard, fillEmptyCells, createColumnRngStates } from '../src/board.js';
+import { createRng } from '../src/rng.js';
 import { BOARD_SIZE, NUM_COLORS } from '../src/types.js';
 
 describe('Board', () => {
@@ -59,7 +60,7 @@ describe('Board', () => {
     const board = createEmptyBoard();
     board[0][0] = null;
     board[3][5] = null;
-    fillEmptyCells(board, 42);
+    fillEmptyCells(board, createColumnRngStates(createRng(42)));
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         expect(board[r][c]).not.toBeNull();

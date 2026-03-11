@@ -67,7 +67,8 @@ export type GameInitParams = {
 export type GameState = {
   board: (Cell | null)[][];
   score: number;
-  rngState: number;
+  /** 列ごとの独立RNGストリーム（各列の補充タイル列がシードで一意に決まる） */
+  rngState: number[];
   moveCount: number;
   isGameOver: boolean;
   mode: GameMode;

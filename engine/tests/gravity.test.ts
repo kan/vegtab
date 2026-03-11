@@ -138,3 +138,77 @@ describe('Gravity', () => {
     expect(board[BOARD_SIZE - 2][0]?.color).toBe(1);
   });
 });
+
+describe('Gravity (passThroughObstacles = true / Clear mode)', () => {
+  it('タイルがおじゃまタイルをすり抜けて最下段まで落下する', () => {
+    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
+      Array.from({ length: BOARD_SIZE }, () => null)
+    );
+    board[1][0] = { color: 1 as Color };
+    board[4][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    applyGravity(board, true);
+
+    expect(board[4][0]?.obstacle?.durability).toBe(1);
+    expect(board[BOARD_SIZE - 1][0]?.color).toBe(1);
+  });
+
+  it('複数おじゃまタイルをすり抜けて落下する', () => {
+    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
+      Array.from({ length: BOARD_SIZE }, () => null)
+    );
+    board[0][0] = { color: 1 as Color };
+    board[2][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+    board[5][0] = { color: 0 as Color, obstacle: { durability: 2 } };
+
+    applyGravity(board, true);
+
+    expect(board[2][0]?.obstacle).toBeDefined();
+    expect(board[5][0]?.obstacle).toBeDefined();
+    expect(board[BOARD_SIZE - 1][0]?.color).toBe(1);
+    expect(board[0][0]).toBeNull();
+  });
+
+  it('おじゃまタイルの間にあるタイルも下に詰まる', () => {
+    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
+      Array.from({ length: BOARD_SIZE }, () => null)
+    );
+    board[2][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+    board[3][0] = { color: 1 as Color };
+    board[5][0] = { color: 0 as Color, obstacle: { durability: 2 } };
+
+    applyGravity(board, true);
+
+    expect(board[2][0]?.obstacle).toBeDefined();
+    expect(board[5][0]?.obstacle).toBeDefined();
+    expect(board[BOARD_SIZE - 1][0]?.color).toBe(1);
+  });
+
+  it('おじゃまなしの列はpassThroughでも通常と同じ結果', () => {
+    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
+      Array.from({ length: BOARD_SIZE }, () => null)
+    );
+    board[0][0] = { color: 1 as Color };
+    board[2][0] = { color: 2 as Color };
+
+    applyGravity(board, true);
+
+    expect(board[BOARD_SIZE - 1][0]!.color).toBe(2);
+    expect(board[BOARD_SIZE - 2][0]!.color).toBe(1);
+  });
+
+  it('おじゃまタイルが最下段にある場合、通常タイルはその上に詰まる', () => {
+    const board: (Cell | null)[][] = Array.from({ length: BOARD_SIZE }, () =>
+      Array.from({ length: BOARD_SIZE }, () => null)
+    );
+    board[0][0] = { color: 1 as Color };
+    board[1][0] = { color: 2 as Color };
+    board[BOARD_SIZE - 1][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    applyGravity(board, true);
+
+    expect(board[BOARD_SIZE - 1][0]?.obstacle).toBeDefined();
+    expect(board[BOARD_SIZE - 2][0]?.color).toBe(2);
+    expect(board[BOARD_SIZE - 3][0]?.color).toBe(1);
+  });
+});
