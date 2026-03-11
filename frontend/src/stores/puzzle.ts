@@ -8,7 +8,7 @@ import {
   isValidPosition, getItemTargets, findFlushTargetColor,
   getSynthesisEffect, getSynthesisTargets,
   getFlushTargets, getVCutTargets, getHCutTargets, getBurstTargets,
-  getScopeAdjacentTargets,
+  getScopeAdjacentTargets, ITEM_PRIORITY,
   countObstacles, damageObstacles, damageObstacleAt, getQuota,
   type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
@@ -344,6 +344,7 @@ function buildItemPlan(
   gameMoveLimit?: number,
   quotaTable?: number[],
   segmentStartScore?: number,
+  suppressItemGen = false,
 ): ItemAnimPlan {
   const boardBefore = cloneBoard(board);
   const effects = computeItemEffects(board, itemPos, itemType, targetColor);
@@ -359,36 +360,9 @@ function buildItemPlan(
   let rng = fillEmptyCells(board, rngState);
   const boardAfterDrop = cloneBoard(board);
 
-  const regularChains: ChainAnimData[] = [];
-  let totalScore = baseScore + scoreFromItems;
-  let chainIndex = 2;
-  let matches = findMatches(board);
-
-  while (matches.length > 0) {
-    const clearedPositions = getUniquePositions(matches);
-    const itemGen = determineItemFromMatches(matches);
-    const stepScore = calculateStepScore(matches, chainIndex);
-    totalScore += stepScore;
-
-    for (const p of clearedPositions) board[p.row][p.col] = null;
-    if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
-
-    // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
-    const destroyed = damageObstacles(board, clearedPositions);
-
-    const { moves: dm, newTileEntries: nt } = computeDropMoves(board, passThrough);
-    applyGravity(board, passThrough);
-    rng = fillEmptyCells(board, rng);
-
-    regularChains.push({
-      matches, clearedPositions, destroyedObstacles: destroyed,
-      itemGen, score: stepScore, chainIndex,
-      dropMoves: dm, newTileEntries: nt,
-      boardAfterDrop: cloneBoard(board),
-    });
-    chainIndex++;
-    matches = findMatches(board);
-  }
+  const { chains: regularChains, rng: finalRng, totalScore } =
+    computeChainSteps(board, rng, baseScore + scoreFromItems, 2, gameMode, suppressItemGen);
+  rng = finalRng;
 
   return {
     boardBeforeActivation: boardBefore,
@@ -402,20 +376,40 @@ function buildItemPlan(
   };
 }
 
-function computeChainSteps(board: (Cell | null)[][], rng: number[], totalScore: number, startChain: number, gameMode: GameMode = 'sprint') {
+/** 遅延アイテムを盤面に配置（同一セルは高優先を採用） */
+function placeDeferredItems(board: (Cell | null)[][], items: { pos: Position; item: ItemType }[]): void {
+  const bestAt = new Map<string, { pos: Position; item: ItemType }>();
+  for (const entry of items) {
+    const key = `${entry.pos.row},${entry.pos.col}`;
+    const existing = bestAt.get(key);
+    if (!existing || ITEM_PRIORITY[entry.item] > ITEM_PRIORITY[existing.item]) {
+      bestAt.set(key, entry);
+    }
+  }
+  for (const entry of bestAt.values()) {
+    board[entry.pos.row][entry.pos.col] = { color: 0 as Color, item: entry.item };
+  }
+}
+
+function computeChainSteps(
+  board: (Cell | null)[][], rng: number[], totalScore: number,
+  startChain: number, gameMode: GameMode = 'sprint', suppressItemGen = false,
+) {
   const chains: ChainAnimData[] = [];
+  const deferredItems: { pos: Position; item: ItemType }[] = [];
   const passThrough = gameMode === 'clear';
   let chainIndex = startChain;
   let matches = findMatches(board);
 
   while (matches.length > 0) {
     const clearedPositions = getUniquePositions(matches);
-    const itemGen = determineItemFromMatches(matches);
+    const itemGen = suppressItemGen ? null : determineItemFromMatches(matches);
     const stepScore = calculateStepScore(matches, chainIndex);
     totalScore += stepScore;
 
     for (const p of clearedPositions) board[p.row][p.col] = null;
-    if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
+    // アイテムは遅延配置（連鎖完了後にまとめて配置）
+    if (itemGen) deferredItems.push(itemGen);
 
     // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
     const destroyed = damageObstacles(board, clearedPositions);
@@ -433,6 +427,12 @@ function computeChainSteps(board: (Cell | null)[][], rng: number[], totalScore: 
     chainIndex++;
     matches = findMatches(board);
   }
+
+  // 連鎖完了後に遅延アイテムを配置
+  if (deferredItems.length > 0) {
+    placeDeferredItems(board, deferredItems);
+  }
+
   return { chains, rng, totalScore };
 }
 
@@ -749,6 +749,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     if (matches.length === 0) return null;
 
     const chains: ChainAnimData[] = [];
+    const deferredItems: { pos: Position; item: ItemType }[] = [];
     const passThrough = state.mode === 'clear';
     let rng = state.rngState;
     let totalScore = state.score;
@@ -761,7 +762,15 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       totalScore += stepScore;
 
       for (const p of clearedPositions) board[p.row][p.col] = null;
-      if (itemGen) board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
+      if (itemGen) {
+        if (chainIndex === 1) {
+          // 1連鎖目（ユーザースワイプ直後）のみ即時配置
+          board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
+        } else {
+          // 2連鎖目以降は遅延配置
+          deferredItems.push(itemGen);
+        }
+      }
 
       // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
       const destroyed = damageObstacles(board, clearedPositions);
@@ -777,6 +786,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       });
       chainIndex++;
       matches = findMatches(board);
+    }
+
+    // 連鎖完了後に遅延アイテムを配置
+    if (deferredItems.length > 0) {
+      placeDeferredItems(board, deferredItems);
     }
 
     return {
@@ -1119,10 +1133,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           targetColor = findFlushTargetColor(board, pos) ?? undefined;
         }
         // moveCount - 1 because buildItemPlan adds 1 internally; we don't want to increment
+        // suppressItemGen: 自動発動中は新アイテム生成を抑制
         const plan = buildItemPlan(
           board, state.rngState, state.score, state.moveCount - 1,
           pos, cell.item, targetColor,
           state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+          true,
         );
         return { pos, plan };
       }

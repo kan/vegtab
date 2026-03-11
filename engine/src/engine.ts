@@ -10,7 +10,7 @@ import {
 import { findMatches, getUniquePositions, hasMatches } from './match.js';
 import { applyGravity } from './gravity.js';
 import {
-  determineItem, determineItemFromMatches,
+  determineItem, determineItemFromMatches, ITEM_PRIORITY,
   getItemTargets, getSynthesisEffect, getSynthesisTargets,
   findFlushTargetColor, getFlushTargets,
   getVCutTargets, getHCutTargets, getBurstTargets,
@@ -762,24 +762,43 @@ export function processScopeSynthesis(
   return newState;
 }
 
-/** 落下後の連鎖を処理 */
+/** 遅延アイテムを盤面に配置（同一セルは高優先を採用） */
+function placeDeferredItems(board: (Cell | null)[][], items: { pos: Position; item: ItemType }[]): void {
+  const bestAt = new Map<string, { pos: Position; item: ItemType }>();
+  for (const entry of items) {
+    const key = `${entry.pos.row},${entry.pos.col}`;
+    const existing = bestAt.get(key);
+    if (!existing || ITEM_PRIORITY[entry.item] > ITEM_PRIORITY[existing.item]) {
+      bestAt.set(key, entry);
+    }
+  }
+  for (const entry of bestAt.values()) {
+    board[entry.pos.row][entry.pos.col] = { color: 0 as Color, item: entry.item };
+  }
+}
+
+/** 落下後の連鎖を処理
+ * @param suppressItemGen true なら連鎖中のアイテム生成を抑制（Sprint終了時の自動発動用）
+ */
 function processChains(
   board: (Cell | null)[][],
   rngState: number[],
   startChain: number,
   mode: GameMode = 'sprint',
+  suppressItemGen = false,
 ): { score: number; rngState: number[]; steps: ChainStep[] } {
   let rng = rngState;
   let totalScore = 0;
   const steps: ChainStep[] = [];
+  const deferredItems: { pos: Position; item: ItemType }[] = [];
   let chainIndex = startChain;
 
   while (true) {
     const matches = findMatches(board);
     if (matches.length === 0) break;
 
-    // アイテム生成（連鎖中は中央位置に配置）
-    const itemGen = determineItemFromMatches(matches);
+    // アイテム生成判定（盤面には置かず記録のみ）
+    const itemGen = suppressItemGen ? null : determineItemFromMatches(matches);
 
     // 消去
     const cleared = getUniquePositions(matches);
@@ -791,10 +810,10 @@ function processChains(
     const stepScore = mode !== 'clear' ? calculateStepScore(matches, chainIndex) : 0;
     totalScore += stepScore;
 
-    // アイテム配置
+    // アイテムは遅延配置（連鎖完了後にまとめて配置）
     const generatedItems: { pos: Position; item: ItemType }[] = [];
     if (itemGen) {
-      board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
+      deferredItems.push(itemGen);
       generatedItems.push(itemGen);
     }
 
@@ -814,6 +833,11 @@ function processChains(
     // 落下 → 補充
     applyGravity(board, mode === 'clear');
     rng = fillEmptyCells(board, rng);
+  }
+
+  // 連鎖完了後に遅延アイテムを配置
+  if (deferredItems.length > 0) {
+    placeDeferredItems(board, deferredItems);
   }
 
   return { score: totalScore, rngState: rng, steps };

@@ -98,6 +98,15 @@ function mergeConnectedMatches(matches: Match[]): { positions: Position[]; color
   return groups;
 }
 
+/** アイテム優先度（高いほど強い） */
+export const ITEM_PRIORITY: Record<ItemType, number> = {
+  flush: 5,
+  burst: 4,
+  h_cut: 3,
+  v_cut: 3,
+  scope: 1,
+};
+
 /**
  * 複数のマッチから最も優先度の高いアイテムを1つ決定
  * swapPositions: ユーザーのスワイプに関わる2つの位置 [origin, target]
@@ -111,13 +120,7 @@ export function determineItemFromMatches(
   matches: Match[],
   swapPositions?: [Position, Position]
 ): { item: ItemType; pos: Position } | null {
-  const priority: Record<ItemType, number> = {
-    flush: 5,
-    burst: 4,
-    h_cut: 3,
-    v_cut: 3,
-    scope: 1,
-  };
+  const priority = ITEM_PRIORITY;
 
   // 全マッチの位置をセットにまとめる
   const allMatchPositions = new Set<string>();
