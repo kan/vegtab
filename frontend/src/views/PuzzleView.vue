@@ -81,6 +81,7 @@ function tryRestoreSession(seed: number, mode: GameMode): boolean {
     scoreRecorded.value = false;
     viewPhase.value = 'playing';
     startBGM();
+    pushGuardState();
     clearSession();
     return true;
   } catch { return false; }
@@ -93,6 +94,20 @@ function beginGame(seed: number, mode: GameMode) {
   startBGM();
   scoreRecorded.value = false;
   viewPhase.value = 'playing';
+  pushGuardState();
+}
+
+// --- Back navigation guard ---
+// プレイ中のエッジスワイプ（戻る操作）によるページ遷移を抑止
+function pushGuardState() {
+  history.pushState({ puzzle: true }, '');
+}
+
+function onPopState(_e: PopStateEvent) {
+  if (viewPhase.value === 'playing' && !store.isGameOver) {
+    // プレイ中は戻るを無効化: ダミーエントリを再pushして留まる
+    pushGuardState();
+  }
 }
 
 function handleRoute() {
@@ -127,6 +142,7 @@ function onModeSelect(mode: GameMode) {
 onMounted(() => {
   handleRoute();
   window.addEventListener('beforeunload', saveSession);
+  window.addEventListener('popstate', onPopState);
 });
 
 watch(() => [route.params.seed, route.query.mode], () => {
@@ -209,6 +225,7 @@ function restart() {
 onUnmounted(() => {
   saveSession();
   window.removeEventListener('beforeunload', saveSession);
+  window.removeEventListener('popstate', onPopState);
   stopBGM();
   clearTimeout(movesOverlayTimer);
 });
