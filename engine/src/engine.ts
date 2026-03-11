@@ -756,6 +756,47 @@ export function processScopeSynthesis(
   return newState;
 }
 
+/** Sprint終了時の残存アイテム自動発動。moveCountを増やさず、新アイテム生成を抑制する。 */
+export function processAutoActivation(state: GameState): GameState {
+  if (state.mode !== 'sprint') return state;
+
+  let current = cloneGameState(state);
+  const board = current.board;
+
+  // 盤面を走査し、アイテムを1つずつ発動する
+  let found = true;
+  while (found) {
+    found = false;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const cell = board[r][c];
+        if (!cell?.item) continue;
+        if (cell.item === 'scope') continue; // 虫めがねは自動発動しない（ユーザー選択が必要）
+        const pos = { row: r, col: c };
+        let targetColor: number | undefined;
+        if (cell.item === 'flush') {
+          targetColor = findFlushTargetColor(board, pos) ?? undefined;
+          if (targetColor === undefined) continue;
+        }
+        const result = activateItem(board, pos, cell.item, targetColor, 1, current.rngState);
+        current.score += result.score;
+        current.rngState = result.rngState;
+
+        applyGravity(board, false);
+        current.rngState = fillEmptyCells(board, current.rngState);
+        const chainResult = processChains(board, current.rngState, 2, current.mode, true);
+        current.score += chainResult.score;
+        current.rngState = chainResult.rngState;
+        found = true;
+        break;
+      }
+      if (found) break;
+    }
+  }
+
+  return current;
+}
+
 /** 落下後の連鎖を処理
  * @param suppressItemGen true なら連鎖中のアイテム生成を抑制（Sprint終了時の自動発動用）
  */

@@ -190,6 +190,7 @@ export default {
     dir_left: '← Left',
     dir_right: '→ Right',
     viewReplay: 'View Replay',
+    autoActivate: 'Auto-activate Items',
   },
   shareRedirect: {
     notFound: 'Seed not found',

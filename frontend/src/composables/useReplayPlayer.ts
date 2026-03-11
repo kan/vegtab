@@ -1,6 +1,6 @@
 import { ref, computed, onUnmounted } from 'vue';
 import {
-  initializeGame, processAction, processScopeSynthesis,
+  initializeGame, processAction, processScopeSynthesis, processAutoActivation,
   cloneGameState,
   type GameState, type GameMode, type Cell, type GameInitParams,
   type Direction,
@@ -71,10 +71,19 @@ export function useReplayPlayer() {
         state = processScopeSynthesis(state, action.pos1, action.pos2, action.targetCells);
       } else if (action.type === 'scope_swap') {
         state = applyScopeSwap(state, action.pos, action.dir, action.targetCells);
-      } else {
+      } else if (action.type !== 'auto_activate') {
         state = processAction(state, action);
       }
       states.push(state);
+    }
+
+    // Sprint auto-activation: process remaining items after game over
+    if (state.isGameOver && mode === 'sprint') {
+      const afterAuto = processAutoActivation(state);
+      if (afterAuto.score !== state.score) {
+        actions.value = [...replayActions, { type: 'auto_activate' }];
+        states.push(afterAuto);
+      }
     }
 
     gameStates.value = states;

@@ -190,6 +190,7 @@ export default {
     dir_left: '←左',
     dir_right: '→右',
     viewReplay: '手順を見る',
+    autoActivate: 'アイテム自動発動',
   },
   shareRedirect: {
     notFound: 'シードが見つかりません',

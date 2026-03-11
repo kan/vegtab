@@ -19,7 +19,8 @@ import {
 /** Replay action — extends engine Action with scope synthesis and scope swap */
 export type ReplayAction = Action
   | { type: 'scope_synthesis'; pos1: Position; pos2: Position; targetCells: Position[] }
-  | { type: 'scope_swap'; pos: Position; dir: Direction; targetCells: Position[] };
+  | { type: 'scope_swap'; pos: Position; dir: Direction; targetCells: Position[] }
+  | { type: 'auto_activate' };
 
 // --- Animation plan types ---
 

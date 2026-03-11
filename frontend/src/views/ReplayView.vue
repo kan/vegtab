@@ -70,6 +70,9 @@ function actionLabel(action: ReplayAction, index: number): string {
     const dirLabel = t(`replay.dir_${action.dir}`);
     return `${num}. (${action.pos.row},${action.pos.col}) ${dirLabel} + ${t('replay.scope')}`;
   }
+  if (action.type === 'auto_activate') {
+    return `${num}. ${t('replay.autoActivate')}`;
+  }
   return `${num}. ???`;
 }
 
