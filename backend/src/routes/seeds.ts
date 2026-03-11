@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
-import { todayUTC } from '../lib/date';
+import { todayJST } from '../lib/date';
 import { findOrCreateDailySeed } from '../lib/seed';
 
 export const seedRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // GET /api/seeds/daily - Get today's daily seed
 seedRoutes.get('/daily', async (c) => {
-  const today = todayUTC();
+  const today = todayJST();
   const seed = await findOrCreateDailySeed(c.env.DB, today);
 
   return c.json({

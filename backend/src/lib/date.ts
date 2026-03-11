@@ -1,6 +1,9 @@
-/** Get today's date as YYYY-MM-DD in UTC */
-export function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/** Get today's date as YYYY-MM-DD in JST (UTC+9) */
+export function todayJST(): string {
+  const jst = new Date(Date.now() + JST_OFFSET_MS);
+  return jst.toISOString().slice(0, 10);
 }
 
 /** Derive a deterministic engine seed number from a YYYY-MM-DD date string.
@@ -13,10 +16,13 @@ export function generateDailySeed(dateStr: string): number {
   return Math.abs(hash);
 }
 
-/** Check if a date string is within ±1 day of UTC today (timezone tolerance). */
+/** Check if a date string is within ±1 day of JST today (timezone tolerance). */
 export function isDateNearToday(dateStr: string): boolean {
-  const today = new Date(todayUTC() + 'T00:00:00Z');
+  const today = new Date(todayJST() + 'T00:00:00Z');
   const target = new Date(dateStr + 'T00:00:00Z');
   const diffMs = Math.abs(today.getTime() - target.getTime());
   return diffMs <= 24 * 60 * 60 * 1000; // ±1 day
 }
+
+// Legacy alias for imports
+export const todayUTC = todayJST;

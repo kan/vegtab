@@ -8,7 +8,7 @@ import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { useSound } from '@/sound';
 import { useCalendar } from '@/composables/useCalendar';
-import { todayLocal } from '@/utils/date';
+import { todayJST, nextMidnightJST } from '@/utils/date';
 import RankingModal from '@/components/RankingModal.vue';
 import VegetableIcon from '@/components/VegetableIcon.vue';
 
@@ -113,7 +113,7 @@ const cal = useCalendar();
 const showCalendar = ref(false);
 
 // --- Daily seed ---
-const today = todayLocal();
+const today = todayJST();
 const todaySeed = computed(() => gameStore.generateDailySeed(today));
 const todayBestSprint = computed(() => gameStore.getBestScore(todaySeed.value, 'sprint'));
 const todayBestClear = computed(() => gameStore.getBestScore(todaySeed.value, 'clear'));
@@ -149,14 +149,13 @@ function saveName() {
 // --- Daily help ---
 const showDailyHelp = ref(false);
 
-// --- Daily countdown (time until UTC midnight) ---
+// --- Daily countdown (time until JST midnight) ---
 const countdown = ref('');
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
 function updateCountdown() {
   const now = new Date();
-  const utcMidnight = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
-  const diff = utcMidnight.getTime() - now.getTime();
+  const diff = nextMidnightJST() - now.getTime();
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
   const s = Math.floor((diff % 60000) / 1000);
@@ -255,7 +254,7 @@ function rankingDisplayValue(entry: { score: number; moves: number }) {
       <div v-if="showDailyHelp" class="daily-help-box">{{ t('home.dailyHelp') }}</div>
       <div class="daily-card-v2">
         <div class="daily-header">
-          <span class="daily-date">{{ todayLocal() }}</span>
+          <span class="daily-date">{{ todayJST() }}</span>
           <span class="daily-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
           <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('common.ranking')">&#x1F3C6;</button>
         </div>

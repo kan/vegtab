@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { formatDateLocal, todayLocal } from '@/utils/date';
+import { formatDateJST, todayJST } from '@/utils/date';
 import { api, register, isAuthenticated, showToast } from '@/api/client';
 import { generateDailySeed } from '@tomado/engine';
 import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
@@ -130,11 +130,11 @@ export const useGameStore = defineStore('game', () => {
   // --- Seeds ---
 
   function dailySeed(dateStr?: string): number {
-    return generateDailySeed(dateStr ?? todayLocal());
+    return generateDailySeed(dateStr ?? todayJST());
   }
 
   function isTodaysDailySeed(seed: number): boolean {
-    return seed === dailySeed(todayLocal());
+    return seed === dailySeed(todayJST());
   }
 
   function randomSeed(): number {
@@ -147,7 +147,7 @@ export const useGameStore = defineStore('game', () => {
     for (let offset = -1; offset <= 1; offset++) {
       const d = new Date(today);
       d.setDate(d.getDate() + offset);
-      const dateStr = formatDateLocal(d);
+      const dateStr = formatDateJST(d);
       if (generateDailySeed(dateStr) === seed) return dateStr;
     }
     return null;

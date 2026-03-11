@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF, env } from 'cloudflare:test';
 import { applyMigrations, registerUser, authHeader } from './helpers';
-import { todayUTC } from '../src/lib/date';
+import { todayJST } from '../src/lib/date';
 
 describe('Seeds & Ranking API', () => {
   let accessToken: string;
@@ -41,7 +41,7 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('score submission creates seed and returns shareCode', async () => {
-    const today = todayUTC();
+    const today = todayJST();
     const res = await SELF.fetch('http://localhost/api/scores', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
@@ -79,7 +79,7 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('sprint ranking returns correct data', async () => {
-    const today = todayUTC();
+    const today = todayJST();
 
     // Submit a score (auto-creates daily seed)
     await SELF.fetch('http://localhost/api/scores', {
@@ -118,7 +118,7 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('clear mode ranking sorted by move_count ASC', async () => {
-    const today = todayUTC();
+    const today = todayJST();
 
     // Submit clear score (auto-creates daily seed)
     await SELF.fetch('http://localhost/api/scores', {
@@ -186,7 +186,7 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('survival mode ranking sorted by move_count DESC then score DESC', async () => {
-    const today = todayUTC();
+    const today = todayJST();
 
     // Submit score for user 1 (auto-creates daily seed)
     await SELF.fetch('http://localhost/api/scores', {
