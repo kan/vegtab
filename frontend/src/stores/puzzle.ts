@@ -44,7 +44,7 @@ export interface ItemEffectStep {
 }
 
 /** アイテム種別ごとの基礎点 */
-const ITEM_BASE_POINTS: Record<ItemType, number> = {
+export const ITEM_BASE_POINTS: Record<ItemType, number> = {
   scope: 10,
   v_cut: 20,
   h_cut: 20,
@@ -58,7 +58,7 @@ function itemChainMultiplier(depth: number): number {
 }
 
 /** アイテム効果1ステップのスコアを計算 */
-function calcItemEffectScore(step: ItemEffectStep): number {
+export function calcItemEffectScore(step: ItemEffectStep): number {
   const base = ITEM_BASE_POINTS[step.itemType] * step.targets.length;
   return Math.round(base * itemChainMultiplier(step.depth));
 }
@@ -107,6 +107,7 @@ export interface SynthesisAnimPlan {
   boardAfterSwap: (Cell | null)[][];
   boardBeforeActivation: (Cell | null)[][];
   effects: SynthesisEffectStep[];
+  effectScore: number;
   dropMoves: { col: number; fromRow: number; toRow: number }[];
   newTileEntries: { row: number; col: number; segNulls: number }[];
   boardAfterDrop: (Cell | null)[][];
@@ -118,6 +119,7 @@ export interface ScopeAnimPlan {
   scopePos: Position;
   adjacentTargets: Position[]; // 周囲上下左右4マス
   targetCells: Position[];
+  effectScore: number;
   boardAfterClear: (Cell | null)[][];
   itemEffects: ItemEffectStep[];
   dropMoves: { col: number; fromRow: number; toRow: number }[];
@@ -136,6 +138,7 @@ export interface ScopeSynthesisAnimPlan {
   targetCells: Position[];
   /** Targets cleared by the synthesis effect */
   effectTargets: Position[];
+  effectScore: number;
   itemEffects: ItemEffectStep[];
   boardAfterClear: (Cell | null)[][];
   dropMoves: { col: number; fromRow: number; toRow: number }[];
@@ -564,6 +567,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     // おじゃまダメージはアイテム効果内で直接処理済み
     const passThrough = state.mode === 'clear';
+    const effectScore = totalScore - state.score;
 
     const boardAfterClear = cloneBoard(board);
 
@@ -579,6 +583,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       scopePos,
       adjacentTargets,
       targetCells,
+      effectScore,
       boardAfterClear,
       itemEffects,
       dropMoves, newTileEntries, boardAfterDrop,
@@ -691,6 +696,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     // おじゃまダメージはアイテム効果内で直接処理済み
     const passThrough = state.mode === 'clear';
+    const effectScore = totalScore - state.score;
 
     const boardAfterClear = cloneBoard(board);
 
@@ -704,7 +710,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     return {
       pos1, pos2, synthEffect: effect, adjacentTargets, targetCells, effectTargets,
-      itemEffects, boardAfterClear,
+      effectScore, itemEffects, boardAfterClear,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
       finalState: resolveFinalState(
@@ -1068,6 +1074,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     // おじゃまダメージはアイテム効果内で直接処理済み
     const passThrough = state.mode === 'clear';
+    const effectScore = totalScore - state.score;
 
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
@@ -1081,6 +1088,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       boardAfterSwap,
       boardBeforeActivation: boardBefore,
       effects,
+      effectScore,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
       finalState: resolveFinalState(

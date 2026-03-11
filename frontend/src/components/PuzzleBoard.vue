@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePuzzleStore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
+import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ChainAnimData, type SynthesisAnimPlan, type ScopeAnimPlan, type ScopeSynthesisAnimPlan } from '@/stores/puzzle';
 import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type ItemType } from '@tomado/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
@@ -83,6 +83,25 @@ const shaking = ref(false);
 const showScopeTapHint = ref(false);
 const scopeTapHintText = ref('');
 let scopeHintTimer: ReturnType<typeof setTimeout> | undefined;
+
+// --- Floating score ---
+const floatingScores = reactive<{ id: number; x: number; y: number; text: string }[]>([]);
+let floatingId = 0;
+
+function addFloatingScore(positions: Position[], score: number) {
+  if (score <= 0 || positions.length === 0) return;
+  const cs = cellSize.value;
+  const cx = positions.reduce((s, p) => s + p.col, 0) / positions.length;
+  const cy = positions.reduce((s, p) => s + p.row, 0) / positions.length;
+  const x = (cx + 0.5) * cs;
+  const y = (cy + 0.5) * cs;
+  const id = floatingId++;
+  floatingScores.push({ id, x, y, text: `+${score}` });
+  setTimeout(() => {
+    const idx = floatingScores.findIndex(f => f.id === id);
+    if (idx !== -1) floatingScores.splice(idx, 1);
+  }, 800);
+}
 
 function showScopeHint(key: string) {
   clearTimeout(scopeHintTimer);
@@ -213,9 +232,12 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   });
   if (adjNonItem.length > 0) {
     await animateRadial(scopePos, adjNonItem, 'scope');
+    addFloatingScore([scopePos, ...adjNonItem], plan.effectScore);
     for (const t of adjNonItem) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
+  } else if (plan.effectScore > 0) {
+    addFloatingScore([scopePos], plan.effectScore);
   }
 
   // 2) ユーザー選択マスの消去アニメーション（SE + scopeオーバーレイ点滅）
@@ -245,6 +267,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   for (const effect of plan.itemEffects) {
     vbRemove(effect.itemPos);
     await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
+    addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.itemPos], calcItemEffectScore(effect));
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -285,9 +308,12 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   });
   if (adjNonItem.length > 0) {
     await animateRadial(pos1, adjNonItem, 'scope');
+    addFloatingScore([pos1, ...adjNonItem], plan.effectScore);
     for (const t of adjNonItem) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
+  } else if (plan.effectScore > 0) {
+    addFloatingScore([pos1], plan.effectScore);
   }
 
   if (plan.synthEffect === 'scope+scope') {
@@ -322,6 +348,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   for (const effect of plan.itemEffects) {
     vbRemove(effect.itemPos);
     await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
+    addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.itemPos], calcItemEffectScore(effect));
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -477,6 +504,7 @@ async function animateItemEffects(plan: ItemAnimPlan) {
     playSE('item_use'); vibrate(20);
     vbRemove(effect.itemPos);
     await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
+    addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.itemPos], calcItemEffectScore(effect));
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -603,6 +631,7 @@ async function animateSynthesisEffects(plan: SynthesisAnimPlan) {
         break;
     }
 
+    addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.pos1], plan.effectScore);
     for (const t of effect.targets) vbRemove(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
@@ -807,6 +836,7 @@ async function animateChainStep(chain: ChainAnimData) {
     playSE('match'); vibrate(15);
   }
   for (const p of chain.clearedPositions) matchedCells.add(pk(p.row, p.col));
+  addFloatingScore(chain.clearedPositions, chain.score);
   await wait(ANIM.MATCH_SHOW);
 
   // Fade out
@@ -958,6 +988,14 @@ function tileTransition(r: number, c: number) {
       >
         <ItemIcon :item="sweepIcon.item" :size="sweepIcon.size" />
       </div>
+
+      <!-- Floating scores -->
+      <div
+        v-for="fs in floatingScores"
+        :key="fs.id"
+        class="floating-score"
+        :style="{ left: fs.x + 'px', top: fs.y + 'px' }"
+      >{{ fs.text }}</div>
 
       <!-- Scope selection overlay -->
       <template v-if="scope.scopeSelecting.value">
@@ -1148,6 +1186,25 @@ function tileTransition(r: number, c: number) {
   70%  { transform: scale(1.2); opacity: 0.9; }
   100% { transform: scale(1); opacity: 0.8; }
 }
+/* Floating score */
+.floating-score {
+  position: absolute;
+  pointer-events: none;
+  z-index: 30;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--brand);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2), 0 0 4px rgba(255,255,255,0.8);
+  animation: float-up 0.8s ease-out forwards;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+@keyframes float-up {
+  0%   { opacity: 1; transform: translate(-50%, -50%) translateY(0) scale(1.2); }
+  30%  { opacity: 1; transform: translate(-50%, -50%) translateY(-8px) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-28px) scale(0.8); }
+}
+
 .scope-select-cell {
   border: 2px solid rgba(91, 155, 213, 0.5);
   background: rgba(91, 155, 213, 0.1);
