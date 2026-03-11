@@ -9,7 +9,7 @@ import {
   getSynthesisEffect, getSynthesisTargets,
   getFlushTargets, getVCutTargets, getHCutTargets, getBurstTargets,
   getScopeAdjacentTargets,
-  countObstacles, damageObstacles, getQuota,
+  countObstacles, damageObstacles, damageObstacleAt, getQuota,
   type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
   BOARD_SIZE,
@@ -312,12 +312,7 @@ function computeItemEffects(
       const c = board[t.row]?.[t.col];
       if (c === null) continue;
       if (c.obstacle) {
-        // おじゃまタイルが効果範囲内なら耐久値を1減らす
-        c.obstacle.durability--;
-        if (c.obstacle.durability <= 0) {
-          board[t.row][t.col] = null;
-          cleared.push(t);
-        }
+        if (damageObstacleAt(board, t)) cleared.push(t);
         continue;
       }
       if (c.item) {
@@ -551,11 +546,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       const ac = board[t.row]?.[t.col];
       if (!ac) continue;
       if (ac.obstacle) {
-        ac.obstacle.durability--;
-        if (ac.obstacle.durability <= 0) {
-          board[t.row][t.col] = null;
-          allScopeCleared.push(t);
-        }
+        if (damageObstacleAt(board, t)) allScopeCleared.push(t);
         continue;
       }
       if (ac.item) {
@@ -573,12 +564,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       const tc = board[target.row]?.[target.col];
       if (!tc) continue;
       if (tc.obstacle) {
-        // おじゃまタイルを直接選択した場合、耐久値を1減らす
-        tc.obstacle.durability--;
-        if (tc.obstacle.durability <= 0) {
-          board[target.row][target.col] = null;
-          allScopeCleared.push(target);
-        }
+        if (damageObstacleAt(board, target)) allScopeCleared.push(target);
         continue;
       }
       if (tc.item) {
@@ -655,11 +641,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       const ac = board[t.row]?.[t.col];
       if (!ac) continue;
       if (ac.obstacle) {
-        ac.obstacle.durability--;
-        if (ac.obstacle.durability <= 0) {
-          board[t.row][t.col] = null;
-          allSynthCleared.push(t);
-        }
+        if (damageObstacleAt(board, t)) allSynthCleared.push(t);
         continue;
       }
       if (ac.item) {
@@ -679,12 +661,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         const tc = board[target.row]?.[target.col];
         if (!tc) continue;
         if (tc.obstacle) {
-          // おじゃまタイルを直接選択した場合、耐久値を1減らす
-          tc.obstacle.durability--;
-          if (tc.obstacle.durability <= 0) {
-            board[target.row][target.col] = null;
-            allSynthCleared.push(target);
-          }
+          if (damageObstacleAt(board, target)) allSynthCleared.push(target);
           continue;
         }
         if (tc.item) {
@@ -708,11 +685,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
         if (c.obstacle) {
-          c.obstacle.durability--;
-          if (c.obstacle.durability <= 0) {
-            board[t.row][t.col] = null;
-            allSynthCleared.push(t);
-          }
+          if (damageObstacleAt(board, t)) allSynthCleared.push(t);
           continue;
         }
         if (c.item) {
@@ -966,11 +939,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         const c = board[t.row]?.[t.col];
         if (!c) continue;
         if (c.obstacle) {
-          c.obstacle.durability--;
-          if (c.obstacle.durability <= 0) {
-            board[t.row][t.col] = null;
-            allTargets.push(t);
-          }
+          if (damageObstacleAt(board, t)) allTargets.push(t);
           continue;
         }
         colorTargets.push(t);
@@ -993,11 +962,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           const c = board[t.row]?.[t.col];
           if (c === null) continue;
           if (c.obstacle) {
-            c.obstacle.durability--;
-            if (c.obstacle.durability <= 0) {
-              board[t.row][t.col] = null;
-              allTargets.push(t);
-            }
+            if (damageObstacleAt(board, t)) allTargets.push(t);
             continue;
           }
           if (c.item) {
@@ -1033,11 +998,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
         if (c.obstacle) {
-          c.obstacle.durability--;
-          if (c.obstacle.durability <= 0) {
-            board[t.row][t.col] = null;
-            cleared.push(t);
-          }
+          if (damageObstacleAt(board, t)) cleared.push(t);
           continue;
         }
         if (c.item) {
@@ -1070,11 +1031,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         const c = board[t.row]?.[t.col];
         if (c === null) continue;
         if (c.obstacle) {
-          c.obstacle.durability--;
-          if (c.obstacle.durability <= 0) {
-            board[t.row][t.col] = null;
-            cleared.push(t);
-          }
+          if (damageObstacleAt(board, t)) cleared.push(t);
           continue;
         }
         if (c.item) {

@@ -18,7 +18,7 @@ import {
 } from './item.js';
 import { calculateStepScore, getFullClearBonus } from './score.js';
 import { checkGameOverState } from './gameOver.js';
-import { generateObstacles, damageObstacles } from './obstacle.js';
+import { generateObstacles, damageObstacles, damageObstacleAt } from './obstacle.js';
 import { DEFAULT_QUOTA_TABLE } from './survival.js';
 
 const DEFAULT_MOVE_LIMIT = 15;
@@ -137,12 +137,7 @@ function activateItem(
       const tCell = board[t.row]?.[t.col];
       if (tCell === null) continue;
       if (tCell.obstacle) {
-        // おじゃまタイルが効果範囲内なら耐久値を1減らす
-        tCell.obstacle.durability--;
-        if (tCell.obstacle.durability <= 0) {
-          board[t.row][t.col] = null;
-          allCleared.push(t);
-        }
+        if (damageObstacleAt(board, t)) allCleared.push(t);
         continue;
       }
       if (tCell.item) {
@@ -227,11 +222,7 @@ function activateCoffeeSynthesis(
       const cell = board[t.row]?.[t.col];
       if (cell === null) continue;
       if (cell.obstacle) {
-        cell.obstacle.durability--;
-        if (cell.obstacle.durability <= 0) {
-          board[t.row][t.col] = null;
-          allCleared.push(t);
-        }
+        if (damageObstacleAt(board, t)) allCleared.push(t);
         continue;
       }
       if (cell.item) {
@@ -312,11 +303,7 @@ export function processAction(state: GameState, action: Action): GameState {
       const adjCell = getCell(board, t);
       if (!adjCell) continue;
       if (adjCell.obstacle) {
-        adjCell.obstacle.durability--;
-        if (adjCell.obstacle.durability <= 0) {
-          board[t.row][t.col] = null;
-          allCleared.push(t);
-        }
+        if (damageObstacleAt(board, t)) allCleared.push(t);
         continue;
       }
       if (adjCell.item) {
@@ -340,12 +327,7 @@ export function processAction(state: GameState, action: Action): GameState {
       const targetCell = getCell(board, target);
       if (!targetCell) continue;
       if (targetCell.obstacle) {
-        // おじゃまタイルを直接選択した場合、耐久値を1減らす
-        targetCell.obstacle.durability--;
-        if (targetCell.obstacle.durability <= 0) {
-          board[target.row][target.col] = null;
-          allCleared.push(target);
-        }
+        if (damageObstacleAt(board, target)) allCleared.push(target);
         continue;
       }
       if (targetCell.item) {
@@ -551,12 +533,7 @@ function clearTargets(
     const cell = board[t.row]?.[t.col];
     if (cell === null) continue;
     if (cell.obstacle) {
-      // おじゃまタイルが効果範囲内なら耐久値を1減らす
-      cell.obstacle.durability--;
-      if (cell.obstacle.durability <= 0) {
-        board[t.row][t.col] = null;
-        allCleared.push(t);
-      }
+      if (damageObstacleAt(board, t)) allCleared.push(t);
       continue;
     }
     if (cell.item) {
@@ -632,11 +609,7 @@ function processSynthesis(
       const cell = board[t.row]?.[t.col];
       if (cell === null) continue;
       if (cell.obstacle) {
-        cell.obstacle.durability--;
-        if (cell.obstacle.durability <= 0) {
-          board[t.row][t.col] = null;
-          allCleared.push(t);
-        }
+        if (damageObstacleAt(board, t)) allCleared.push(t);
         continue;
       }
       if (cell.item) {
@@ -724,11 +697,7 @@ export function processScopeSynthesis(
       const adjCell = getCell(board, t);
       if (!adjCell) continue;
       if (adjCell.obstacle) {
-        adjCell.obstacle.durability--;
-        if (adjCell.obstacle.durability <= 0) {
-          board[t.row][t.col] = null;
-          allCleared.push(t);
-        }
+        if (damageObstacleAt(board, t)) allCleared.push(t);
         continue;
       }
       if (adjCell.item) {
@@ -754,12 +723,7 @@ export function processScopeSynthesis(
       const cell = getCell(board, target);
       if (!cell) continue;
       if (cell.obstacle) {
-        // おじゃまタイルを直接選択した場合、耐久値を1減らす
-        cell.obstacle.durability--;
-        if (cell.obstacle.durability <= 0) {
-          board[target.row][target.col] = null;
-          allCleared.push(target);
-        }
+        if (damageObstacleAt(board, target)) allCleared.push(target);
         continue;
       }
       if (cell.item) {

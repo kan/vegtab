@@ -87,6 +87,22 @@ export function allObstaclesCleared(board: (Cell | null)[][]): boolean {
 }
 
 /**
+ * 指定位置のおじゃまタイルに1ダメージを与える。
+ * 耐久値が0になったらセルをnullにする。
+ * @returns 破壊された場合true
+ */
+export function damageObstacleAt(board: (Cell | null)[][], pos: Position): boolean {
+  const cell = board[pos.row]?.[pos.col];
+  if (!cell?.obstacle) return false;
+  cell.obstacle.durability--;
+  if (cell.obstacle.durability <= 0) {
+    board[pos.row][pos.col] = null;
+    return true;
+  }
+  return false;
+}
+
+/**
  * おじゃまタイルにダメージを与える
  * 消去された位置の上下左右のおじゃまタイルの耐久値を1減らす
  * 耐久値が0になったおじゃまタイルはnullに置き換える
@@ -108,13 +124,11 @@ export function damageObstacles(
       const key = `${nr},${nc}`;
       if (damaged.has(key)) continue;
 
-      const cell = board[nr][nc];
-      if (cell?.obstacle) {
+      if (board[nr][nc]?.obstacle) {
         damaged.add(key);
-        cell.obstacle.durability--;
-        if (cell.obstacle.durability <= 0) {
-          board[nr][nc] = null;
-          destroyedPositions.push({ row: nr, col: nc });
+        const adjPos = { row: nr, col: nc };
+        if (damageObstacleAt(board, adjPos)) {
+          destroyedPositions.push(adjPos);
         }
       }
     }
