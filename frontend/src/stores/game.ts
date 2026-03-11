@@ -184,78 +184,65 @@ export const useGameStore = defineStore('game', () => {
     submitScoreToBackend(record);
   }
 
+  function buildScorePayload(record: Omit<PlayRecord, 'playedAt' | 'playerName'>, date: string) {
+    return {
+      date,
+      mode: record.mode,
+      moveLimit: record.moveLimit ?? null,
+      moveCount: record.moves,
+      score: record.score,
+      isCleared: record.isCleared ?? false,
+      maxChain: record.maxChain ?? 0,
+      generatedItemTypes: record.generatedItemTypes ?? [],
+      replayLog: record.replayLog ?? [],
+    };
+  }
+
+  function handleScoreResponse(res: { shareCode: string }, seed: number) {
+    if (res.shareCode) {
+      shareCodeCache.value[seed] = res.shareCode;
+      saveShareCodeCache();
+    }
+  }
+
   async function submitScoreToBackend(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
     const date = findDailyDate(record.seed);
-    if (!date) {
-      // Not a daily seed — cannot submit
-      return;
-    }
+    if (!date) return;
     try {
       const res = await api<{ scoreId: string; shareCode: string; newAchievements: string[] }>('/api/scores', {
         method: 'POST',
-        body: JSON.stringify({
-          date,
-          mode: record.mode,
-          moveLimit: record.moveLimit ?? null,
-          moveCount: record.moves,
-          score: record.score,
-          isCleared: record.isCleared ?? false,
-          maxChain: record.maxChain ?? 0,
-          generatedItemTypes: record.generatedItemTypes ?? [],
-          replayLog: record.replayLog ?? [],
-        }),
+        body: JSON.stringify(buildScorePayload(record, date)),
         offlineQueue: true,
       });
-      // Cache the shareCode for sharing
-      if (res.shareCode) {
-        shareCodeCache.value[record.seed] = res.shareCode;
-        saveShareCodeCache();
-      }
-      // Handle newly unlocked achievements
+      handleScoreResponse(res, record.seed);
       if (res.newAchievements?.length > 0) {
-        // Dynamically import to avoid circular dependency
         const { useAchievementStore } = await import('@/stores/achievements');
-        const achievementStore = useAchievementStore();
-        achievementStore.handleNewAchievements(res.newAchievements);
+        useAchievementStore().handleNewAchievements(res.newAchievements);
       }
     } catch {
       // Error already handled by api() (toast shown, or queued offline)
     }
   }
 
-  /** Re-submit local scores that are missing from the server (e.g., due to findDailyDate bug). */
+  /** Re-submit local scores that are missing from the server (e.g., due to past findDailyDate bug). */
   async function resubmitUnsentScores() {
-    if (serverScoreKeys.size === 0 && playRecords.value.length === 0) return;
-    for (const record of playRecords.value) {
-      const key = `${record.seed}:${record.mode}`;
-      if (serverScoreKeys.has(key)) continue;
-      // Only submit daily seeds (findDailyDate returns null for non-daily)
-      const date = findDailyDate(record.seed);
-      if (!date) continue;
-      try {
-        const res = await api<{ scoreId: string; shareCode: string; newAchievements: string[] }>('/api/scores', {
-          method: 'POST',
-          body: JSON.stringify({
-            date,
-            mode: record.mode,
-            moveLimit: record.moveLimit ?? null,
-            moveCount: record.moves,
-            score: record.score,
-            isCleared: record.isCleared ?? false,
-            maxChain: record.maxChain ?? 0,
-            generatedItemTypes: record.generatedItemTypes ?? [],
-            replayLog: record.replayLog ?? [],
-          }),
-        });
-        serverScoreKeys.add(key);
-        if (res.shareCode) {
-          shareCodeCache.value[record.seed] = res.shareCode;
-          saveShareCodeCache();
-        }
-      } catch {
-        // Skip failures silently — will retry on next init
-      }
-    }
+    const pending = playRecords.value.filter(r => {
+      if (serverScoreKeys.has(`${r.seed}:${r.mode}`)) return false;
+      return findDailyDate(r.seed) !== null;
+    });
+    if (pending.length === 0) return;
+
+    const results = await Promise.allSettled(pending.map(async (record) => {
+      const date = findDailyDate(record.seed)!;
+      const res = await api<{ scoreId: string; shareCode: string; newAchievements: string[] }>('/api/scores', {
+        method: 'POST',
+        body: JSON.stringify(buildScorePayload(record, date)),
+      });
+      serverScoreKeys.add(`${record.seed}:${record.mode}`);
+      handleScoreResponse(res, record.seed);
+    }));
+    // Silently ignore failures — will retry on next init
+    void results;
   }
 
   function getRecordsForSeed(seed: number, mode?: GameMode): PlayRecord[] {

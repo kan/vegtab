@@ -12,14 +12,14 @@ import {
   countObstacles, damageObstacles, damageObstacleAt, getQuota,
   type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
-  type Action, type Position as EnginePosition,
+  type Action,
   BOARD_SIZE,
 } from '@tomado/engine';
 
 /** Replay action — extends engine Action with scope synthesis and scope swap */
 export type ReplayAction = Action
-  | { type: 'scope_synthesis'; pos1: EnginePosition; pos2: EnginePosition; targetCells: EnginePosition[] }
-  | { type: 'scope_swap'; pos: EnginePosition; dir: Direction; targetCells: EnginePosition[] };
+  | { type: 'scope_synthesis'; pos1: Position; pos2: Position; targetCells: Position[] }
+  | { type: 'scope_swap'; pos: Position; dir: Direction; targetCells: Position[] };
 
 // --- Animation plan types ---
 
@@ -503,21 +503,18 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   function swap(pos: Position, dir: Direction) {
     if (!gameState.value) return;
-    recordAction({ type: 'swap', pos, dir });
     const newState = processAction(gameState.value, { type: 'swap', pos, dir });
     if (newState !== gameState.value) gameState.value = newState;
   }
 
   function tap(pos: Position) {
     if (!gameState.value) return;
-    recordAction({ type: 'tap', pos });
     const newState = processAction(gameState.value, { type: 'tap', pos });
     if (newState !== gameState.value) gameState.value = newState;
   }
 
   function activateScope(pos: Position, targetCells: Position[]) {
     if (!gameState.value) return;
-    recordAction({ type: 'scope', pos, targetCells });
     const newState = processAction(gameState.value, {
       type: 'scope', pos, targetCells,
     });
@@ -526,7 +523,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   function applyScopeSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
     if (!gameState.value) return;
-    recordAction({ type: 'scope_synthesis', pos1, pos2, targetCells });
     const newState = processScopeSynthesis(gameState.value, pos1, pos2, targetCells);
     if (newState !== gameState.value) gameState.value = newState;
   }

@@ -177,7 +177,7 @@ async function handleTap(pos: Position) {
   }
 
   const plan = store.computeItemTapPlan(pos);
-  if (!plan) { store.tap(pos); return; }
+  if (!plan) { store.recordAction({ type: 'tap', pos }); store.tap(pos); return; }
 
   store.recordAction({ type: 'tap', pos });
   drag.setLocked(true);
@@ -227,6 +227,12 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   const plan = store.computeScopePlan(scopePos, targetCells);
   if (!plan) {
     // Fallback: apply instantly
+    if (pendingScopeSwap) {
+      store.recordAction({ type: 'scope_swap', pos: pendingScopeSwap.pos, dir: pendingScopeSwap.dir, targetCells });
+      pendingScopeSwap = null;
+    } else {
+      store.recordAction({ type: 'scope', pos: scopePos, targetCells });
+    }
     if (originalState) store.applyState(originalState);
     store.activateScope(scopePos, targetCells);
     return;
@@ -309,6 +315,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   const plan = store.computeScopeSynthesisPlan(pos1, pos2, targetCells);
   if (!plan) {
     // Fallback: apply instantly
+    store.recordAction({ type: 'scope_synthesis', pos1, pos2, targetCells });
     store.applyScopeSynthesis(pos1, pos2, targetCells);
     return;
   }

@@ -125,48 +125,47 @@ function survivalRankingSQL(): string {
      LIMIT ?`;
 }
 
+function mapBaseEntry(
+  e: { user_id: string; display_name: string | null; score_id: string },
+  i: number, userId: string, extra: Partial<RankingEntry>,
+): RankingEntry {
+  return {
+    rank: i + 1,
+    userId: e.user_id,
+    displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
+    score: 0,
+    moveCount: 0,
+    scoreId: e.user_id === userId ? e.score_id : undefined,
+    ...extra,
+  };
+}
+
 async function queryRanking(db: D1Database, seedId: string, mode: GameMode, userId: string): Promise<RankingEntry[]> {
   if (mode === 'sprint') {
     const entries = await db.prepare(sprintRankingSQL())
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
       .all<{ user_id: string; display_name: string | null; best_score: number; move_count: number; score_id: string }>();
-    return (entries.results ?? []).map((e, i) => ({
-      rank: i + 1,
-      userId: e.user_id,
-      displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
-      score: e.best_score,
-      moveCount: e.move_count,
-      scoreId: e.user_id === userId ? e.score_id : undefined,
-    }));
+    return (entries.results ?? []).map((e, i) =>
+      mapBaseEntry(e, i, userId, { score: e.best_score, moveCount: e.move_count }),
+    );
   }
 
   if (mode === 'clear') {
     const entries = await db.prepare(clearRankingSQL())
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
       .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; is_cleared: number; score_id: string }>();
-    return (entries.results ?? []).map((e, i) => ({
-      rank: i + 1,
-      userId: e.user_id,
-      displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
-      score: e.score,
-      moveCount: e.best_move_count,
-      isCleared: true,
-      scoreId: e.user_id === userId ? e.score_id : undefined,
-    }));
+    return (entries.results ?? []).map((e, i) =>
+      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.best_move_count, isCleared: true }),
+    );
   }
 
   // survival
   const entries = await db.prepare(survivalRankingSQL())
     .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
     .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; score_id: string }>();
-  return (entries.results ?? []).map((e, i) => ({
-    rank: i + 1,
-    userId: e.user_id,
-    displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
-    score: e.score,
-    moveCount: e.best_move_count,
-    scoreId: e.user_id === userId ? e.score_id : undefined,
-  }));
+  return (entries.results ?? []).map((e, i) =>
+    mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.best_move_count }),
+  );
 }
 
 // --- Mode-specific user rank ---
