@@ -265,6 +265,10 @@ export const useGameStore = defineStore('game', () => {
   function getBestMoves(seed: number, mode: GameMode): number {
     const records = getRecordsForSeed(seed, mode);
     if (records.length === 0) return 0;
+    if (mode === 'clear') {
+      const clearedRecords = records.filter(r => r.isCleared);
+      return clearedRecords.length > 0 ? Math.min(...clearedRecords.map(r => r.moves)) : 0;
+    }
     if (mode === 'survival') {
       return Math.max(...records.map(r => r.moves));
     }

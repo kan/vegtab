@@ -116,7 +116,7 @@ const showCalendar = ref(false);
 const today = todayJST();
 const todaySeed = computed(() => gameStore.generateDailySeed(today));
 const todayBestSprint = computed(() => gameStore.getBestScore(todaySeed.value, 'sprint'));
-const todayBestClear = computed(() => gameStore.getBestScore(todaySeed.value, 'clear'));
+const todayBestClear = computed(() => gameStore.getBestMoves(todaySeed.value, 'clear'));
 const todayBestSurvival = computed(() => gameStore.getBestMoves(todaySeed.value, 'survival'));
 
 function playMode(mode: string) {
