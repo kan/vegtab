@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 import { useGameStore, type GameMode } from '@/stores/game';
+import { lightningIcon, brickIcon, infinityIcon } from '@/assets/icons';
 
 const { t } = useI18n();
 
@@ -17,9 +18,9 @@ const emit = defineEmits<{
 const gameStore = useGameStore();
 
 const modes: { key: GameMode; icon: string }[] = [
-  { key: 'sprint', icon: '⚡' },
-  { key: 'clear', icon: '🧱' },
-  { key: 'survival', icon: '♾️' },
+  { key: 'sprint', icon: lightningIcon },
+  { key: 'clear', icon: brickIcon },
+  { key: 'survival', icon: infinityIcon },
 ];
 
 function bestForMode(mode: GameMode): string {
@@ -54,7 +55,7 @@ function bestForMode(mode: GameMode): string {
             class="mode-card"
             @click="emit('select', m.key)"
           >
-            <span class="mode-icon">{{ m.icon }}</span>
+            <img class="mode-icon" :src="m.icon" alt="" />
             <span class="mode-name">{{ t(`mode.${m.key}`) }}</span>
             <span class="mode-desc">{{ t(`mode.${m.key}Desc`) }}</span>
             <span v-if="bestForMode(m.key)" class="mode-best">{{ bestForMode(m.key) }}</span>
@@ -128,7 +129,8 @@ function bestForMode(mode: GameMode): string {
   transform: scale(0.97);
 }
 .mode-icon {
-  font-size: 28px;
+  width: 28px;
+  height: 28px;
 }
 .mode-name {
   font-size: 16px;

@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAchievementStore } from '@/stores/achievements';
 import { ACHIEVEMENT_DEFS } from '@tomado/engine';
+import { trophyIcon, questionIcon, lockIcon, checkIcon } from '@/assets/icons';
 
 const { t } = useI18n();
 const store = useAchievementStore();
@@ -22,6 +23,7 @@ const items = computed(() =>
       progress: state?.currentValue ?? 0,
       threshold: def.threshold,
       comparator: def.comparator,
+      icon: unlocked ? trophyIcon : def.secret && !unlocked ? questionIcon : lockIcon,
     };
   }),
 );
@@ -34,12 +36,12 @@ const items = computed(() =>
       <span class="achievement-count">{{ store.unlockedCount }} / {{ store.totalCount }}</span>
     </div>
     <div v-for="item in items" :key="item.type" :class="['achievement-item', { unlocked: item.unlocked, secret: item.secret }]">
-      <span class="achievement-icon">{{ item.unlocked ? '🏆' : item.secret ? '❓' : '🔒' }}</span>
+      <img class="achievement-icon" :src="item.icon" alt="" />
       <div class="achievement-info">
         <span class="achievement-name">{{ item.name }}</span>
         <span class="achievement-desc">{{ item.desc }}</span>
       </div>
-      <span v-if="item.unlocked" class="achievement-check">&#x2714;</span>
+      <img v-if="item.unlocked" class="achievement-check" :src="checkIcon" alt="" />
     </div>
   </div>
 </template>
@@ -86,10 +88,9 @@ const items = computed(() =>
   opacity: 0.35;
 }
 .achievement-icon {
-  font-size: 20px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
-  width: 28px;
-  text-align: center;
 }
 .achievement-info {
   flex: 1;
@@ -108,9 +109,8 @@ const items = computed(() =>
   color: var(--text-muted);
 }
 .achievement-check {
-  color: var(--brand);
-  font-size: 16px;
-  font-weight: 700;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 </style>

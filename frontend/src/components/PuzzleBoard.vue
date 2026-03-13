@@ -8,6 +8,7 @@ import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
 import ItemIcon from './ItemIcon.vue';
 import VegetableIcon from './VegetableIcon.vue';
+import { checkIcon } from '@/assets/icons';
 import ObstacleTile from './ObstacleTile.vue';
 import type DebugPanel from './DebugPanel.vue';
 
@@ -993,7 +994,7 @@ function tileTransition(r: number, c: number) {
                   <span
                     v-if="matchedCells.has(pk(row - 1, col - 1)) || clearingCells.has(pk(row - 1, col - 1))"
                     class="check-overlay"
-                  >&#x2713;</span>
+                  ><img :src="checkIcon" class="check-icon" alt="" /></span>
                 </div>
               </div>
             </template>
@@ -1156,6 +1157,10 @@ function tileTransition(r: number, c: number) {
 }
 
 /* Checkmark overlay */
+.check-icon {
+  width: 1.6em;
+  height: 1.6em;
+}
 .check-overlay {
   position: absolute;
   inset: 0;

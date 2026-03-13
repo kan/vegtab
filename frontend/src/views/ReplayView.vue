@@ -8,6 +8,7 @@ import VegetableIcon from '@/components/VegetableIcon.vue';
 import ItemIcon from '@/components/ItemIcon.vue';
 import ObstacleTile from '@/components/ObstacleTile.vue';
 import type { ReplayAction } from '@/stores/puzzle';
+import { prevTrackIcon, rewindIcon, pauseIcon, playIcon, fastForwardIcon, nextTrackIcon } from '@/assets/icons';
 import type { GameMode } from '@tomado/engine';
 
 const { t } = useI18n();
@@ -157,13 +158,13 @@ function getCellClass(row: number, col: number): string {
 
       <!-- Controls -->
       <div class="replay-controls">
-        <button class="ctrl-btn" @click="player.goTo(0)" :disabled="player.currentStep.value === 0">&#x23EE;</button>
-        <button class="ctrl-btn" @click="player.prev()" :disabled="player.currentStep.value === 0">&#x23F4;</button>
+        <button class="ctrl-btn" @click="player.goTo(0)" :disabled="player.currentStep.value === 0"><img :src="prevTrackIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.prev()" :disabled="player.currentStep.value === 0"><img :src="rewindIcon" class="ctrl-icon" alt="" /></button>
         <button class="ctrl-btn ctrl-play" @click="player.isPlaying.value ? player.pause() : player.play()">
-          {{ player.isPlaying.value ? '&#x23F8;' : '&#x25B6;' }}
+          <img :src="player.isPlaying.value ? pauseIcon : playIcon" class="ctrl-icon" alt="" />
         </button>
-        <button class="ctrl-btn" @click="player.next()" :disabled="player.currentStep.value >= player.totalSteps.value">&#x23F5;</button>
-        <button class="ctrl-btn" @click="player.goTo(player.totalSteps.value)" :disabled="player.currentStep.value >= player.totalSteps.value">&#x23ED;</button>
+        <button class="ctrl-btn" @click="player.next()" :disabled="player.currentStep.value >= player.totalSteps.value"><img :src="fastForwardIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.goTo(player.totalSteps.value)" :disabled="player.currentStep.value >= player.totalSteps.value"><img :src="nextTrackIcon" class="ctrl-icon" alt="" /></button>
       </div>
 
       <!-- Slider -->
@@ -316,6 +317,10 @@ function getCellClass(row: number, col: number): string {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.ctrl-icon {
+  width: 20px;
+  height: 20px;
 }
 .ctrl-btn:disabled {
   opacity: 0.3;

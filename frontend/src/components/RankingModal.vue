@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { type GameMode } from '@/stores/game';
 import { api, getUserId } from '@/api/client';
+import { goldMedalIcon, silverMedalIcon, bronzeMedalIcon, playIcon } from '@/assets/icons';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -99,11 +100,11 @@ const myRankSubDisplay = computed(() => {
   return '';
 });
 
-function rankIcon(rank: number): string {
-  if (rank === 1) return '\u{1F947}';
-  if (rank === 2) return '\u{1F948}';
-  if (rank === 3) return '\u{1F949}';
-  return `#${rank}`;
+function rankMedalIcon(rank: number): string | null {
+  if (rank === 1) return goldMedalIcon;
+  if (rank === 2) return silverMedalIcon;
+  if (rank === 3) return bronzeMedalIcon;
+  return null;
 }
 
 function displayValue(entry: RankEntry): string {
@@ -189,7 +190,7 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
             :key="entry.rank"
             :class="['ranking-row', { me: entry.isMe }]"
           >
-            <span class="rank-num">{{ rankIcon(entry.rank) }}</span>
+            <span class="rank-num"><img v-if="rankMedalIcon(entry.rank)" :src="rankMedalIcon(entry.rank)!" class="rank-medal" alt="" /><template v-else>#{{ entry.rank }}</template></span>
             <div class="rank-main">
               <span class="rank-name">{{ entry.playerName }}</span>
               <span class="rank-meta">{{ t('ranking.moves', { count: entry.moves }) }}</span>
@@ -203,7 +204,7 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
               class="btn-replay"
               @click="goToReplay(entry.scoreId!)"
               :title="t('replay.viewReplay')"
-            >&#x25B6;</button>
+            ><img :src="playIcon" class="replay-icon" alt="" /></button>
           </div>
         </div>
         <div v-else class="ranking-empty">
@@ -422,6 +423,15 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+.rank-medal {
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+}
+.replay-icon {
+  width: 16px;
+  height: 16px;
 }
 .ranking-empty {
   text-align: center;

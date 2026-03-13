@@ -45,6 +45,11 @@ export default {
     enterShareCode: '共有コードを入力',
     shareCodeDesc: '共有コードを入力して、パズルをプレイしましょう。',
     shareCodePlaceholder: '例: ABC123',
+    about: 'このアプリについて',
+  },
+  about: {
+    credits: 'クレジット',
+    icons: 'アイコン',
   },
   weekdays: {
     sun: '日',

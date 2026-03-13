@@ -19,6 +19,7 @@ const router = createRouter({
     { path: '/achievements', component: () => import('./views/AchievementView.vue') },
     { path: '/replay/:scoreId', component: () => import('./views/ReplayView.vue') },
     { path: '/s/:code', component: () => import('./views/ShareRedirectView.vue') },
+    { path: '/about', component: () => import('./views/AboutView.vue') },
   ],
 });
 

@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { onToast, type ToastEvent } from '@/api/client';
+import { crossIcon, checkIcon, infoIcon } from '@/assets/icons';
 
 const { t } = useI18n();
 
@@ -55,11 +56,7 @@ function dismissToast(id: number) {
       :class="['toast', `toast-${toast.type}`, { 'toast-leaving': toast.leaving }]"
       @click="dismissToast(toast.id)"
     >
-      <span class="toast-icon">
-        <template v-if="toast.type === 'error'">✕</template>
-        <template v-else-if="toast.type === 'success'">✓</template>
-        <template v-else>ℹ</template>
-      </span>
+      <img class="toast-icon" :src="toast.type === 'error' ? crossIcon : toast.type === 'success' ? checkIcon : infoIcon" alt="" />
       <span class="toast-message">{{ t(toast.messageKey, toast.params ?? {}) }}</span>
     </div>
   </div>
@@ -99,7 +96,8 @@ function dismissToast(id: number) {
 .toast-success { background: var(--success, #4caf50); }
 .toast-info { background: var(--info, #2196f3); }
 .toast-icon {
-  font-size: 14px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 .toast-message {

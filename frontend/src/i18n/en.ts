@@ -45,6 +45,11 @@ export default {
     enterShareCode: 'Enter Share Code',
     shareCodeDesc: 'Enter the share code to play a shared puzzle.',
     shareCodePlaceholder: 'e.g. ABC123',
+    about: 'About',
+  },
+  about: {
+    credits: 'Credits',
+    icons: 'Icons',
   },
   weekdays: {
     sun: 'Sun',

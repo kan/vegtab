@@ -11,6 +11,12 @@ import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
 import RankingModal from '@/components/RankingModal.vue';
 import VegetableIcon from '@/components/VegetableIcon.vue';
+import {
+  lightningIcon, brickIcon, infinityIcon, trophyIcon,
+  speakerLoudIcon, speakerMutedIcon, musicNoteIcon, vibrationIcon,
+  linkIcon, sunIcon, moonIcon, globeIcon, mobileIcon, keyIcon, infoIcon,
+  pencilIcon,
+} from '@/assets/icons';
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -247,7 +253,7 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
         <template v-else>
           <span class="user-name" @click="editingName = true; nameInput = gameStore.displayName">
             {{ gameStore.effectiveName }}
-            <span class="name-edit-icon">&#x270E;</span>
+            <img class="name-edit-icon" :src="pencilIcon" alt="" />
           </span>
         </template>
       </div>
@@ -264,7 +270,7 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
         <div class="daily-header">
           <span class="daily-date">{{ todayJST() }}</span>
           <span class="daily-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
-          <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('common.ranking')">&#x1F3C6;</button>
+          <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('common.ranking')"><img :src="trophyIcon" class="menu-icon" alt="" /></button>
         </div>
         <div class="daily-countdown">
           <span class="countdown-label">{{ t('home.nextPuzzleIn') }}</span>
@@ -272,19 +278,19 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
         </div>
         <div class="mode-buttons">
           <button class="mode-btn" @click="playMode('sprint')">
-            <span class="mode-btn-icon">⚡</span>
+            <img class="mode-btn-icon" :src="lightningIcon" alt="" />
             <span class="mode-btn-name">{{ t('mode.sprint') }}</span>
             <span v-if="todayBestSprint > 0" class="mode-btn-best">{{ todayBestSprint.toLocaleString() }}</span>
             <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
           </button>
           <button class="mode-btn" @click="playMode('clear')">
-            <span class="mode-btn-icon">🧱</span>
+            <img class="mode-btn-icon" :src="brickIcon" alt="" />
             <span class="mode-btn-name">{{ t('mode.clear') }}</span>
             <span v-if="todayBestClear > 0" class="mode-btn-best">{{ todayBestClear }}{{ t('mode.moves') }}</span>
             <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
           </button>
           <button class="mode-btn" @click="playMode('survival')">
-            <span class="mode-btn-icon">♾️</span>
+            <img class="mode-btn-icon" :src="infinityIcon" alt="" />
             <span class="mode-btn-name">{{ t('mode.survival') }}</span>
             <span v-if="todayBestSurvival > 0" class="mode-btn-best">{{ todayBestSurvival }}{{ t('mode.moves') }}</span>
             <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
@@ -293,7 +299,7 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
         <!-- Ranking preview -->
         <div class="ranking-preview">
           <div class="ranking-preview-header">
-            <span class="ranking-preview-title">🏆 {{ t('home.rankingPreview') }}</span>
+            <span class="ranking-preview-title"><img :src="trophyIcon" class="menu-icon" alt="" /> {{ t('home.rankingPreview') }}</span>
             <button class="ranking-see-all" @click="openRanking(todaySeed)">{{ t('home.seeAll') }}</button>
           </div>
           <div class="ranking-mode-tabs">
@@ -376,44 +382,49 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
           </div>
           <div class="menu-items">
             <button :class="['menu-item', { off: !seEnabled }]" @click="toggleSE">
-              <span class="menu-item-icon">{{ seEnabled ? '🔊' : '🔇' }}</span>
+              <img class="menu-item-icon" :src="seEnabled ? speakerLoudIcon : speakerMutedIcon" alt="" />
               <span class="menu-item-label">{{ t('home.soundSE') }}</span>
               <span :class="['menu-item-status', { on: seEnabled }]">{{ seEnabled ? 'ON' : 'OFF' }}</span>
             </button>
             <button :class="['menu-item', { off: !bgmEnabled }]" @click="toggleBGM">
-              <span class="menu-item-icon">🎵</span>
+              <img class="menu-item-icon" :src="musicNoteIcon" alt="" />
               <span class="menu-item-label">{{ t('home.soundBGM') }}</span>
               <span :class="['menu-item-status', { on: bgmEnabled }]">{{ bgmEnabled ? 'ON' : 'OFF' }}</span>
             </button>
             <button :class="['menu-item', { off: !vibrationEnabled }]" @click="toggleVibration">
-              <span class="menu-item-icon">📳</span>
+              <img class="menu-item-icon" :src="vibrationIcon" alt="" />
               <span class="menu-item-label">{{ t('home.soundVibration') }}</span>
               <span :class="['menu-item-status', { on: vibrationEnabled }]">{{ vibrationEnabled ? 'ON' : 'OFF' }}</span>
             </button>
             <div class="menu-divider" />
             <button class="menu-item" @click="openShareCodeInput">
-              <span class="menu-item-icon">🔗</span>
+              <img class="menu-item-icon" :src="linkIcon" alt="" />
               <span class="menu-item-label">{{ t('home.enterShareCode') }}</span>
             </button>
             <div class="menu-divider" />
             <button class="menu-item" @click="doToggleTheme">
-              <span class="menu-item-icon">{{ isDark ? '☀️' : '🌙' }}</span>
+              <img class="menu-item-icon" :src="isDark ? sunIcon : moonIcon" alt="" />
               <span class="menu-item-label">{{ t('home.darkMode') }}</span>
               <span :class="['menu-item-status', { on: isDark }]">{{ isDark ? 'ON' : 'OFF' }}</span>
             </button>
             <button class="menu-item" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
-              <span class="menu-item-icon">🌐</span>
+              <img class="menu-item-icon" :src="globeIcon" alt="" />
               <span class="menu-item-label">{{ t('home.language') }}</span>
               <span class="menu-item-status on">{{ locale === 'ja' ? '日本語' : 'English' }}</span>
             </button>
             <div class="menu-divider" />
             <button class="menu-item" @click="openTransferMenu">
-              <span class="menu-item-icon">📲</span>
+              <img class="menu-item-icon" :src="mobileIcon" alt="" />
               <span class="menu-item-label">{{ t('transfer.generate') }}</span>
             </button>
             <button class="menu-item" @click="openRedeemInput">
-              <span class="menu-item-icon">🔑</span>
+              <img class="menu-item-icon" :src="keyIcon" alt="" />
               <span class="menu-item-label">{{ t('transfer.redeem') }}</span>
+            </button>
+            <div class="menu-divider" />
+            <button class="menu-item" @click="menuOpen = false; router.push('/about')">
+              <img class="menu-item-icon" :src="infoIcon" alt="" />
+              <span class="menu-item-label">{{ t('home.about') }}</span>
             </button>
           </div>
         </div>
@@ -618,9 +629,9 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
   opacity: 0.6;
 }
 .menu-item-icon {
-  font-size: 18px;
-  width: 24px;
-  text-align: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
 }
 .menu-item-label {
   flex: 1;
@@ -725,9 +736,10 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
   cursor: pointer;
 }
 .name-edit-icon {
-  font-size: 12px;
-  color: var(--text-muted);
+  width: 14px;
+  height: 14px;
   margin-left: 2px;
+  vertical-align: middle;
 }
 .name-input {
   padding: 6px 10px;
@@ -779,10 +791,14 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
 }
 
 /* Ranking button */
+.menu-icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+}
 .btn-ranking-small {
   background: none;
   border: none;
-  font-size: 16px;
   cursor: pointer;
   padding: 2px 4px;
   flex-shrink: 0;
@@ -852,7 +868,8 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
   transform: scale(0.96);
 }
 .mode-btn-icon {
-  font-size: 20px;
+  width: 20px;
+  height: 20px;
 }
 .mode-btn-name {
   font-size: 11px;
