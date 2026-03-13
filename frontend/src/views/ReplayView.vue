@@ -310,7 +310,7 @@ function getCellClass(row: number, col: number): string {
   height: 40px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-card);
+  background: #fff;
   font-size: 16px;
   cursor: pointer;
   color: var(--text-primary);
