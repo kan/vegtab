@@ -500,7 +500,7 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
       </div>
     </Teleport>
 
-    <RankingModal :seed="rankingSeed" :open="showRanking" @close="showRanking = false" />
+    <RankingModal :seed="rankingSeed" :open="showRanking" :mode="rankingMode" @close="showRanking = false" />
   </div>
 </template>
 
