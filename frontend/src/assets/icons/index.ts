@@ -6,9 +6,9 @@ export { default as tomatoIcon } from './1F345.svg';
 export { default as daikonIcon } from './1FADC-daikon.svg';
 
 // Item icons
-export { default as spoonIcon } from './1F944.svg';
-export { default as knifeIcon } from './1F52A.svg';
-export { default as forkKnifeIcon } from './1F374.svg';
+export { default as spoonIcon } from './1F50E.svg';
+export { default as scissorsIcon } from './2702.svg';
+export { default as forkKnifeIcon } from './1F37D.svg';
 export { default as saladIcon } from './1F957.svg';
 
 // Mode icons
@@ -44,7 +44,7 @@ export { default as infoIcon } from './2139.svg';
 // UI controls
 export { default as shareIcon } from './E253.svg';
 export { default as playIcon } from './25B6.svg';
-export { default as pencilIcon } from './270F.svg';
+export { default as pencilIcon } from './1F58A.svg';
 export { default as prevTrackIcon } from './23EE.svg';
 export { default as rewindIcon } from './23EA.svg';
 export { default as pauseIcon } from './23F8.svg';
