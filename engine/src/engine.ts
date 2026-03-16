@@ -5,7 +5,7 @@ import {
 import { createRng, nextInt } from './rng.js';
 import {
   generateRawBoard, fillEmptyCells, cloneBoard, getCell, isValidPosition, nextColor,
-  createColumnRngStates,
+  createColumnRngStates, findItemPosition,
 } from './board.js';
 import { findMatches, getUniquePositions, hasMatches } from './match.js';
 import { applyGravity } from './gravity.js';
@@ -434,25 +434,43 @@ export function processAction(state: GameState, action: Action): GameState {
       // 虫めがねはスワイプ起動不可（tapの代わりにmagnifying_glass actionで）
       if (itemCell.item === 'scope') return state;
 
+      // コーヒーのtargetColorを事前保存（pre-chainで消去される可能性）
+      const savedOtherColor = otherCell.item ? undefined : otherCell.color;
+
       // まず入れ替え
       board[action.pos.row][action.pos.col] = cell2;
       board[targetPos.row][targetPos.col] = cell1;
 
-      let targetColor: number | undefined;
-      if (itemCell.item === 'flush') {
-        // コーヒーのスワイプ: 入れ替え先の色
-        targetColor = otherCell.item ? undefined : otherCell.color;
+      const passThrough = newState.mode === 'clear';
+
+      // #15: 野菜のマッチ判定を先に処理（pre-chains）
+      const preChainResult = processChains(board, newState.rngState, 1, newState.mode);
+      newState.score += preChainResult.score;
+      newState.rngState = preChainResult.rngState;
+
+      // アイテム位置の再検索（gravity で落下している可能性）
+      const currentItemPos = findItemPosition(board, itemCell.item!, itemPos);
+      if (!currentItemPos) {
+        // アイテムが消滅（pre-chainで誘爆等） — スワップのみ有効
+        newState.moveCount++;
+        applyGameOver(newState);
+        return newState;
       }
 
-      const result = activateItem(board, itemPos, itemCell.item!, targetColor, 1, newState.rngState);
+      let targetColor: number | undefined;
+      if (itemCell.item === 'flush') {
+        targetColor = savedOtherColor;
+      }
+
+      const result = activateItem(board, currentItemPos, itemCell.item!, targetColor, preChainResult.steps.length + 1, newState.rngState);
       newState.score += result.score;
       newState.rngState = result.rngState;
       newState.moveCount++;
 
       // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-      applyGravity(board, newState.mode === 'clear');
+      applyGravity(board, passThrough);
       newState.rngState = fillEmptyCells(board, newState.rngState);
-      const chainResult = processChains(board, newState.rngState, 2, newState.mode);
+      const chainResult = processChains(board, newState.rngState, result.chainSteps.length + preChainResult.steps.length + 1, newState.mode);
       newState.score += chainResult.score;
       newState.rngState = chainResult.rngState;
 
@@ -756,6 +774,45 @@ export function processScopeSynthesis(
   return newState;
 }
 
+/** #15: スプーン（虫めがね）と野菜を入れ替え後、pre-chainsを処理してからscope発動 */
+export function processScopeSwap(
+  state: GameState, pos: Position, dir: Direction, targetCells: Position[],
+): GameState {
+  if (state.isGameOver) return state;
+
+  const newState = cloneGameState(state);
+  const board = newState.board;
+
+  const targetPos = getAdjacentPos(pos, dir);
+  if (!isValidPosition(targetPos)) return state;
+
+  const cell1 = getCell(board, pos);
+  const cell2 = getCell(board, targetPos);
+  if (!cell1 || !cell2) return state;
+
+  // Swap cells
+  board[pos.row][pos.col] = cell2;
+  board[targetPos.row][targetPos.col] = cell1;
+
+  // Pre-chains: process matches created by the vegetable swap
+  const preChainResult = processChains(board, newState.rngState, 1, newState.mode);
+  newState.score += preChainResult.score;
+  newState.rngState = preChainResult.rngState;
+
+  // Re-find scope position after gravity
+  const origScopePos = cell1?.item === 'scope' ? targetPos : pos;
+  const scopePos = findItemPosition(board, 'scope', origScopePos);
+  if (!scopePos) {
+    // Scope was destroyed during pre-chains
+    newState.moveCount++;
+    applyGameOver(newState);
+    return newState;
+  }
+
+  // Now process scope action on the post-pre-chain state
+  return processAction(newState, { type: 'scope', pos: scopePos, targetCells });
+}
+
 /** Sprint終了時の残存アイテム自動発動。moveCountを増やさず、新アイテム生成を抑制する。 */
 export function processAutoActivation(state: GameState): GameState {
   if (state.mode !== 'sprint') return state;
@@ -784,9 +841,7 @@ export function processAutoActivation(state: GameState): GameState {
 
         applyGravity(board, false);
         current.rngState = fillEmptyCells(board, current.rngState);
-        const chainResult = processChains(board, current.rngState, 2, current.mode, true);
-        current.score += chainResult.score;
-        current.rngState = chainResult.rngState;
+        // 連鎖処理なし — アイテム効果のスコアのみ加算（#9: スキル要素を損なうランダム連鎖を抑制）
         found = true;
         break;
       }

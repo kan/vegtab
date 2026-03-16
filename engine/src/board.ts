@@ -1,4 +1,4 @@
-import { Cell, Color, Position, BOARD_SIZE, NUM_COLORS } from './types.js';
+import { Cell, Color, ItemType, Position, BOARD_SIZE, NUM_COLORS } from './types.js';
 import { createRng, nextInt } from './rng.js';
 
 /** 新しいランダムな色を生成 */
@@ -78,4 +78,25 @@ export function getCell(board: (Cell | null)[][], pos: Position): Cell | null {
 /** 位置が盤面内かチェック */
 export function isValidPosition(pos: Position): boolean {
   return pos.row >= 0 && pos.row < BOARD_SIZE && pos.col >= 0 && pos.col < BOARD_SIZE;
+}
+
+/** gravity後にアイテムの新しい位置を探索。同列下方を優先し、見つからなければ盤面全体を走査。 */
+export function findItemPosition(
+  board: (Cell | null)[][],
+  itemType: ItemType,
+  origPos: Position,
+): Position | null {
+  for (let r = origPos.row; r < BOARD_SIZE; r++) {
+    if (board[r][origPos.col]?.item === itemType) {
+      return { row: r, col: origPos.col };
+    }
+  }
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c]?.item === itemType) {
+        return { row: r, col: c };
+      }
+    }
+  }
+  return null;
 }

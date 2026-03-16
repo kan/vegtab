@@ -427,24 +427,40 @@ async function commitSwap(pos: Position, dir: Direction) {
     return;
   }
 
-  // Scope swap with regular tile → enter selection mode
+  // Scope swap with regular tile → process pre-chains then enter selection mode (#15)
   {
     const cell1 = activeBoard.value?.[pos.row]?.[pos.col];
     const cell2 = activeBoard.value?.[nb.row]?.[nb.col];
     if (cell1 && cell2) {
       const scopeCell = cell1.item === 'scope' ? cell1 : cell2.item === 'scope' ? cell2 : null;
       if (scopeCell && !(cell1.item && cell2.item)) {
-        // One is scope, the other is a regular tile (not both items)
-        // After slide animation, mag moved to the neighbor's position
-        const scopePos = cell1.item === 'scope' ? nb : pos;
         pendingScopeSwap = { pos, dir };
         clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
-        // Show the swapped board visually
-        const swapped = cloneBoard(store.board!);
-        swapped[pos.row][pos.col] = cell2;
-        swapped[nb.row][nb.col] = cell1;
-        visualBoard.value = swapped;
-        scope.startSelection(scopePos);
+
+        const preChainResult = store.computeScopeSwapPreChains(pos, dir);
+        if (!preChainResult) {
+          drag.setLocked(false);
+          return;
+        }
+
+        visualBoard.value = preChainResult.boardAfterSwap;
+
+        // Animate pre-chains before entering selection mode
+        const state = store.gameState!;
+        if (preChainResult.preChains.length > 0) {
+          await animateChainsWithScore(preChainResult.preChains, preChainResult.preScore);
+          store.applyState({
+            ...state,
+            board: preChainResult.boardAfterPreChains,
+            score: preChainResult.preScore,
+            rngState: preChainResult.preRng,
+          });
+        } else {
+          store.applyState({ ...state, board: preChainResult.boardAfterSwap });
+        }
+        visualBoard.value = null;
+
+        scope.startSelection(preChainResult.scopePos);
         showScopeHint('scopeTapHint');
         drag.setLocked(false);
         return;

@@ -1,31 +1,11 @@
 import { ref, computed, onUnmounted } from 'vue';
 import {
-  initializeGame, processAction, processScopeSynthesis, processAutoActivation,
+  initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation,
   cloneGameState,
   type GameState, type GameMode, type Cell, type GameInitParams,
   type Direction,
 } from '@tomado/engine';
 import type { ReplayAction } from '@/stores/puzzle';
-
-/** Apply scope swap: manually swap cells then process scope action */
-function applyScopeSwap(
-  state: GameState, pos: { row: number; col: number }, dir: Direction, targetCells: { row: number; col: number }[],
-): GameState {
-  // Clone the state and swap the cells manually
-  const swapped = cloneGameState(state);
-  const target = {
-    row: pos.row + (dir === 'down' ? 1 : dir === 'up' ? -1 : 0),
-    col: pos.col + (dir === 'right' ? 1 : dir === 'left' ? -1 : 0),
-  };
-  const cell1 = swapped.board[pos.row][pos.col];
-  const cell2 = swapped.board[target.row][target.col];
-  swapped.board[pos.row][pos.col] = cell2;
-  swapped.board[target.row][target.col] = cell1;
-
-  // Now find where the scope ended up and process it
-  const scopePos = cell1?.item === 'scope' ? target : pos;
-  return processAction(swapped, { type: 'scope', pos: scopePos, targetCells });
-}
 
 export function useReplayPlayer() {
   const actions = ref<ReplayAction[]>([]);
@@ -70,7 +50,7 @@ export function useReplayPlayer() {
       if (action.type === 'scope_synthesis') {
         state = processScopeSynthesis(state, action.pos1, action.pos2, action.targetCells);
       } else if (action.type === 'scope_swap') {
-        state = applyScopeSwap(state, action.pos, action.dir, action.targetCells);
+        state = processScopeSwap(state, action.pos, action.dir, action.targetCells);
       } else if (action.type !== 'auto_activate') {
         state = processAction(state, action);
       }

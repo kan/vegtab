@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
   initializeGame, processAction, processScopeSynthesis,
-  cloneBoard, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
+  cloneBoard, findItemPosition, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
   calculateStepScore,
   determineItemFromMatches, checkGameOverState,
   isValidPosition, getItemTargets, findFlushTargetColor,
@@ -353,6 +353,7 @@ function buildItemPlan(
   quotaTable?: number[],
   segmentStartScore?: number,
   suppressItemGen = false,
+  suppressChains = false,
 ): ItemAnimPlan {
   const boardBefore = cloneBoard(board);
   const effects = computeItemEffects(board, itemPos, itemType, targetColor);
@@ -368,9 +369,18 @@ function buildItemPlan(
   let rng = fillEmptyCells(board, rngState);
   const boardAfterDrop = cloneBoard(board);
 
-  const { chains: regularChains, rng: finalRng, totalScore } =
-    computeChainSteps(board, rng, baseScore + scoreFromItems, 2, gameMode, suppressItemGen);
-  rng = finalRng;
+  let regularChains: ChainAnimData[];
+  let totalScore: number;
+  if (suppressChains) {
+    // #9: 自動発動後の連鎖を抑制
+    regularChains = [];
+    totalScore = baseScore + scoreFromItems;
+  } else {
+    const result = computeChainSteps(board, rng, baseScore + scoreFromItems, 2, gameMode, suppressItemGen);
+    regularChains = result.chains;
+    totalScore = result.totalScore;
+    rng = result.rng;
+  }
 
   return {
     boardBeforeActivation: boardBefore,
@@ -608,6 +618,45 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
       ),
     };
+  }
+
+  /** #15: Compute pre-chains for scope swap (before user enters selection mode) */
+  function computeScopeSwapPreChains(pos: Position, dir: Direction): {
+    boardAfterSwap: (Cell | null)[][];
+    boardAfterPreChains: (Cell | null)[][];
+    preChains: ChainAnimData[];
+    preScore: number;
+    preRng: number[];
+    scopePos: Position;
+  } | null {
+    if (!gameState.value) return null;
+    const state = gameState.value;
+    const target = adjPos(pos, dir);
+    if (!isValidPosition(target)) return null;
+
+    const cell1 = state.board[pos.row][pos.col];
+    const cell2 = state.board[target.row][target.col];
+    if (!cell1 || !cell2) return null;
+
+    const scopeCell = cell1.item === 'scope' ? cell1 : cell2.item === 'scope' ? cell2 : null;
+    if (!scopeCell) return null;
+    if (cell1.item && cell2.item) return null; // both items → synthesis
+
+    const board = cloneBoard(state.board);
+    board[pos.row][pos.col] = { ...cell2 };
+    board[target.row][target.col] = { ...cell1 };
+    const boardAfterSwap = cloneBoard(board);
+
+    const origScopePos = cell1.item === 'scope' ? target : pos;
+
+    const { chains: preChains, rng: preRng, totalScore: preScore } =
+      computeChainSteps(board, state.rngState, state.score, 1, state.mode);
+
+    // Re-find scope position after gravity
+    const scopePos = findItemPosition(board, 'scope', origScopePos);
+    if (!scopePos) return null;
+
+    return { boardAfterSwap, boardAfterPreChains: cloneBoard(board), preChains, preScore, preRng, scopePos };
   }
 
   function computeScopeSynthesisPlan(
@@ -863,24 +912,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     // Items never participate in matches, so the original item is still on the board.
     // Gravity only moves it down within the same column — search from origItemPos.row
     // downward to find the closest match (avoids confusion with newly generated items).
-    let newItemPos: Position | null = null;
-    for (let r = origItemPos.row; r < BOARD_SIZE; r++) {
-      if (board[r][origItemPos.col]?.item === itemCell.item) {
-        newItemPos = { row: r, col: origItemPos.col };
-        break;
-      }
-    }
-    // Fallback: scan entire board (e.g. if column was restructured by obstacle destruction)
-    if (!newItemPos) {
-      for (let r = 0; r < BOARD_SIZE && !newItemPos; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-          if (board[r][c]?.item === itemCell.item) {
-            newItemPos = { row: r, col: c };
-            break;
-          }
-        }
-      }
-    }
+    // Find the item's current position after gravity (it may have dropped)
+    const newItemPos = findItemPosition(board, itemCell.item!, origItemPos);
     if (!newItemPos) return null;
 
     let targetColor: number | undefined;
@@ -1146,7 +1179,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           board, state.rngState, state.score, state.moveCount - 1,
           pos, cell.item, targetColor,
           state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
-          true,
+          true,  // suppressItemGen
+          true,  // suppressChains (#9)
         );
         return { pos, plan };
       }
@@ -1176,7 +1210,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     obstacleCount, quotaTable, quotaTarget, movesUntilCheck, segmentScore,
     startGame, restoreState, recordAction, swap, tap,
     activateScope, applyScopeSynthesis,
-    computeScopePlan, computeScopeSynthesisPlan,
+    computeScopePlan, computeScopeSwapPreChains, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,
     computeAutoActivationPlan,
     applyState, setDisplayScore, placeItem,
