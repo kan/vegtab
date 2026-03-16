@@ -204,9 +204,10 @@ async function shareScore() {
   const code = shareCode.value ?? `#${store.seed}`;
   const url = shareUrl.value ?? '';
   const modeLabel = t(`mode.${selectedMode.value}`);
+  const appName = t('common.appName');
   const text = selectedMode.value === 'clear'
-    ? `Tomado ${modeLabel} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`
-    : `Tomado ${modeLabel} ${code} | ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
+    ? `${appName} ${modeLabel} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`
+    : `${appName} ${modeLabel} ${code} | ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
   const shareData: ShareData = { text };
   if (url) shareData.url = url;
   if (navigator.share) {
