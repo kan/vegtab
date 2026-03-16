@@ -205,7 +205,7 @@ async function shareScore() {
   const url = shareUrl.value ?? '';
   const modeLabel = t(`mode.${selectedMode.value}`);
   const text = selectedMode.value === 'clear'
-    ? `Tomado ${modeLabel} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')}`
+    ? `Tomado ${modeLabel} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`
     : `Tomado ${modeLabel} ${code} | ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
   const shareData: ShareData = { text };
   if (url) shareData.url = url;
@@ -291,6 +291,7 @@ const gameOverScore = computed(() => {
           <div class="score-area">
             <template v-if="selectedMode === 'clear'">
               <div class="score-label">{{ t('mode.obstacles', { count: store.obstacleCount }) }}</div>
+              <div class="move-label">{{ t('puzzle.score', { score: store.score }) }}</div>
             </template>
             <template v-else-if="selectedMode !== 'survival'">
               <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
@@ -332,7 +333,8 @@ const gameOverScore = computed(() => {
         <div class="game-over-card">
           <h2>{{ gameOverTitle }}</h2>
           <p class="final-score">{{ gameOverScore }}</p>
-          <p class="move-info">{{ t('puzzle.moveCount', { count: store.moveCount }) }}</p>
+          <p v-if="selectedMode === 'clear'" class="clear-score-info">{{ t('puzzle.pts', { score: store.score }) }}</p>
+          <p v-if="selectedMode === 'sprint'" class="move-info">{{ t('puzzle.moveCount', { count: store.moveCount }) }}</p>
           <div class="game-over-actions actions-col">
             <button class="btn" @click="restart"><span class="btn-icon">&#x21BB;</span> {{ t('common.retry') }}</button>
             <button class="btn btn-share" @click="shareScore"><img :src="shareIconUrl" class="btn-icon-svg" alt="" /> {{ t('common.share') }}</button>
@@ -429,7 +431,6 @@ const gameOverScore = computed(() => {
 .btn-ranking-icon {
   width: 18px;
   height: 18px;
-  vertical-align: middle;
   vertical-align: middle;
 }
 .score-area {
@@ -598,6 +599,12 @@ const gameOverScore = computed(() => {
 }
 .btn-debug {
   background: var(--slate);
+}
+.clear-score-info {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--brand);
+  margin-bottom: 4px;
 }
 .move-info {
   color: var(--text-tertiary);
