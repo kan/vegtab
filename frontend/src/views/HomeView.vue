@@ -7,6 +7,7 @@ import { generateTransferCode, redeemTransferCode, showToast, api } from '@/api/
 import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { useSound } from '@/sound';
+import { useAnim } from '@/anim';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
 import RankingModal from '@/components/RankingModal.vue';
@@ -15,7 +16,7 @@ import {
   lightningIcon, brickIcon, infinityIcon, trophyIcon,
   speakerLoudIcon, speakerMutedIcon, musicNoteIcon, vibrationIcon,
   linkIcon, sunIcon, moonIcon, globeIcon, mobileIcon, keyIcon, infoIcon,
-  pencilIcon,
+  pencilIcon, speedIcon,
 } from '@/assets/icons';
 
 const { t, locale } = useI18n();
@@ -23,6 +24,7 @@ const router = useRouter();
 const gameStore = useGameStore();
 const { isDark, toggle: doToggleTheme } = useTheme();
 const { seEnabled, bgmEnabled, vibrationEnabled, soundPromptNeeded, acceptSound, declineSound, toggleSE, toggleBGM, toggleVibration } = useSound();
+const { animSpeed, cycleSpeed } = useAnim();
 
 // Title vegetable icons (random pair, different left/right)
 const titleVegeLeft = Math.floor(Math.random() * 5) as 0 | 1 | 2 | 3 | 4;
@@ -395,6 +397,11 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
               <img class="menu-item-icon" :src="vibrationIcon" alt="" />
               <span class="menu-item-label">{{ t('home.soundVibration') }}</span>
               <span :class="['menu-item-status', { on: vibrationEnabled }]">{{ vibrationEnabled ? 'ON' : 'OFF' }}</span>
+            </button>
+            <button class="menu-item" @click="cycleSpeed">
+              <img class="menu-item-icon" :src="speedIcon" alt="" />
+              <span class="menu-item-label">{{ t('home.animSpeed') }}</span>
+              <span class="menu-item-status on">{{ animSpeed }}x</span>
             </button>
             <div class="menu-divider" />
             <button class="menu-item" @click="openShareCodeInput">

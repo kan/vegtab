@@ -1,5 +1,6 @@
 import { ref, reactive } from 'vue';
 import { BOARD_SIZE, type Position, type Direction } from '@tomado/engine';
+import { useAnim } from '@/anim';
 
 function adj(p: Position, d: Direction): Position {
   switch (d) {
@@ -24,6 +25,7 @@ export function useDragHandler(
   onTap: (pos: Position) => void,
   options?: { isDragSuppressed?: () => boolean },
 ) {
+  const { ANIM } = useAnim();
   const cellOffsets = reactive<Record<string, { x: number; y: number; transition: boolean; z: number }>>({});
   let ptrX = 0, ptrY = 0;
   let ptrPos: Position | null = null;
@@ -66,7 +68,7 @@ export function useDragHandler(
         const n = adj(pos, d);
         clearOff(n.row, n.col);
       }
-    }, 150); // matches ANIM.SWAP
+    }, ANIM.value.SWAP);
   }
 
   function onPointerDown(e: PointerEvent) {

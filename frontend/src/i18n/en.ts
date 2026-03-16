@@ -35,6 +35,7 @@ export default {
     soundSE: 'Sound Effects',
     soundBGM: 'Background Music',
     soundVibration: 'Vibration',
+    animSpeed: 'Animation Speed',
     darkMode: 'Dark Mode',
     language: 'Language',
     settings: 'Settings',

@@ -8,7 +8,7 @@ import VegetableIcon from '@/components/VegetableIcon.vue';
 import ItemIcon from '@/components/ItemIcon.vue';
 import ObstacleTile from '@/components/ObstacleTile.vue';
 import type { ReplayAction } from '@/stores/puzzle';
-import { prevTrackIcon, rewindIcon, pauseIcon, playIcon, fastForwardIcon, nextTrackIcon } from '@/assets/icons';
+import { ctrlPrevTrackIcon, ctrlRewindIcon, ctrlPauseIcon, ctrlPlayIcon, ctrlForwardIcon, ctrlNextTrackIcon } from '@/assets/icons';
 import type { GameMode } from '@tomado/engine';
 
 const { t } = useI18n();
@@ -158,13 +158,13 @@ function getCellClass(row: number, col: number): string {
 
       <!-- Controls -->
       <div class="replay-controls">
-        <button class="ctrl-btn" @click="player.goTo(0)" :disabled="player.currentStep.value === 0"><img :src="prevTrackIcon" class="ctrl-icon" alt="" /></button>
-        <button class="ctrl-btn" @click="player.prev()" :disabled="player.currentStep.value === 0"><img :src="rewindIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.goTo(0)" :disabled="player.currentStep.value === 0"><img :src="ctrlPrevTrackIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.prev()" :disabled="player.currentStep.value === 0"><img :src="ctrlRewindIcon" class="ctrl-icon" alt="" /></button>
         <button class="ctrl-btn ctrl-play" @click="player.isPlaying.value ? player.pause() : player.play()">
-          <img :src="player.isPlaying.value ? pauseIcon : playIcon" class="ctrl-icon" alt="" />
+          <img :src="player.isPlaying.value ? ctrlPauseIcon : ctrlPlayIcon" class="ctrl-icon" alt="" />
         </button>
-        <button class="ctrl-btn" @click="player.next()" :disabled="player.currentStep.value >= player.totalSteps.value"><img :src="fastForwardIcon" class="ctrl-icon" alt="" /></button>
-        <button class="ctrl-btn" @click="player.goTo(player.totalSteps.value)" :disabled="player.currentStep.value >= player.totalSteps.value"><img :src="nextTrackIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.next()" :disabled="player.currentStep.value >= player.totalSteps.value"><img :src="ctrlForwardIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.goTo(player.totalSteps.value)" :disabled="player.currentStep.value >= player.totalSteps.value"><img :src="ctrlNextTrackIcon" class="ctrl-icon" alt="" /></button>
       </div>
 
       <!-- Slider -->
@@ -310,7 +310,7 @@ function getCellClass(row: number, col: number): string {
   height: 40px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--bg-card);
   font-size: 16px;
   cursor: pointer;
   color: var(--text-primary);

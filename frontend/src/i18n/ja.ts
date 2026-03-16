@@ -35,6 +35,7 @@ export default {
     soundSE: '効果音',
     soundBGM: 'BGM',
     soundVibration: '振動',
+    animSpeed: 'アニメ速度',
     darkMode: 'ダークモード',
     language: '言語',
     settings: '設定',

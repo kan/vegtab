@@ -10,7 +10,8 @@ import RankingModal from '@/components/RankingModal.vue';
 import ModeSelector from '@/components/ModeSelector.vue';
 import SurvivalGauge from '@/components/SurvivalGauge.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
-import { shareIcon as shareIconUrl, trophyIcon, speakerLoudIcon, speakerMutedIcon, musicNoteIcon } from '@/assets/icons';
+import { shareIcon as shareIconUrl, trophyIcon, speakerLoudIcon, speakerMutedIcon, musicNoteIcon, speedIcon } from '@/assets/icons';
+import { useAnim } from '@/anim';
 
 const isDev = import.meta.env.DEV;
 const { t } = useI18n();
@@ -243,6 +244,7 @@ const myBest = computed(() => {
 });
 
 const { seEnabled, bgmEnabled, toggleSE, toggleBGM } = useSound();
+const { animSpeed, cycleSpeed } = useAnim();
 
 // --- Game over display ---
 const gameOverTitle = computed(() => {
@@ -351,6 +353,10 @@ const gameOverScore = computed(() => {
           </button>
           <button :class="['sound-toggle', { off: !bgmEnabled }]" @click="toggleBGM" :title="t('home.soundBGM')">
             <img :src="musicNoteIcon" class="sound-icon" alt="" />
+          </button>
+          <button class="sound-toggle speed-toggle" @click="cycleSpeed" :title="t('home.animSpeed')">
+            <img :src="speedIcon" class="sound-icon" alt="" />
+            <span class="speed-label">{{ animSpeed }}x</span>
           </button>
         </div>
         <button class="btn btn-small" @click="restart">{{ t('common.retry') }}</button>
@@ -560,6 +566,15 @@ const gameOverScore = computed(() => {
 }
 .sound-toggle.off {
   opacity: 0.4;
+}
+.speed-toggle {
+  gap: 2px;
+}
+.speed-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--brand);
+  line-height: 1;
 }
 .btn {
   padding: 10px 24px;

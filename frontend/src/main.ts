@@ -4,11 +4,13 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { i18n } from './i18n';
 import { initTheme } from './theme';
 import { initSound } from './sound';
+import { initAnim } from './anim';
 import './theme.css';
 import App from './App.vue';
 
 initTheme();
 initSound();
+initAnim();
 
 const router = createRouter({
   history: createWebHistory(),

@@ -6,6 +6,7 @@ import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Directi
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
+import { useAnim } from '@/anim';
 import ItemIcon from './ItemIcon.vue';
 import VegetableIcon from './VegetableIcon.vue';
 import { checkIcon } from '@/assets/icons';
@@ -30,15 +31,7 @@ let pendingScopeSwap: { pos: Position; dir: Direction } | null = null;
 // Vegetable colors for check-overlay
 const VEGGIE_COLORS = ['#d4b828', '#4a9a4e', '#7B4FAA', '#c85a5a', '#8a8a7a'];
 
-/** Animation timing constants (ms) */
-const ANIM = {
-  SWAP: 150,
-  MATCH_SHOW: 350,
-  CLEAR: 250,
-  DROP: 300,
-  CELL_SWEEP_INTERVAL: 40,
-  ITEM_CLEAR: 150,
-} as const;
+const { ANIM, scaled } = useAnim();
 
 // --- Layout ---
 onMounted(() => { updateCellSize(); window.addEventListener('resize', updateCellSize); });
@@ -109,7 +102,7 @@ function addFloatingScore(positions: Position[], score: number) {
   const timerId = setTimeout(() => {
     const idx = floatingScores.findIndex(f => f.id === id);
     if (idx !== -1) floatingScores.splice(idx, 1);
-  }, 800);
+  }, scaled(800));
   floatingTimers.push(timerId);
 }
 
@@ -121,7 +114,7 @@ function showScopeHint(key: string) {
   clearTimeout(scopeHintTimer);
   scopeTapHintText.value = t(`puzzle.${key}`);
   showScopeTapHint.value = true;
-  scopeHintTimer = setTimeout(() => { showScopeTapHint.value = false; }, 3000);
+  scopeHintTimer = setTimeout(() => { showScopeTapHint.value = false; }, scaled(3000));
 }
 
 // --- Drag handling ---
@@ -146,7 +139,7 @@ async function autoActivateItems() {
   if (!store.isGameOver || store.mode !== 'sprint') return;
 
   store.autoActivating = true;
-  await wait(400); // brief pause before auto-activation starts
+  await wait(scaled(400)); // brief pause before auto-activation starts
 
   let autoPlan = store.computeAutoActivationPlan();
   while (autoPlan) {
@@ -278,14 +271,14 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
     // scopeアイコンを点滅オーバーレイ
     const key = pk(target.row, target.col);
     cellItemOverlay.set(key, 'scope');
-    await wait(120);
+    await wait(scaled(120));
     cellItemOverlay.delete(key);
-    await wait(60);
+    await wait(scaled(60));
     cellItemOverlay.set(key, 'scope');
-    await wait(120);
+    await wait(scaled(120));
     itemClearingCells.add(key);
     vbRemove(target);
-    await wait(ANIM.ITEM_CLEAR);
+    await wait(ANIM.value.ITEM_CLEAR);
     itemClearingCells.clear();
     cellItemOverlay.clear();
   }
@@ -410,7 +403,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   playSE('swap'); vibrate(10);
   setOff(pos.row, pos.col, fullX, fullY, true, 10);
   setOff(nb.row, nb.col, -fullX, -fullY, true, 0);
-  await wait(ANIM.SWAP);
+  await wait(ANIM.value.SWAP);
 
   // Try normal swap
   const swapPlan = store.computeSwapPlan(pos, dir);
@@ -521,7 +514,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     store.recordAction({ type: 'swap', pos, dir });
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = synthPlan.boardAfterSwap;
-    await wait(50);
+    await wait(scaled(50));
     visualBoard.value = synthPlan.boardBeforeActivation;
     await animateSynthesisEffects(synthPlan);
     await animateSynthesisDropAndChains(synthPlan);
@@ -536,7 +529,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   // Invalid → bounce back
   setOff(pos.row, pos.col, 0, 0, true, 0);
   setOff(nb.row, nb.col, 0, 0, true, 0);
-  await wait(ANIM.SWAP);
+  await wait(ANIM.value.SWAP);
   clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
   drag.setLocked(false);
 }
@@ -573,10 +566,10 @@ async function animateVCut(pos: Position, targets: Position[]) {
   for (const t of sorted) {
     cellItemOverlay.set(pk(t.row, t.col), 'v_cut');
     itemClearingCells.add(pk(t.row, t.col));
-    await wait(ANIM.CELL_SWEEP_INTERVAL);
+    await wait(ANIM.value.CELL_SWEEP_INTERVAL);
   }
 
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 async function animateHCut(pos: Position, targets: Position[]) {
@@ -587,10 +580,10 @@ async function animateHCut(pos: Position, targets: Position[]) {
   for (const t of sorted) {
     cellItemOverlay.set(pk(t.row, t.col), 'h_cut');
     itemClearingCells.add(pk(t.row, t.col));
-    await wait(ANIM.CELL_SWEEP_INTERVAL);
+    await wait(ANIM.value.CELL_SWEEP_INTERVAL);
   }
 
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 async function animateRadial(pos: Position, targets: Position[], icon: ItemType) {
@@ -606,14 +599,14 @@ async function animateRadial(pos: Position, targets: Position[], icon: ItemType)
   for (const t of sorted) {
     const dist = Math.abs(t.row - pos.row) + Math.abs(t.col - pos.col);
     if (dist > prevDist) {
-      await wait(40);
+      await wait(scaled(40));
       prevDist = dist;
     }
     cellItemOverlay.set(pk(t.row, t.col), icon);
     itemClearingCells.add(pk(t.row, t.col));
   }
 
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 async function animateFlush(pos: Position, targets: Position[]) {
@@ -629,9 +622,9 @@ async function animateFlush(pos: Position, targets: Position[]) {
   // Blink 3 times
   for (let i = 0; i < 3; i++) {
     sweepIcon.value = { ...sweepIcon.value!, size: iconSize };
-    await wait(80);
+    await wait(scaled(80));
     sweepIcon.value = { ...sweepIcon.value!, size: Math.round(iconSize * 0.6) };
-    await wait(80);
+    await wait(scaled(80));
   }
   sweepIcon.value = null;
 
@@ -639,13 +632,13 @@ async function animateFlush(pos: Position, targets: Position[]) {
   for (const t of targets) {
     cellItemOverlay.set(pk(t.row, t.col), 'flush');
   }
-  await wait(200);
+  await wait(scaled(200));
 
   // Clear
   for (const t of targets) {
     itemClearingCells.add(pk(t.row, t.col));
   }
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 // --- Synthesis effect animations ---
@@ -710,9 +703,9 @@ async function animateCross(pos: Position, targets: Position[]) {
       cellItemOverlay.set(pk(t.row, t.col), 'h_cut');
       itemClearingCells.add(pk(t.row, t.col));
     }
-    await wait(ANIM.CELL_SWEEP_INTERVAL);
+    await wait(ANIM.value.CELL_SWEEP_INTERVAL);
   }
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 // v_cut+burst: 3 vertical columns
@@ -735,9 +728,9 @@ async function animateVerticalMulti(pos: Position, targets: Position[], icon: st
         itemClearingCells.add(pk(t.row, t.col));
       }
     }
-    await wait(ANIM.CELL_SWEEP_INTERVAL);
+    await wait(ANIM.value.CELL_SWEEP_INTERVAL);
   }
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 // h_cut+burst: 3 horizontal rows
@@ -759,9 +752,9 @@ async function animateHorizontalMulti(pos: Position, targets: Position[], icon: 
         itemClearingCells.add(pk(t.row, t.col));
       }
     }
-    await wait(ANIM.CELL_SWEEP_INTERVAL);
+    await wait(ANIM.value.CELL_SWEEP_INTERVAL);
   }
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 // burst+burst: large radial expansion
@@ -775,13 +768,13 @@ async function animateBurstLarge(pos: Position, targets: Position[]) {
   for (const t of sorted) {
     const dist = Math.abs(t.row - pos.row) + Math.abs(t.col - pos.col);
     if (dist > prevDist) {
-      await wait(30);
+      await wait(scaled(30));
       prevDist = dist;
     }
     cellItemOverlay.set(pk(t.row, t.col), 'burst');
     itemClearingCells.add(pk(t.row, t.col));
   }
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 // flush+flush: all tiles blink then clear
@@ -794,9 +787,9 @@ async function animateFlushAll(pos: Position, targets: Position[]) {
   sweepIcon.value = { item: 'flush', x: offsetX, y: offsetY, size: iconSize };
   for (let i = 0; i < 3; i++) {
     sweepIcon.value = { ...sweepIcon.value!, size: iconSize };
-    await wait(60);
+    await wait(scaled(60));
     sweepIcon.value = { ...sweepIcon.value!, size: Math.round(iconSize * 0.6) };
-    await wait(60);
+    await wait(scaled(60));
   }
   sweepIcon.value = null;
 
@@ -804,11 +797,11 @@ async function animateFlushAll(pos: Position, targets: Position[]) {
   for (const t of targets) {
     cellItemOverlay.set(pk(t.row, t.col), 'flush');
   }
-  await wait(200);
+  await wait(scaled(200));
   for (const t of targets) {
     itemClearingCells.add(pk(t.row, t.col));
   }
-  await wait(ANIM.ITEM_CLEAR + 100);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 // flush+item: color targets clear, then item effects from each
@@ -823,9 +816,9 @@ async function animateFlushSynthesis(pos: Position, targets: Position[], effectT
   sweepIcon.value = { item: 'flush', x: offsetX, y: offsetY, size: iconSize };
   for (let i = 0; i < 2; i++) {
     sweepIcon.value = { ...sweepIcon.value!, size: iconSize };
-    await wait(60);
+    await wait(scaled(60));
     sweepIcon.value = { ...sweepIcon.value!, size: Math.round(iconSize * 0.6) };
-    await wait(60);
+    await wait(scaled(60));
   }
   sweepIcon.value = null;
 
@@ -834,7 +827,7 @@ async function animateFlushSynthesis(pos: Position, targets: Position[], effectT
     cellItemOverlay.set(pk(t.row, t.col), otherItem);
     itemClearingCells.add(pk(t.row, t.col));
   }
-  await wait(ANIM.ITEM_CLEAR + 200);
+  await wait(ANIM.value.ITEM_CLEAR_WAIT_LONG);
 }
 
 /** Shared drop animation: set initial offsets, transition to 0, then clean up */
@@ -851,7 +844,7 @@ async function animateDrop(
   dropTransitioning.value = true;
   const keys = Object.keys(dropOffsets);
   for (const k of keys) dropOffsets[k] = 0;
-  await wait(ANIM.DROP);
+  await wait(ANIM.value.DROP);
   dropTransitioning.value = false;
   for (const k of keys) delete dropOffsets[k];
 }
@@ -885,18 +878,18 @@ async function animateChainStep(chain: ChainAnimData) {
   // Checkmarks
   if (chain.chainIndex >= 2) {
     playSE('chain'); vibrate(25);
-    shaking.value = true; setTimeout(() => { shaking.value = false; }, 300);
+    shaking.value = true; setTimeout(() => { shaking.value = false; }, scaled(300));
   } else {
     playSE('match'); vibrate(15);
   }
   for (const p of chain.clearedPositions) matchedCells.add(pk(p.row, p.col));
   addFloatingScore(chain.clearedPositions, chain.score);
-  await wait(ANIM.MATCH_SHOW);
+  await wait(ANIM.value.MATCH_SHOW);
 
   // Fade out
   playSE('clear');
   for (const p of chain.clearedPositions) clearingCells.add(pk(p.row, p.col));
-  await wait(ANIM.CLEAR);
+  await wait(ANIM.value.CLEAR);
   matchedCells.clear();
   clearingCells.clear();
 
@@ -923,13 +916,13 @@ async function animateChainStep(chain: ChainAnimData) {
   // Obstacle destruction
   if (chain.destroyedObstacles.length > 0) {
     for (const p of chain.destroyedObstacles) obstacleClearingCells.add(pk(p.row, p.col));
-    await wait(ANIM.CLEAR);
+    await wait(ANIM.value.CLEAR);
     obstacleClearingCells.clear();
   }
 
   // Clear damage shake
   if (damagedKeys.length > 0) {
-    await wait(100);
+    await wait(scaled(100));
     for (const k of damagedKeys) obstacleDamagedCells.delete(k);
   }
 
@@ -945,8 +938,8 @@ function tileTransform(r: number, c: number) {
 }
 function tileTransition(r: number, c: number) {
   const o = getOff(r, c);
-  if (o.transition) return `transform ${ANIM.SWAP}ms ease`;
-  if (dropTransitioning.value && pk(r, c) in dropOffsets) return `transform ${ANIM.DROP}ms ease-in`;
+  if (o.transition) return `transform ${ANIM.value.SWAP}ms ease`;
+  if (dropTransitioning.value && pk(r, c) in dropOffsets) return `transform ${ANIM.value.DROP}ms ease-in`;
   return 'none';
 }
 </script>
@@ -1134,10 +1127,10 @@ function tileTransition(r: number, c: number) {
   pointer-events: none;
 }
 .obstacle-cell.is-obstacle-damaged {
-  animation: obstacle-shake 0.3s ease-out;
+  animation: obstacle-shake calc(0.3s / var(--anim-duration-factor, 1)) ease-out;
 }
 .obstacle-cell.is-obstacle-clearing {
-  animation: obstacle-destroy 0.35s ease-out forwards;
+  animation: obstacle-destroy calc(0.35s / var(--anim-duration-factor, 1)) ease-out forwards;
 }
 @keyframes obstacle-shake {
   0%, 100% { transform: translate(0, 0); }
@@ -1164,7 +1157,7 @@ function tileTransition(r: number, c: number) {
   border-radius: 4px;
   background: color-mix(in srgb, var(--bg-card) 60%, transparent);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-  animation: item-spawn 0.35s ease-out both;
+  animation: item-spawn calc(0.35s / var(--anim-duration-factor, 1)) ease-out both;
 }
 @keyframes item-spawn {
   0%   { transform: scale(0) rotate(-30deg); opacity: 0; }
@@ -1188,7 +1181,7 @@ function tileTransition(r: number, c: number) {
   color: var(--check-color);
   z-index: 2;
   text-shadow: 0 0 4px rgba(255,255,255,0.9), 0 0 1px rgba(255,255,255,1);
-  animation: check-in 0.25s ease-out both;
+  animation: check-in calc(0.25s / var(--anim-duration-factor, 1)) ease-out both;
 }
 @keyframes check-in {
   0%   { transform: scale(0); opacity: 0; }
@@ -1197,7 +1190,7 @@ function tileTransition(r: number, c: number) {
 }
 
 /* Match pulse */
-.is-matched { animation: match-pulse 0.35s ease both; }
+.is-matched { animation: match-pulse calc(0.35s / var(--anim-duration-factor, 1)) ease both; }
 @keyframes match-pulse {
   0%   { transform: scale(1); }
   40%  { transform: scale(1.08); }
@@ -1205,14 +1198,14 @@ function tileTransition(r: number, c: number) {
 }
 
 /* Clear out (match chains) */
-.is-clearing { animation: clear-out 0.25s ease forwards; }
+.is-clearing { animation: clear-out calc(0.25s / var(--anim-duration-factor, 1)) ease forwards; }
 @keyframes clear-out {
   0%   { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(0.3); }
 }
 
 /* Item effect clearing */
-.is-item-clearing { animation: item-clear 0.15s ease forwards; }
+.is-item-clearing { animation: item-clear calc(0.15s / var(--anim-duration-factor, 1)) ease forwards; }
 @keyframes item-clear {
   0%   { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(0.5); }
@@ -1237,7 +1230,7 @@ function tileTransition(r: number, c: number) {
   justify-content: center;
   z-index: 15;
   pointer-events: none;
-  animation: overlay-pop 0.2s ease-out both;
+  animation: overlay-pop calc(0.2s / var(--anim-duration-factor, 1)) ease-out both;
 }
 @keyframes overlay-pop {
   0%   { transform: scale(0); opacity: 0; }
@@ -1253,7 +1246,7 @@ function tileTransition(r: number, c: number) {
   font-weight: 700;
   color: var(--brand);
   text-shadow: 0 1px 2px rgba(0,0,0,0.2), 0 0 4px rgba(255,255,255,0.8);
-  animation: float-up 0.8s ease-out forwards;
+  animation: float-up calc(0.8s / var(--anim-duration-factor, 1)) ease-out forwards;
   transform: translate(-50%, -50%);
   white-space: nowrap;
 }
@@ -1316,7 +1309,7 @@ function tileTransition(r: number, c: number) {
   border-radius: 6px;
   box-shadow: var(--shadow-card);
   margin-top: 8px;
-  animation: hint-fade 3s ease-out forwards;
+  animation: hint-fade calc(3s / var(--anim-duration-factor, 1)) ease-out forwards;
 }
 @keyframes hint-fade {
   0%, 70% { opacity: 1; }
@@ -1325,7 +1318,7 @@ function tileTransition(r: number, c: number) {
 
 /* Screen shake */
 .shaking {
-  animation: board-shake 0.3s ease-out;
+  animation: board-shake calc(0.3s / var(--anim-duration-factor, 1)) ease-out;
 }
 @keyframes board-shake {
   0%, 100% { transform: translate(0, 0); }

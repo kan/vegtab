@@ -49,4 +49,13 @@ export { default as prevTrackIcon } from './23EE.svg';
 export { default as rewindIcon } from './23EA.svg';
 export { default as pauseIcon } from './23F8.svg';
 export { default as fastForwardIcon } from './23E9.svg';
+export { default as speedIcon } from './speed.svg';
 export { default as nextTrackIcon } from './23ED.svg';
+
+// Replay controls (filled + stroked, dark-mode friendly)
+export { default as ctrlPrevTrackIcon } from './ctrl-prev-track.svg';
+export { default as ctrlRewindIcon } from './ctrl-rewind.svg';
+export { default as ctrlPauseIcon } from './ctrl-pause.svg';
+export { default as ctrlPlayIcon } from './ctrl-play.svg';
+export { default as ctrlForwardIcon } from './ctrl-forward.svg';
+export { default as ctrlNextTrackIcon } from './ctrl-next-track.svg';
