@@ -46,7 +46,7 @@ export type ChainStep = {
 };
 
 /** ゲームモード */
-export type GameMode = 'sprint' | 'clear' | 'survival';
+export type GameMode = 'sprint' | 'clear' | 'survival' | 'cascade';
 
 /** 合成効果の種類 */
 export type SynthesisEffect =
@@ -58,9 +58,10 @@ export type SynthesisEffect =
 
 /** ゲーム初期化パラメータ */
 export type GameInitParams = {
-  moveLimit?: number;        // Sprint: default 15
+  moveLimit?: number;        // Sprint: default 15, Cascade: default 20
   obstacleCount?: number;    // Clear: default seed-dependent 10-20
   quotaTable?: number[];     // Survival: default generated
+  numColors?: number;        // Cascade: default 4
 };
 
 /** ゲーム状態 */
@@ -76,6 +77,9 @@ export type GameState = {
   isCleared?: boolean;       // Clear: true when all obstacles removed
   quotaTable?: number[];     // Survival: per-segment score quotas
   segmentStartScore?: number; // Survival: score at start of current segment
+  numColors?: number;        // Cascade: number of colors (default NUM_COLORS)
+  maxChainIndex?: number;    // Cascade: max chain achieved so far
+  lastChainCount?: number;   // Chain count of the last action (for replay display)
 };
 
 export const BOARD_SIZE = 8;

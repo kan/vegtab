@@ -78,3 +78,31 @@ describe('Balance: Survival mode', () => {
     expect(avg).toBeLessThanOrEqual(50);
   });
 });
+
+describe('Balance: Cascade mode', () => {
+  let results: GameMetrics[];
+
+  beforeAll(() => {
+    results = SEEDS.map(seed => playGame(seed, 'cascade'));
+  });
+
+  it('全ゲームが20手以内で終了する', () => {
+    for (const r of results) {
+      expect(r.moveCount).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it('平均最大連鎖数が5以上', () => {
+    const chains = results.map(r => r.maxChainIndex!);
+    logStats('Cascade maxChain', chains);
+    const { avg } = stats(chains);
+    expect(avg).toBeGreaterThanOrEqual(5);
+  });
+
+  it('平均スコアが妥当な範囲にある', () => {
+    const scores = results.map(r => r.finalScore);
+    logStats('Cascade scores', scores);
+    const { avg } = stats(scores);
+    expect(avg).toBeGreaterThan(100);
+  });
+});

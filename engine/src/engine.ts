@@ -22,6 +22,7 @@ import { generateObstacles, damageObstacles, damageObstacleAt } from './obstacle
 import { DEFAULT_QUOTA_TABLE } from './survival.js';
 
 const DEFAULT_MOVE_LIMIT = 15;
+const DEFAULT_CASCADE_MOVE_LIMIT = 20;
 
 /** 方向から隣接位置を計算 */
 function getAdjacentPos(pos: Position, dir: Direction): Position {
@@ -39,7 +40,8 @@ export function initializeGame(
   mode: GameMode = 'sprint',
   params?: GameInitParams,
 ): GameState {
-  const { board, rngState: mainRng } = generateRawBoard(seed);
+  const numColors = mode === 'cascade' ? (params?.numColors ?? 4) : NUM_COLORS;
+  const { board, rngState: mainRng } = generateRawBoard(seed, numColors);
   let rngState = createColumnRngStates(mainRng);
 
   // 自動消去ループ: マッチがなくなるまで繰り返す
@@ -51,7 +53,7 @@ export function initializeGame(
       board[pos.row][pos.col] = null;
     }
     applyGravity(board, passThrough);
-    rngState = fillEmptyCells(board, rngState);
+    rngState = fillEmptyCells(board, rngState, numColors);
   }
 
   const state: GameState = {
@@ -62,6 +64,10 @@ export function initializeGame(
     isGameOver: false,
     mode,
   };
+
+  if (numColors !== NUM_COLORS) {
+    state.numColors = numColors;
+  }
 
   switch (mode) {
     case 'sprint':
@@ -75,6 +81,10 @@ export function initializeGame(
     case 'survival':
       state.quotaTable = params?.quotaTable ?? [...DEFAULT_QUOTA_TABLE];
       state.segmentStartScore = 0;
+      break;
+    case 'cascade':
+      state.moveLimit = params?.moveLimit ?? DEFAULT_CASCADE_MOVE_LIMIT;
+      state.maxChainIndex = 0;
       break;
   }
 
@@ -94,6 +104,9 @@ export function cloneGameState(state: GameState): GameState {
     isCleared: state.isCleared,
     quotaTable: state.quotaTable ? [...state.quotaTable] : undefined,
     segmentStartScore: state.segmentStartScore,
+    numColors: state.numColors,
+    maxChainIndex: state.maxChainIndex,
+    lastChainCount: state.lastChainCount,
   };
 }
 
@@ -273,15 +286,30 @@ function activateCoffeeSynthesis(
 /** おじゃまタイルへのダメージ処理（消去位置に基づく）
  * boardを直接変更する: 隣接おじゃまの耐久値減少・破壊時のgravity・補充
  * @returns 更新後のrngState */
-export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number[], mode: GameMode = 'sprint'): number[] {
+export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number[], mode: GameMode = 'sprint', numColors: number = NUM_COLORS): number[] {
   if (clearedPositions.length === 0) return rngState;
   let rng = rngState;
   const destroyed = damageObstacles(board, clearedPositions);
   if (destroyed.length > 0) {
     applyGravity(board, mode === 'clear');
-    rng = fillEmptyCells(board, rng);
+    rng = fillEmptyCells(board, rng, numColors);
   }
   return rng;
+}
+
+/** cascade モードの maxChainIndex を更新 */
+function updateMaxChain(state: GameState, steps: ChainStep[]): void {
+  let maxInAction = 0;
+  for (const step of steps) {
+    if (step.chainIndex > maxInAction) {
+      maxInAction = step.chainIndex;
+    }
+  }
+  state.lastChainCount = maxInAction;
+
+  if (state.maxChainIndex !== undefined && maxInAction > state.maxChainIndex) {
+    state.maxChainIndex = maxInAction;
+  }
 }
 
 /** ゲーム終了チェック */
@@ -298,7 +326,9 @@ export function processAction(state: GameState, action: Action): GameState {
   if (state.isGameOver) return state;
 
   const newState = cloneGameState(state);
+  newState.lastChainCount = 0;
   const board = newState.board;
+  const nc = newState.numColors ?? NUM_COLORS;
 
   if (action.type === 'scope') {
     // scope起動: タップで1手消費、周囲4マス消去 + ユーザー選択マスを消去
@@ -361,11 +391,12 @@ export function processAction(state: GameState, action: Action): GameState {
 
     // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
     applyGravity(board, newState.mode === 'clear');
-    newState.rngState = fillEmptyCells(board, newState.rngState);
-    const chainResult = processChains(board, newState.rngState, 2, newState.mode);
+    newState.rngState = fillEmptyCells(board, newState.rngState, nc);
+    const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
 
+    updateMaxChain(newState, chainResult.steps);
     applyGameOver(newState);
     return newState;
   }
@@ -394,10 +425,11 @@ export function processAction(state: GameState, action: Action): GameState {
 
     // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
     applyGravity(board, newState.mode === 'clear');
-    newState.rngState = fillEmptyCells(board, newState.rngState);
-    const chainResult = processChains(board, newState.rngState, 2, newState.mode);
+    newState.rngState = fillEmptyCells(board, newState.rngState, nc);
+    const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
+    updateMaxChain(newState, chainResult.steps);
 
   } else {
     // スワイプ
@@ -425,7 +457,7 @@ export function processAction(state: GameState, action: Action): GameState {
 
         const synthResult = processSynthesis(
           board, action.pos, targetPos, cell1.item, cell2.item,
-          synthesis.effect, newState.rngState, newState.mode
+          synthesis.effect, newState.rngState, newState.mode, nc
         );
         newState.score += synthResult.score;
         newState.rngState = synthResult.rngState;
@@ -433,11 +465,12 @@ export function processAction(state: GameState, action: Action): GameState {
 
         // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
         applyGravity(board, newState.mode === 'clear');
-        newState.rngState = fillEmptyCells(board, newState.rngState);
-        const chainResult = processChains(board, newState.rngState, 2, newState.mode);
+        newState.rngState = fillEmptyCells(board, newState.rngState, nc);
+        const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
         newState.score += chainResult.score;
         newState.rngState = chainResult.rngState;
 
+        updateMaxChain(newState, chainResult.steps);
         applyGameOver(newState);
         return newState;
       }
@@ -463,7 +496,7 @@ export function processAction(state: GameState, action: Action): GameState {
       const passThrough = newState.mode === 'clear';
 
       // #15: 野菜のマッチ判定を先に処理（pre-chains）
-      const preChainResult = processChains(board, newState.rngState, 1, newState.mode);
+      const preChainResult = processChains(board, newState.rngState, 1, newState.mode, false, nc);
       newState.score += preChainResult.score;
       newState.rngState = preChainResult.rngState;
 
@@ -488,11 +521,13 @@ export function processAction(state: GameState, action: Action): GameState {
 
       // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
       applyGravity(board, passThrough);
-      newState.rngState = fillEmptyCells(board, newState.rngState);
-      const chainResult = processChains(board, newState.rngState, result.chainSteps.length + preChainResult.steps.length + 1, newState.mode);
+      newState.rngState = fillEmptyCells(board, newState.rngState, nc);
+      const chainResult = processChains(board, newState.rngState, result.chainSteps.length + preChainResult.steps.length + 1, newState.mode, false, nc);
       newState.score += chainResult.score;
       newState.rngState = chainResult.rngState;
 
+      updateMaxChain(newState, preChainResult.steps);
+      updateMaxChain(newState, chainResult.steps);
       applyGameOver(newState);
       return newState;
     }
@@ -532,14 +567,17 @@ export function processAction(state: GameState, action: Action): GameState {
     }
 
     // おじゃまタイルへのダメージ
-    newState.rngState = processDamage(board, cleared, newState.rngState, newState.mode);
+    newState.rngState = processDamage(board, cleared, newState.rngState, newState.mode, nc);
 
     // 落下 → 補充 → 連鎖
     applyGravity(board, newState.mode === 'clear');
-    newState.rngState = fillEmptyCells(board, newState.rngState);
-    const chainResult = processChains(board, newState.rngState, 2, newState.mode);
+    newState.rngState = fillEmptyCells(board, newState.rngState, nc);
+    const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
+
+    // maxChainIndex 更新 (cascade mode)
+    updateMaxChain(newState, chainResult.steps);
   }
 
   applyGameOver(newState);
@@ -599,6 +637,7 @@ function processSynthesis(
   effect: SynthesisEffect,
   rngState: number[],
   mode: GameMode = 'sprint',
+  numColors: number = NUM_COLORS,
 ): { score: number; rngState: number[]; clearedPositions: Position[] } {
   let rng = rngState;
   let totalScore = 0;
@@ -623,7 +662,7 @@ function processSynthesis(
 
     totalScore += getFullClearBonus();
     applyGravity(board, mode === 'clear');
-    rng = fillEmptyCells(board, rng);
+    rng = fillEmptyCells(board, rng, numColors);
 
     return { score: totalScore, rngState: rng, clearedPositions: allCleared };
   }
@@ -716,6 +755,7 @@ export function processScopeSynthesis(
   if (!synthesis) return state;
 
   const newState = cloneGameState(state);
+  newState.lastChainCount = 0;
   const board = newState.board;
 
   board[pos1.row][pos1.col] = null;
@@ -788,12 +828,14 @@ export function processScopeSynthesis(
   }
 
   // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
+  const nc = newState.numColors ?? NUM_COLORS;
   applyGravity(board, newState.mode === 'clear');
-  newState.rngState = fillEmptyCells(board, newState.rngState);
-  const chainResult = processChains(board, newState.rngState, 2, newState.mode);
+  newState.rngState = fillEmptyCells(board, newState.rngState, nc);
+  const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
   newState.score += chainResult.score;
   newState.rngState = chainResult.rngState;
 
+  updateMaxChain(newState, chainResult.steps);
   applyGameOver(newState);
   return newState;
 }
@@ -805,6 +847,7 @@ export function processScopeSwap(
   if (state.isGameOver) return state;
 
   const newState = cloneGameState(state);
+  newState.lastChainCount = 0;
   const board = newState.board;
 
   const targetPos = getAdjacentPos(pos, dir);
@@ -819,7 +862,8 @@ export function processScopeSwap(
   board[targetPos.row][targetPos.col] = cell1;
 
   // Pre-chains: process matches created by the vegetable swap
-  const preChainResult = processChains(board, newState.rngState, 1, newState.mode);
+  const nc = newState.numColors ?? NUM_COLORS;
+  const preChainResult = processChains(board, newState.rngState, 1, newState.mode, false, nc);
   newState.score += preChainResult.score;
   newState.rngState = preChainResult.rngState;
 
@@ -864,7 +908,7 @@ export function processAutoActivation(state: GameState): GameState {
         current.rngState = result.rngState;
 
         applyGravity(board, false);
-        current.rngState = fillEmptyCells(board, current.rngState);
+        current.rngState = fillEmptyCells(board, current.rngState, current.numColors ?? NUM_COLORS);
         // 連鎖処理なし — アイテム効果のスコアのみ加算（#9: スキル要素を損なうランダム連鎖を抑制）
         found = true;
         break;
@@ -885,6 +929,7 @@ function processChains(
   startChain: number,
   mode: GameMode = 'sprint',
   suppressItemGen = false,
+  numColors: number = NUM_COLORS,
 ): { score: number; rngState: number[]; steps: ChainStep[] } {
   let rng = rngState;
   let totalScore = 0;
@@ -927,11 +972,11 @@ function processChains(
     chainIndex++;
 
     // おじゃまタイルへのダメージ
-    rng = processDamage(board, cleared, rng, mode);
+    rng = processDamage(board, cleared, rng, mode, numColors);
 
     // 落下 → 補充
     applyGravity(board, mode === 'clear');
-    rng = fillEmptyCells(board, rng);
+    rng = fillEmptyCells(board, rng, numColors);
   }
 
   // 連鎖完了後に遅延アイテムを配置

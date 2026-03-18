@@ -100,9 +100,13 @@ function computeCandidates(data: ScoreData): Record<string, number> {
     c['sprint_score_1000'] = data.score;
     c['sprint_score_2000'] = data.score;
     c['sprint_score_5000'] = data.score;
-    c['sprint_chain_3'] = data.maxChain;
-    c['sprint_chain_5'] = data.maxChain;
   }
+
+  // Chain achievements — evaluated across all modes
+  c['cascade_chain_3'] = data.maxChain;
+  c['cascade_chain_5'] = data.maxChain;
+  c['cascade_chain_10'] = data.maxChain;
+  c['cascade_chain_15'] = data.maxChain;
 
   if (data.mode === 'clear') {
     if (data.isCleared) {

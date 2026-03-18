@@ -54,22 +54,24 @@ onMounted(async () => {
 
 function actionLabel(action: ReplayAction, index: number): string {
   const num = index + 1;
+  const chain = player.chainCounts.value[index] ?? 0;
+  const chainSuffix = chain >= 2 ? ` 🔗${chain}` : '';
   if (action.type === 'swap') {
     const dirLabel = t(`replay.dir_${action.dir}`);
-    return `${num}. (${action.pos.row},${action.pos.col}) ${dirLabel}`;
+    return `${num}. (${action.pos.row},${action.pos.col}) ${dirLabel}${chainSuffix}`;
   }
   if (action.type === 'tap') {
-    return `${num}. (${action.pos.row},${action.pos.col}) ${t('replay.tap')}`;
+    return `${num}. (${action.pos.row},${action.pos.col}) ${t('replay.tap')}${chainSuffix}`;
   }
   if (action.type === 'scope') {
-    return `${num}. (${action.pos.row},${action.pos.col}) ${t('replay.scope')}`;
+    return `${num}. (${action.pos.row},${action.pos.col}) ${t('replay.scope')}${chainSuffix}`;
   }
   if (action.type === 'scope_synthesis') {
-    return `${num}. (${action.pos1.row},${action.pos1.col})+(${action.pos2.row},${action.pos2.col}) ${t('replay.scope')}`;
+    return `${num}. (${action.pos1.row},${action.pos1.col})+(${action.pos2.row},${action.pos2.col}) ${t('replay.scope')}${chainSuffix}`;
   }
   if (action.type === 'scope_swap') {
     const dirLabel = t(`replay.dir_${action.dir}`);
-    return `${num}. (${action.pos.row},${action.pos.col}) ${dirLabel} + ${t('replay.scope')}`;
+    return `${num}. (${action.pos.row},${action.pos.col}) ${dirLabel} + ${t('replay.scope')}${chainSuffix}`;
   }
   if (action.type === 'auto_activate') {
     return `${num}. ${t('replay.autoActivate')}`;

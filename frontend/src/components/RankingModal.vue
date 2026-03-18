@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { type GameMode } from '@/stores/game';
 import { api, getUserId } from '@/api/client';
 import { goldMedalIcon, silverMedalIcon, bronzeMedalIcon, playIcon } from '@/assets/icons';
+import { MODE_ICONS } from '@/utils/constants';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -29,10 +30,11 @@ interface RankEntry {
   playerName: string;
   isMe: boolean;
   scoreId?: string;
+  maxChain?: number;
 }
 
 const rankings = ref<RankEntry[]>([]);
-const myRank = ref<{ rank: number; score: number; moveCount?: number } | null>(null);
+const myRank = ref<{ rank: number; score: number; moveCount?: number; maxChain?: number } | null>(null);
 
 watch(() => props.mode, (m) => { if (m) activeMode.value = m; });
 watch(() => props.open, (o) => {
@@ -61,9 +63,10 @@ async function fetchRanking() {
         score: number;
         moveCount: number;
         isCleared?: boolean;
+        maxChain?: number;
         scoreId?: string;
       }>;
-      userRank: { rank: number; score: number; moveCount?: number } | null;
+      userRank: { rank: number; score: number; moveCount?: number; maxChain?: number } | null;
     }>(`/api/rankings/by-value/${props.seed}?mode=${activeMode.value}`);
 
     if (seq !== fetchSeq) return; // stale response
@@ -74,6 +77,7 @@ async function fetchRanking() {
       playerName: e.displayName,
       isMe: e.userId === userId,
       scoreId: e.scoreId,
+      maxChain: e.maxChain,
     }));
     myRank.value = data.userRank;
   } catch {
@@ -86,6 +90,9 @@ async function fetchRanking() {
 
 const myRankDisplay = computed(() => {
   if (!myRank.value) return '';
+  if (activeMode.value === 'cascade') {
+    return `${myRank.value.maxChain ?? 0} ${t('mode.chain')}`;
+  }
   if (activeMode.value === 'clear' || activeMode.value === 'survival') {
     return `${myRank.value.moveCount ?? 0} ${t('mode.moves')}`;
   }
@@ -94,7 +101,7 @@ const myRankDisplay = computed(() => {
 
 const myRankSubDisplay = computed(() => {
   if (!myRank.value) return '';
-  if (activeMode.value === 'clear' || activeMode.value === 'survival') {
+  if (activeMode.value === 'cascade' || activeMode.value === 'clear' || activeMode.value === 'survival') {
     return myRank.value.score.toLocaleString();
   }
   return '';
@@ -108,6 +115,9 @@ function rankMedalIcon(rank: number): string | null {
 }
 
 function displayValue(entry: RankEntry): string {
+  if (activeMode.value === 'cascade') {
+    return `${entry.maxChain ?? 0} ${t('mode.chain')}`;
+  }
   if (activeMode.value === 'clear' || activeMode.value === 'survival') {
     return `${entry.moves} ${t('mode.moves')}`;
   }
@@ -115,7 +125,7 @@ function displayValue(entry: RankEntry): string {
 }
 
 function subDisplayValue(entry: RankEntry): string | null {
-  if (activeMode.value === 'clear' || activeMode.value === 'survival') {
+  if (activeMode.value === 'cascade' || activeMode.value === 'clear' || activeMode.value === 'survival') {
     return entry.score.toLocaleString();
   }
   return null;
@@ -126,7 +136,7 @@ function goToReplay(scoreId: string) {
   router.push(`/replay/${scoreId}`);
 }
 
-const modes: GameMode[] = ['sprint', 'clear', 'survival'];
+const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
 </script>
 
 <template>
@@ -134,7 +144,7 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
     <div v-if="open" class="ranking-overlay" @click.self="emit('close')">
       <div class="ranking-modal">
         <div class="ranking-header">
-          <h2 class="ranking-title">{{ t('common.ranking') }}</h2>
+          <h2 class="ranking-title"><img class="ranking-title-icon" :src="MODE_ICONS[activeMode]" alt="" /> {{ t('common.ranking') }}</h2>
           <span class="ranking-seed">{{ t('common.seed', { seed }) }}</span>
           <button class="ranking-close" @click="emit('close')">&times;</button>
         </div>
@@ -248,6 +258,13 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival'];
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ranking-title-icon {
+  width: 20px;
+  height: 20px;
 }
 .ranking-seed {
   flex: 1;

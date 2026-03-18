@@ -10,6 +10,8 @@ import type { ReplayAction } from '@/stores/puzzle';
 export function useReplayPlayer() {
   const actions = ref<ReplayAction[]>([]);
   const gameStates = ref<GameState[]>([]);
+  /** Chain count for each action (index matches actions) */
+  const chainCounts = ref<number[]>([]);
   const currentStep = ref(0);
   const isPlaying = ref(false);
   const speed = ref(1000); // ms per step
@@ -43,6 +45,7 @@ export function useReplayPlayer() {
 
     // Build all states by replaying actions
     const states: GameState[] = [];
+    const chains: number[] = [];
     let state = initializeGame(seed, mode, params);
     states.push(state);
 
@@ -55,6 +58,7 @@ export function useReplayPlayer() {
         state = processAction(state, action);
       }
       states.push(state);
+      chains.push(state.lastChainCount ?? 0);
     }
 
     // Sprint auto-activation: process remaining items after game over
@@ -63,10 +67,12 @@ export function useReplayPlayer() {
       if (afterAuto.score !== state.score) {
         actions.value = [...replayActions, { type: 'auto_activate' }];
         states.push(afterAuto);
+        chains.push(0);
       }
     }
 
     gameStates.value = states;
+    chainCounts.value = chains;
     currentStep.value = 0;
   }
 
@@ -132,6 +138,7 @@ export function useReplayPlayer() {
 
   return {
     actions,
+    chainCounts,
     currentStep,
     totalSteps,
     currentState,

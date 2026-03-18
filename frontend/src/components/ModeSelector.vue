@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 import { useGameStore, type GameMode } from '@/stores/game';
-import { lightningIcon, brickIcon, infinityIcon } from '@/assets/icons';
+import { MODE_ICONS } from '@/utils/constants';
 
 const { t } = useI18n();
 
@@ -18,9 +18,10 @@ const emit = defineEmits<{
 const gameStore = useGameStore();
 
 const modes: { key: GameMode; icon: string }[] = [
-  { key: 'sprint', icon: lightningIcon },
-  { key: 'clear', icon: brickIcon },
-  { key: 'survival', icon: infinityIcon },
+  { key: 'sprint', icon: MODE_ICONS.sprint },
+  { key: 'clear', icon: MODE_ICONS.clear },
+  { key: 'survival', icon: MODE_ICONS.survival },
+  { key: 'cascade', icon: MODE_ICONS.cascade },
 ];
 
 function bestForMode(mode: GameMode): string {
@@ -35,6 +36,10 @@ function bestForMode(mode: GameMode): string {
   if (mode === 'survival') {
     const m = gameStore.getBestMoves(props.seed, 'survival');
     return m > 0 ? `${m} ${t('mode.moves')}` : '';
+  }
+  if (mode === 'cascade') {
+    const c = gameStore.getBestMaxChain(props.seed);
+    return c > 0 ? `${c} ${t('mode.chain')}` : '';
   }
   return '';
 }

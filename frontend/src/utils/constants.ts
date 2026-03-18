@@ -1,4 +1,5 @@
-import type { ItemType } from '@tomado/engine';
+import type { ItemType, GameMode } from '@tomado/engine';
+import { lightningIcon, brickIcon, infinityIcon, linkIcon } from '@/assets/icons';
 
 export const DEFAULT_DISPLAY_NAME = 'NO NAME';
 
@@ -18,3 +19,11 @@ export const ITEM_INFO: Record<ItemType, { label: string; desc: string }> = {
 export const ITEM_LABELS: Record<ItemType, string> = Object.fromEntries(
   ALL_ITEM_TYPES.map(t => [t, ITEM_INFO[t].label])
 ) as Record<ItemType, string>;
+
+/** Mode icon mapping (shared across ModeSelector, HomeView, RankingModal) */
+export const MODE_ICONS: Record<GameMode, string> = {
+  sprint: lightningIcon,
+  clear: brickIcon,
+  survival: infinityIcon,
+  cascade: linkIcon,
+};

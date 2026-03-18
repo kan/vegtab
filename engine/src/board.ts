@@ -2,8 +2,8 @@ import { Cell, Color, ItemType, Position, BOARD_SIZE, NUM_COLORS } from './types
 import { createRng, nextInt } from './rng.js';
 
 /** 新しいランダムな色を生成 */
-export function nextColor(rngState: number): [number, Color] {
-  const [next, value] = nextInt(rngState, NUM_COLORS);
+export function nextColor(rngState: number, numColors: number = NUM_COLORS): [number, Color] {
+  const [next, value] = nextInt(rngState, numColors);
   return [next, value as Color];
 }
 
@@ -27,13 +27,13 @@ export function createColumnRngStates(rngState: number): number[] {
 }
 
 /** シード値から初期盤面を生成（自動消去前） */
-export function generateRawBoard(seed: number): { board: (Cell | null)[][]; rngState: number } {
+export function generateRawBoard(seed: number, numColors: number = NUM_COLORS): { board: (Cell | null)[][]; rngState: number } {
   let rng = createRng(seed);
   const board = createEmptyBoard();
   for (let row = 0; row < BOARD_SIZE; row++) {
     for (let col = 0; col < BOARD_SIZE; col++) {
       let color: Color;
-      [rng, color] = nextColor(rng);
+      [rng, color] = nextColor(rng, numColors);
       board[row][col] = { color };
     }
   }
@@ -44,14 +44,14 @@ export function generateRawBoard(seed: number): { board: (Cell | null)[][]; rngS
  * 盤面上の空きマスを列ごとのRNGストリームで補充する。
  * 各列の補充タイル列はシードにより一意に決まる（操作順に依存しない）。
  */
-export function fillEmptyCells(board: (Cell | null)[][], columnRngStates: number[]): number[] {
+export function fillEmptyCells(board: (Cell | null)[][], columnRngStates: number[], numColors: number = NUM_COLORS): number[] {
   const states = [...columnRngStates];
   for (let col = 0; col < BOARD_SIZE; col++) {
     let rng = states[col];
     for (let row = 0; row < BOARD_SIZE; row++) {
       if (board[row][col] === null) {
         let color: Color;
-        [rng, color] = nextColor(rng);
+        [rng, color] = nextColor(rng, numColors);
         board[row][col] = { color };
       }
     }

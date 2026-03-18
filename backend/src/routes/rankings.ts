@@ -6,7 +6,7 @@ const DEFAULT_DISPLAY_NAME = 'NO NAME';
 const RANKING_CACHE_TTL = 300; // 5 minutes
 const RANKING_LIMIT = 100;
 
-const VALID_MODES = ['sprint', 'clear', 'survival'] as const;
+const VALID_MODES = ['sprint', 'clear', 'survival', 'cascade'] as const;
 type GameMode = (typeof VALID_MODES)[number];
 
 export const rankingRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
@@ -64,6 +64,21 @@ rankingRoutes.get('/:seedId', async (c) => {
   return c.json(result);
 });
 
+function cascadeRankingSQL(): string {
+  return `SELECT r.user_id, u.display_name, r.best_chain, ps2.score, ps2.move_count, ps2.id as score_id
+     FROM (
+       SELECT user_id, MAX(max_chain) as best_chain
+       FROM play_scores
+       WHERE seed_id = ? AND mode = ?
+       GROUP BY user_id
+     ) r
+     JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.max_chain = r.best_chain
+       AND ps2.seed_id = ? AND ps2.mode = ?
+     JOIN users u ON u.id = r.user_id
+     ORDER BY r.best_chain DESC, ps2.score DESC
+     LIMIT ?`;
+}
+
 interface RankingEntry {
   rank: number;
   userId: string;
@@ -71,6 +86,7 @@ interface RankingEntry {
   score: number;
   moveCount: number;
   isCleared?: boolean;
+  maxChain?: number;
   scoreId?: string;
 }
 
@@ -159,6 +175,15 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode, user
     );
   }
 
+  if (mode === 'cascade') {
+    const entries = await db.prepare(cascadeRankingSQL())
+      .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
+      .all<{ user_id: string; display_name: string | null; best_chain: number; score: number; move_count: number; score_id: string }>();
+    return (entries.results ?? []).map((e, i) =>
+      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.move_count, maxChain: e.best_chain }),
+    );
+  }
+
   // survival
   const entries = await db.prepare(survivalRankingSQL())
     .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
@@ -175,12 +200,15 @@ async function getUserRank(
   userId: string,
   seedId: string,
   mode: GameMode
-): Promise<{ rank: number; score: number; moveCount?: number } | null> {
+): Promise<{ rank: number; score: number; moveCount?: number; maxChain?: number } | null> {
   if (mode === 'sprint') {
     return getSprintUserRank(db, userId, seedId);
   }
   if (mode === 'clear') {
     return getClearUserRank(db, userId, seedId);
+  }
+  if (mode === 'cascade') {
+    return getCascadeUserRank(db, userId, seedId);
   }
   return getSurvivalUserRank(db, userId, seedId);
 }
@@ -247,4 +275,25 @@ async function getSurvivalUserRank(
   if (!rankResult) return null;
 
   return { rank: rankResult.rank, score: userBest.score ?? 0, moveCount: userBest.best_move_count };
+}
+
+async function getCascadeUserRank(
+  db: D1Database, userId: string, seedId: string
+): Promise<{ rank: number; score: number; maxChain: number } | null> {
+  const userBest = await db.prepare(
+    `SELECT MAX(max_chain) as best_chain, score FROM play_scores
+     WHERE user_id = ? AND seed_id = ? AND mode = 'cascade'
+     ORDER BY max_chain DESC, score DESC LIMIT 1`
+  ).bind(userId, seedId).first<{ best_chain: number | null; score: number | null }>();
+
+  if (!userBest?.best_chain) return null;
+
+  const rankResult = await db.prepare(
+    `SELECT COUNT(DISTINCT user_id) + 1 as rank FROM play_scores
+     WHERE seed_id = ? AND mode = 'cascade'
+     AND (max_chain > ? OR (max_chain = ? AND score > ?))`
+  ).bind(seedId, userBest.best_chain, userBest.best_chain, userBest.score ?? 0).first<{ rank: number }>();
+  if (!rankResult) return null;
+
+  return { rank: rankResult.rank, score: userBest.score ?? 0, maxChain: userBest.best_chain };
 }

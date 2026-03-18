@@ -13,6 +13,7 @@ export type GameMetrics = {
   isCleared?: boolean;
   remainingObstacles?: number;
   segmentsSurvived?: number;
+  maxChainIndex?: number;
 };
 
 const SWAP_DIRS = [
@@ -91,5 +92,6 @@ export function playGame(seed: number, mode: GameMode, params?: GameInitParams):
     isCleared: state.isCleared,
     remainingObstacles: mode === 'clear' ? countObstacles(state.board) : undefined,
     segmentsSurvived: mode === 'survival' ? Math.floor(state.moveCount / 5) : undefined,
+    maxChainIndex: state.maxChainIndex,
   };
 }

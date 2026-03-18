@@ -9,7 +9,7 @@ import { evaluateAchievements } from '../lib/achievements';
 
 const submitScoreSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  mode: z.enum(['sprint', 'clear', 'survival']),
+  mode: z.enum(['sprint', 'clear', 'survival', 'cascade']),
   moveLimit: z.number().int().nullable().optional(),
   moveCount: z.number().int(),
   score: z.number().int(),
@@ -35,10 +35,10 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
   const seed = await findOrCreateDailySeed(c.env.DB, data.date);
 
   const existing = await c.env.DB.prepare(
-    `SELECT id, score, move_count, is_cleared, replay_log_key FROM play_scores
+    `SELECT id, score, move_count, is_cleared, max_chain, replay_log_key FROM play_scores
      WHERE user_id = ? AND seed_id = ? AND mode = ?`
   ).bind(userId, seed.id, data.mode).first<{
-    id: string; score: number; move_count: number; is_cleared: number; replay_log_key: string | null;
+    id: string; score: number; move_count: number; is_cleared: number; max_chain: number; replay_log_key: string | null;
   }>();
 
   // Determine if new score is better
@@ -58,6 +58,10 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
       } else {
         isBetter = false; // both failed, keep existing
       }
+    } else if (data.mode === 'cascade') {
+      // Cascade: higher max chain is better; same chain → higher score
+      isBetter = data.maxChain > (existing.max_chain ?? 0)
+        || (data.maxChain === (existing.max_chain ?? 0) && data.score > existing.score);
     } else {
       // Survival: more moves is better; same moves → higher score
       isBetter = data.moveCount > existing.move_count
@@ -73,12 +77,12 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     await Promise.all([
       c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog)),
       c.env.DB.prepare(
-        `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, replay_log_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, max_chain, replay_log_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         scoreId, userId, seed.id, data.mode,
         data.moveLimit ?? null, data.moveCount, data.score,
-        data.isCleared ? 1 : 0, replayLogKey
+        data.isCleared ? 1 : 0, data.maxChain, replayLogKey
       ).run(),
     ]);
   } else if (isBetter) {
@@ -87,11 +91,11 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     await Promise.all([
       c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog)),
       c.env.DB.prepare(
-        `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, replay_log_key = ?
+        `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, max_chain = ?, replay_log_key = ?
          WHERE id = ?`
       ).bind(
         data.moveLimit ?? null, data.moveCount, data.score,
-        data.isCleared ? 1 : 0, replayLogKey,
+        data.isCleared ? 1 : 0, data.maxChain, replayLogKey,
         scoreId
       ).run(),
     ]);

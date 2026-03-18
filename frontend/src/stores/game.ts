@@ -8,7 +8,7 @@ import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
 
 // --- Types ---
 
-export type GameMode = 'sprint' | 'clear' | 'survival';
+export type GameMode = 'sprint' | 'clear' | 'survival' | 'cascade';
 
 export interface PlayRecord {
   seed: number;
@@ -275,6 +275,12 @@ export const useGameStore = defineStore('game', () => {
     return 0;
   }
 
+  function getBestMaxChain(seed: number): number {
+    const records = getRecordsForSeed(seed, 'cascade');
+    if (records.length === 0) return 0;
+    return Math.max(...records.map(r => r.maxChain ?? 0));
+  }
+
   // --- Calendar helpers ---
 
   function getDailySeeds(year: number, month: number): { date: string; seed: number }[] {
@@ -327,7 +333,7 @@ export const useGameStore = defineStore('game', () => {
     playRecords,
     generateDailySeed: dailySeed, randomSeed,
     isTodaysDailySeed,
-    addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves,
+    addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves, getBestMaxChain,
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, syncScoresFromServer, initialized,
     getShareCode,

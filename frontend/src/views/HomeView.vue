@@ -12,10 +12,11 @@ import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
 import RankingModal from '@/components/RankingModal.vue';
 import VegetableIcon from '@/components/VegetableIcon.vue';
+import { MODE_ICONS } from '@/utils/constants';
 import {
-  lightningIcon, brickIcon, infinityIcon, trophyIcon,
+  linkIcon, trophyIcon,
   speakerLoudIcon, speakerMutedIcon, musicNoteIcon, vibrationIcon,
-  linkIcon, sunIcon, moonIcon, globeIcon, mobileIcon, keyIcon, infoIcon,
+  sunIcon, moonIcon, globeIcon, mobileIcon, keyIcon, infoIcon,
   pencilIcon, speedIcon,
 } from '@/assets/icons';
 
@@ -126,6 +127,7 @@ const todaySeed = computed(() => gameStore.generateDailySeed(today));
 const todayBestSprint = computed(() => gameStore.getBestScore(todaySeed.value, 'sprint'));
 const todayBestClear = computed(() => gameStore.getBestMoves(todaySeed.value, 'clear'));
 const todayBestSurvival = computed(() => gameStore.getBestMoves(todaySeed.value, 'survival'));
+const todayBestCascade = computed(() => gameStore.getBestMaxChain(todaySeed.value));
 
 function playMode(mode: string) {
   router.push(`/puzzle/${todaySeed.value}?mode=${mode}`);
@@ -180,8 +182,8 @@ onUnmounted(() => {
 });
 
 // --- Ranking preview (from API) ---
-const rankingMode = ref<'sprint' | 'clear' | 'survival'>('sprint');
-const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number }>>([]);
+const rankingMode = ref<'sprint' | 'clear' | 'survival' | 'cascade'>('sprint');
+const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number; maxChain?: number }>>([]);
 const rankingLoading = ref(false);
 
 let previewSeq = 0;
@@ -191,14 +193,15 @@ async function fetchRankingPreview() {
   rankingLoading.value = true;
   try {
     const data = await api<{
-      ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number }>;
+      ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number; maxChain?: number }>;
     }>(`/api/rankings/by-value/${todaySeed.value}?mode=${rankingMode.value}`);
     if (seq !== previewSeq) return;
-    rankingPreview.value = data.ranking.slice(0, 5).map(e => ({
+    rankingPreview.value = data.ranking.slice(0, 10).map(e => ({
       rank: e.rank,
       playerName: e.displayName,
       score: e.score,
       moves: e.moveCount,
+      maxChain: e.maxChain,
     }));
   } catch {
     if (seq !== previewSeq) return;
@@ -208,17 +211,26 @@ async function fetchRankingPreview() {
 }
 
 watch(rankingMode, () => fetchRankingPreview());
-onMounted(() => { fetchRankingPreview(); });
+onMounted(() => {
+  const last = sessionStorage.getItem('lastPlayedMode');
+  if (last && ['sprint', 'clear', 'survival', 'cascade'].includes(last)) {
+    rankingMode.value = last as typeof rankingMode.value;
+  }
+  fetchRankingPreview();
+});
 
-function rankingDisplayValue(entry: { score: number; moves: number }) {
+function rankingDisplayValue(entry: { score: number; moves: number; maxChain?: number }) {
+  if (rankingMode.value === 'cascade') {
+    return `${entry.maxChain ?? 0} ${t('mode.chain')}`;
+  }
   if (rankingMode.value === 'clear' || rankingMode.value === 'survival') {
     return `${entry.moves} ${t('mode.moves')}`;
   }
   return entry.score.toLocaleString();
 }
 
-function rankingSubValue(entry: { score: number; moves: number }): string | null {
-  if (rankingMode.value === 'clear' || rankingMode.value === 'survival') {
+function rankingSubValue(entry: { score: number; moves: number; maxChain?: number }): string | null {
+  if (rankingMode.value === 'cascade' || rankingMode.value === 'clear' || rankingMode.value === 'survival') {
     return entry.score.toLocaleString();
   }
   return null;
@@ -280,21 +292,27 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
         </div>
         <div class="mode-buttons">
           <button class="mode-btn" @click="playMode('sprint')">
-            <img class="mode-btn-icon" :src="lightningIcon" alt="" />
+            <img class="mode-btn-icon" :src="MODE_ICONS.sprint" alt="" />
             <span class="mode-btn-name">{{ t('mode.sprint') }}</span>
             <span v-if="todayBestSprint > 0" class="mode-btn-best">{{ todayBestSprint.toLocaleString() }}</span>
             <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
           </button>
           <button class="mode-btn" @click="playMode('clear')">
-            <img class="mode-btn-icon" :src="brickIcon" alt="" />
+            <img class="mode-btn-icon" :src="MODE_ICONS.clear" alt="" />
             <span class="mode-btn-name">{{ t('mode.clear') }}</span>
             <span v-if="todayBestClear > 0" class="mode-btn-best">{{ todayBestClear }}{{ t('mode.moves') }}</span>
             <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
           </button>
           <button class="mode-btn" @click="playMode('survival')">
-            <img class="mode-btn-icon" :src="infinityIcon" alt="" />
+            <img class="mode-btn-icon" :src="MODE_ICONS.survival" alt="" />
             <span class="mode-btn-name">{{ t('mode.survival') }}</span>
             <span v-if="todayBestSurvival > 0" class="mode-btn-best">{{ todayBestSurvival }}{{ t('mode.moves') }}</span>
+            <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
+          </button>
+          <button class="mode-btn" @click="playMode('cascade')">
+            <img class="mode-btn-icon" :src="MODE_ICONS.cascade" alt="" />
+            <span class="mode-btn-name">{{ t('mode.cascade') }}</span>
+            <span v-if="todayBestCascade > 0" class="mode-btn-best">{{ todayBestCascade }}{{ t('mode.chain') }}</span>
             <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
           </button>
         </div>
@@ -308,6 +326,7 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
             <button :class="['ranking-mode-tab', { active: rankingMode === 'sprint' }]" @click="rankingMode = 'sprint'">{{ t('mode.sprint') }}</button>
             <button :class="['ranking-mode-tab', { active: rankingMode === 'clear' }]" @click="rankingMode = 'clear'">{{ t('mode.clear') }}</button>
             <button :class="['ranking-mode-tab', { active: rankingMode === 'survival' }]" @click="rankingMode = 'survival'">{{ t('mode.survival') }}</button>
+            <button :class="['ranking-mode-tab', { active: rankingMode === 'cascade' }]" @click="rankingMode = 'cascade'">{{ t('mode.cascade') }}</button>
           </div>
           <template v-if="rankingLoading">
             <div v-for="i in 3" :key="i" class="ranking-preview-row skeleton-row">
@@ -852,11 +871,16 @@ function rankingSubValue(entry: { score: number; moves: number }): string | null
   letter-spacing: 0.05em;
 }
 .mode-buttons {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
+@media (min-width: 600px) {
+  .mode-buttons {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
 .mode-btn {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;

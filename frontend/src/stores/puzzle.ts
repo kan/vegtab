@@ -13,7 +13,7 @@ import {
   type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
   type Action,
-  BOARD_SIZE,
+  BOARD_SIZE, NUM_COLORS,
 } from '@tomado/engine';
 
 /** Replay action — extends engine Action with scope synthesis and scope swap */
@@ -354,6 +354,7 @@ function buildItemPlan(
   segmentStartScore?: number,
   suppressItemGen = false,
   suppressChains = false,
+  numColors: number = NUM_COLORS,
 ): ItemAnimPlan {
   const boardBefore = cloneBoard(board);
   const effects = computeItemEffects(board, itemPos, itemType, targetColor);
@@ -366,7 +367,7 @@ function buildItemPlan(
 
   const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
   applyGravity(board, passThrough);
-  let rng = fillEmptyCells(board, rngState);
+  let rng = fillEmptyCells(board, rngState, numColors);
   const boardAfterDrop = cloneBoard(board);
 
   let regularChains: ChainAnimData[];
@@ -376,7 +377,7 @@ function buildItemPlan(
     regularChains = [];
     totalScore = baseScore + scoreFromItems;
   } else {
-    const result = computeChainSteps(board, rng, baseScore + scoreFromItems, 2, gameMode, suppressItemGen);
+    const result = computeChainSteps(board, rng, baseScore + scoreFromItems, 2, gameMode, suppressItemGen, numColors);
     regularChains = result.chains;
     totalScore = result.totalScore;
     rng = result.rng;
@@ -397,6 +398,7 @@ function buildItemPlan(
 function computeChainSteps(
   board: (Cell | null)[][], rng: number[], totalScore: number,
   startChain: number, gameMode: GameMode = 'sprint', suppressItemGen = false,
+  numColors: number = NUM_COLORS,
 ) {
   const chains: ChainAnimData[] = [];
   const deferredItems: { pos: Position; item: ItemType }[] = [];
@@ -419,7 +421,7 @@ function computeChainSteps(
 
     const { moves: dm, newTileEntries: nt } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
-    rng = fillEmptyCells(board, rng);
+    rng = fillEmptyCells(board, rng, numColors);
 
     chains.push({
       matches, clearedPositions, destroyedObstacles: destroyed,
@@ -463,13 +465,16 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const moveLimit = computed(() => gameState.value?.moveLimit);
   const isCleared = computed(() => gameState.value?.isCleared);
   const remainingMoves = computed(() => {
-    if (!gameState.value || gameState.value.mode !== 'sprint' || !gameState.value.moveLimit) return undefined;
+    if (!gameState.value || !gameState.value.moveLimit) return undefined;
+    if (gameState.value.mode !== 'sprint' && gameState.value.mode !== 'cascade') return undefined;
     return gameState.value.moveLimit - gameState.value.moveCount;
   });
   const obstacleCount = computed(() => {
     if (!gameState.value) return 0;
     return countObstacles(gameState.value.board);
   });
+  const maxChainIndex = computed(() => gameState.value?.maxChainIndex ?? 0);
+  const nc = computed(() => gameState.value?.numColors ?? NUM_COLORS);
   const quotaTable = computed(() => gameState.value?.quotaTable);
   const quotaTarget = computed(() => {
     if (!gameState.value?.quotaTable) return undefined;
@@ -598,11 +603,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
-    rng = fillEmptyCells(board, rng);
+    rng = fillEmptyCells(board, rng, nc.value);
     const boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
-      computeChainSteps(board, rng, totalScore, 2, state.mode);
+      computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
 
     return {
       scopePos,
@@ -650,7 +655,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const origScopePos = cell1.item === 'scope' ? target : pos;
 
     const { chains: preChains, rng: preRng, totalScore: preScore } =
-      computeChainSteps(board, state.rngState, state.score, 1, state.mode);
+      computeChainSteps(board, state.rngState, state.score, 1, state.mode, false, nc.value);
 
     // Re-find scope position after gravity
     const scopePos = findItemPosition(board, 'scope', origScopePos);
@@ -766,11 +771,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
-    rng = fillEmptyCells(board, rng);
+    rng = fillEmptyCells(board, rng, nc.value);
     const boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
-      computeChainSteps(board, rng, totalScore, 2, state.mode);
+      computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
 
     return {
       pos1, pos2, synthEffect: effect, adjacentTargets, targetCells, effectTargets,
@@ -832,7 +837,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
       const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
       applyGravity(board, passThrough);
-      rng = fillEmptyCells(board, rng);
+      rng = fillEmptyCells(board, rng, nc.value);
 
       chains.push({
         matches, clearedPositions, destroyedObstacles: destroyed,
@@ -874,6 +879,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       board, state.rngState, state.score, state.moveCount,
       pos, cell.item, targetColor,
       state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+      false, false, nc.value,
     );
   }
 
@@ -906,7 +912,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     // Process pre-chains: matches created by the vegetable's new position
     const { chains: preChains, rng: preRng, totalScore: preScore } =
-      computeChainSteps(board, state.rngState, state.score, 1, state.mode);
+      computeChainSteps(board, state.rngState, state.score, 1, state.mode, false, nc.value);
 
     // Find the item's current position after gravity (it may have dropped).
     // Items never participate in matches, so the original item is still on the board.
@@ -923,6 +929,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       board, preRng, preScore, state.moveCount,
       newItemPos, itemCell.item!, targetColor,
       state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+      false, false, nc.value,
     );
     return { boardAfterSwap, preChains, preScore, plan };
   }
@@ -1126,11 +1133,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
-    rng = fillEmptyCells(board, rng);
+    rng = fillEmptyCells(board, rng, nc.value);
     const boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
-      computeChainSteps(board, rng, totalScore, 2, state.mode);
+      computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
 
     return {
       boardAfterSwap,
@@ -1151,6 +1158,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     for (const chain of chains) {
       if (chain.chainIndex > maxChain.value) {
         maxChain.value = chain.chainIndex;
+      }
+      // Keep gameState.maxChainIndex in sync for cascade display
+      if (gameState.value?.maxChainIndex !== undefined && chain.chainIndex > gameState.value.maxChainIndex) {
+        gameState.value.maxChainIndex = chain.chainIndex;
       }
       if (chain.itemGen) {
         generatedItemTypes.value.add(chain.itemGen.item);
@@ -1181,6 +1192,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
           true,  // suppressItemGen
           true,  // suppressChains (#9)
+          nc.value,
         );
         return { pos, plan };
       }
@@ -1192,6 +1204,22 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   function applyState(state: GameState) {
     _displayScore.value = null;
+    // resolveFinalState does not carry numColors / maxChainIndex;
+    // preserve them from the previous state so cascade display works.
+    const prev = gameState.value;
+    if (prev) {
+      const patched = (state.numColors === undefined && prev.numColors !== undefined)
+        || (state.maxChainIndex === undefined && prev.maxChainIndex !== undefined);
+      if (patched) {
+        state = { ...state };
+        if (state.numColors === undefined && prev.numColors !== undefined) {
+          state.numColors = prev.numColors;
+        }
+        if (state.maxChainIndex === undefined && prev.maxChainIndex !== undefined) {
+          state.maxChainIndex = prev.maxChainIndex;
+        }
+      }
+    }
     gameState.value = state;
   }
 
@@ -1206,7 +1234,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   return {
     gameState, seed, replayLog,
     board, score, moveCount, autoActivating, isGameOver, isCleared,
-    mode, moveLimit, remainingMoves,
+    mode, moveLimit, remainingMoves, maxChainIndex,
     obstacleCount, quotaTable, quotaTarget, movesUntilCheck, segmentScore,
     startGame, restoreState, recordAction, swap, tap,
     activateScope, applyScopeSynthesis,

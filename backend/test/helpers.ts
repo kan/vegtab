@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS play_scores (
   move_count INTEGER NOT NULL,
   score INTEGER NOT NULL,
   is_cleared INTEGER NOT NULL DEFAULT 0,
+  max_chain INTEGER DEFAULT 0,
   replay_log_key TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -39,6 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_play_scores_seed_mode ON play_scores(seed_id, mod
 CREATE INDEX IF NOT EXISTS idx_play_scores_sprint ON play_scores(seed_id, mode, score DESC);
 CREATE INDEX IF NOT EXISTS idx_play_scores_clear ON play_scores(seed_id, mode, is_cleared, move_count ASC);
 CREATE INDEX IF NOT EXISTS idx_play_scores_survival ON play_scores(seed_id, mode, move_count DESC, score DESC);
+CREATE INDEX IF NOT EXISTS idx_scores_cascade ON play_scores(seed_id, mode, max_chain DESC, score DESC);
 
 CREATE TABLE IF NOT EXISTS achievements (
   id TEXT PRIMARY KEY,

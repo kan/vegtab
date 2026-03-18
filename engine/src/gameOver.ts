@@ -63,7 +63,8 @@ export function checkGameOverState(state: GameState): {
   const { board, mode, moveCount, moveLimit, score, quotaTable } = state;
 
   switch (mode) {
-    case 'sprint': {
+    case 'sprint':
+    case 'cascade': {
       if (moveLimit !== undefined && moveCount >= moveLimit) return { gameOver: true };
       if (isStuck(board)) return { gameOver: true };
       return { gameOver: false };

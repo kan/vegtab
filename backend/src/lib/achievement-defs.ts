@@ -5,7 +5,7 @@
 
 export interface AchievementDef {
   type: string;
-  category: 'sprint' | 'clear' | 'survival' | 'collection';
+  category: 'sprint' | 'clear' | 'survival' | 'cascade' | 'collection';
   threshold: number;
   comparator: 'gte' | 'lte';
   secret: boolean;
@@ -16,8 +16,10 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
   { type: 'sprint_score_1000', category: 'sprint', threshold: 1000, comparator: 'gte', secret: false },
   { type: 'sprint_score_2000', category: 'sprint', threshold: 2000, comparator: 'gte', secret: false },
   { type: 'sprint_score_5000', category: 'sprint', threshold: 5000, comparator: 'gte', secret: true },
-  { type: 'sprint_chain_3', category: 'sprint', threshold: 3, comparator: 'gte', secret: false },
-  { type: 'sprint_chain_5', category: 'sprint', threshold: 5, comparator: 'gte', secret: false },
+  { type: 'cascade_chain_3', category: 'cascade', threshold: 3, comparator: 'gte', secret: false },
+  { type: 'cascade_chain_5', category: 'cascade', threshold: 5, comparator: 'gte', secret: false },
+  { type: 'cascade_chain_10', category: 'cascade', threshold: 10, comparator: 'gte', secret: false },
+  { type: 'cascade_chain_15', category: 'cascade', threshold: 15, comparator: 'gte', secret: true },
   { type: 'clear_first', category: 'clear', threshold: 1, comparator: 'gte', secret: false },
   { type: 'clear_under_10', category: 'clear', threshold: 10, comparator: 'lte', secret: false },
   { type: 'clear_under_7', category: 'clear', threshold: 7, comparator: 'lte', secret: false },

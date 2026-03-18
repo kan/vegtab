@@ -33,7 +33,7 @@ let prevRemainingMoves: number | undefined;
 let movesOverlayTimer: ReturnType<typeof setTimeout> | undefined;
 
 watch(() => store.remainingMoves, (remaining) => {
-  if (selectedMode.value !== 'sprint' || remaining === undefined || store.isGameOver) return;
+  if ((selectedMode.value !== 'sprint' && selectedMode.value !== 'cascade') || remaining === undefined || store.isGameOver) return;
   // Show overlay when hitting exactly 5 or entering <=3
   if ((remaining === 5 && prevRemainingMoves !== 5)
     || (remaining <= 3 && remaining < (prevRemainingMoves ?? Infinity))) {
@@ -93,6 +93,7 @@ function tryRestoreSession(seed: number, mode: GameMode): boolean {
 function beginGame(seed: number, mode: GameMode) {
   clearSession();
   selectedMode.value = mode;
+  sessionStorage.setItem('lastPlayedMode', mode);
   store.startGame(seed, mode);
   startBGM();
   scoreRecorded.value = false;
@@ -124,7 +125,7 @@ function handleRoute() {
     return;
   }
 
-  if (modeQuery && ['sprint', 'clear', 'survival'].includes(modeQuery)) {
+  if (modeQuery && ['sprint', 'clear', 'survival', 'cascade'].includes(modeQuery)) {
     // Try to restore an in-progress session first
     if (tryRestoreSession(seed, modeQuery)) return;
     beginGame(seed, modeQuery);
@@ -157,7 +158,7 @@ watch([() => store.isGameOver, () => store.autoActivating], ([ended, activating]
   if (ended && !activating && !scoreRecorded.value && store.seed !== undefined) {
     clearSession();
     stopBGM();
-    const isPositiveEnd = (selectedMode.value === 'sprint'
+    const isPositiveEnd = ((selectedMode.value === 'sprint' || selectedMode.value === 'cascade')
       && store.moveLimit !== undefined
       && store.moveCount >= store.moveLimit)
       || store.isCleared === true;
@@ -206,9 +207,14 @@ async function shareScore() {
   const url = shareUrl.value ?? '';
   const modeLabel = t(`mode.${selectedMode.value}`);
   const appName = t('common.appName');
-  const text = selectedMode.value === 'clear'
-    ? `${appName} ${modeLabel} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`
-    : `${appName} ${modeLabel} ${code} | ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
+  let text: string;
+  if (selectedMode.value === 'clear') {
+    text = `${appName} ${modeLabel} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
+  } else if (selectedMode.value === 'cascade') {
+    text = `${appName} ${modeLabel} ${code} | ${store.maxChainIndex}${t('mode.chain')} ${store.score.toLocaleString()}pts`;
+  } else {
+    text = `${appName} ${modeLabel} ${code} | ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
+  }
   const shareData: ShareData = { text };
   if (url) shareData.url = url;
   if (navigator.share) {
@@ -251,7 +257,7 @@ const gameOverTitle = computed(() => {
   if (selectedMode.value === 'clear') {
     return store.isCleared ? t('mode.cleared') : t('mode.failed');
   }
-  if (selectedMode.value === 'sprint'
+  if ((selectedMode.value === 'sprint' || selectedMode.value === 'cascade')
     && store.moveLimit !== undefined
     && store.moveCount >= store.moveLimit) {
     return t('mode.turnOver');
@@ -267,6 +273,9 @@ const gameOverScore = computed(() => {
   }
   if (selectedMode.value === 'survival') {
     return t('puzzle.moveCount', { count: store.moveCount });
+  }
+  if (selectedMode.value === 'cascade') {
+    return `${store.maxChainIndex} ${t('mode.chain')}`;
   }
   return t('puzzle.pts', { score: store.score });
 });
@@ -296,6 +305,10 @@ const gameOverScore = computed(() => {
               <div class="score-label">{{ t('mode.obstacles', { count: store.obstacleCount }) }}</div>
               <div class="move-label">{{ t('puzzle.score', { score: store.score }) }}</div>
             </template>
+            <template v-else-if="selectedMode === 'cascade'">
+              <div class="score-label">{{ t('mode.maxChain') }}: {{ store.maxChainIndex }}</div>
+              <div class="move-label">{{ t('puzzle.score', { score: store.score }) }}</div>
+            </template>
             <template v-else-if="selectedMode !== 'survival'">
               <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
               <div v-if="myBest > 0" class="best-label">{{ t('puzzle.best', { score: myBest.toLocaleString() }) }}</div>
@@ -303,7 +316,7 @@ const gameOverScore = computed(() => {
           </div>
         </div>
         <div class="header-row">
-          <template v-if="selectedMode === 'sprint' && store.remainingMoves !== undefined">
+          <template v-if="(selectedMode === 'sprint' || selectedMode === 'cascade') && store.remainingMoves !== undefined">
             <div :class="['remaining-moves', { 'remaining-urgent': store.remainingMoves <= 5 }]">
               <span class="remaining-number">{{ store.remainingMoves }}</span>
               <span class="remaining-label">{{ t('puzzle.movesRemaining', { remaining: store.remainingMoves }) }}</span>
@@ -323,7 +336,7 @@ const gameOverScore = computed(() => {
         </div>
       </header>
 
-      <div :class="['board-area', { 'board-urgent': selectedMode === 'sprint' && store.remainingMoves !== undefined && store.remainingMoves <= 5 && !store.isGameOver }]">
+      <div :class="['board-area', { 'board-urgent': (selectedMode === 'sprint' || selectedMode === 'cascade') && store.remainingMoves !== undefined && store.remainingMoves <= 5 && !store.isGameOver }]">
         <PuzzleBoard ref="puzzleBoard" :debug-panel="debugPanel" />
         <!-- Sprint remaining moves overlay -->
         <div v-if="showMovesOverlay" class="moves-overlay" :key="movesOverlayText">
@@ -336,7 +349,7 @@ const gameOverScore = computed(() => {
         <div class="game-over-card">
           <h2>{{ gameOverTitle }}</h2>
           <p class="final-score">{{ gameOverScore }}</p>
-          <p v-if="selectedMode === 'clear'" class="clear-score-info">{{ t('puzzle.pts', { score: store.score }) }}</p>
+          <p v-if="selectedMode === 'clear' || selectedMode === 'cascade'" class="clear-score-info">{{ t('puzzle.pts', { score: store.score }) }}</p>
           <p v-if="selectedMode === 'sprint'" class="move-info">{{ t('puzzle.moveCount', { count: store.moveCount }) }}</p>
           <div class="game-over-actions actions-col">
             <button class="btn" @click="restart"><span class="btn-icon">&#x21BB;</span> {{ t('common.retry') }}</button>

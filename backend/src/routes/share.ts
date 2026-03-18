@@ -50,6 +50,7 @@ function buildDescription(topScores: Record<string, { score: number; moves: numb
   if (topScores.sprint) parts.push(`Sprint: ${topScores.sprint.score} pts`);
   if (topScores.clear) parts.push(`Clear: ${topScores.clear.moves} moves`);
   if (topScores.survival) parts.push(`Survival: ${topScores.survival.moves} moves`);
+  if (topScores.cascade) parts.push(`Cascade: ${topScores.cascade.score} chain`);
   return parts.length > 0 ? parts.join(' | ') : 'Try this puzzle!';
 }
 
