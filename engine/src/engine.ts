@@ -97,6 +97,19 @@ export function cloneGameState(state: GameState): GameState {
   };
 }
 
+/** 消去ループ前にflushの隣接色をスナップショットする（誘爆時の空振り防止） */
+function snapshotFlushColors(board: (Cell | null)[][], targets: Position[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const t of targets) {
+    const cell = board[t.row]?.[t.col];
+    if (cell?.item === 'flush' && !cell.obstacle) {
+      const color = findFlushTargetColor(board, t);
+      if (color !== null) map.set(`${t.row},${t.col}`, color);
+    }
+  }
+  return map;
+}
+
 /** アイテムを起動し、効果範囲の対象を消去・誘爆する */
 function activateItem(
   board: (Cell | null)[][],
@@ -133,6 +146,8 @@ function activateItem(
     const targets = getItemTargets(board, current.pos, current.item, current.targetColor, current.targetCells);
     const cleared: Position[] = [];
 
+    const flushColors = snapshotFlushColors(board, targets);
+
     for (const t of targets) {
       const tCell = board[t.row]?.[t.col];
       if (tCell === null) continue;
@@ -141,10 +156,11 @@ function activateItem(
         continue;
       }
       if (tCell.item) {
-        // 誘爆キューに追加
+        // 誘爆キューに追加（flushはスナップショットした色を渡す）
         const tKey = `${t.row},${t.col}`;
         if (!activated.has(tKey)) {
-          queue.push({ pos: t, item: tCell.item });
+          const preColor = tCell.item === 'flush' ? flushColors.get(tKey) : undefined;
+          queue.push({ pos: t, item: tCell.item, targetColor: preColor });
         }
       } else {
         board[t.row][t.col] = null;
@@ -217,6 +233,8 @@ function activateCoffeeSynthesis(
         targets = [];
     }
 
+    const flushColors = snapshotFlushColors(board, targets);
+
     const cleared: Position[] = [];
     for (const t of targets) {
       const cell = board[t.row]?.[t.col];
@@ -226,11 +244,12 @@ function activateCoffeeSynthesis(
         continue;
       }
       if (cell.item) {
-        // 誘爆
+        // 誘爆（flushはスナップショットした色を渡す）
         const key = `${t.row},${t.col}`;
         if (!activated.has(key)) {
           activated.add(key);
-          const result = activateItem(board, t, cell.item, undefined, chainIndex, rng);
+          const preColor = cell.item === 'flush' ? flushColors.get(key) : undefined;
+          const result = activateItem(board, t, cell.item, preColor, chainIndex, rng);
           totalScore += result.score;
           rng = result.rngState;
           allSteps.push(...result.chainSteps);
@@ -541,6 +560,8 @@ function clearTargets(
   const activated = excludePositions ?? new Set<string>();
   const allCleared: Position[] = [];
 
+  const flushColors = snapshotFlushColors(board, targets);
+
   for (const t of targets) {
     const cell = board[t.row]?.[t.col];
     if (cell === null) continue;
@@ -552,7 +573,8 @@ function clearTargets(
       const key = `${t.row},${t.col}`;
       if (!activated.has(key)) {
         activated.add(key);
-        const result = activateItem(board, t, cell.item, undefined, 1, rng);
+        const preColor = cell.item === 'flush' ? flushColors.get(key) : undefined;
+        const result = activateItem(board, t, cell.item, preColor, 1, rng);
         score += result.score;
         rng = result.rngState;
         allCleared.push(...result.clearedPositions);
@@ -617,6 +639,7 @@ function processSynthesis(
     }
 
     const targets = getFlushTargets(board, targetColor);
+    const flushColors = snapshotFlushColors(board, targets);
     for (const t of targets) {
       const cell = board[t.row]?.[t.col];
       if (cell === null) continue;
@@ -625,7 +648,8 @@ function processSynthesis(
         continue;
       }
       if (cell.item) {
-        const result = activateItem(board, t, cell.item, undefined, 1, rng);
+        const preColor = cell.item === 'flush' ? flushColors.get(`${t.row},${t.col}`) : undefined;
+        const result = activateItem(board, t, cell.item, preColor, 1, rng);
         totalScore += result.score;
         rng = result.rngState;
         allCleared.push(...result.clearedPositions);
