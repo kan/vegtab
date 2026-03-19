@@ -246,7 +246,7 @@ export default {
     step4_title: 'Using the Spoon',
     step4_body: 'Tap the Spoon to clear 4 surrounding tiles, then choose 1 more tile to clear. A versatile item!',
     step5_title: 'Knife',
-    step5_body: 'Match 4 in a horizontal line to create a "Knife". When activated, it clears an entire row. A vertical 4-match creates a vertical knife. Swipe the highlighted tile down!',
+    step5_body: 'Match 4 in a horizontal line to create a "Knife" that clears an entire column. A vertical 4-match creates a knife that clears an entire row. Swipe the highlighted tile down!',
     step6_title: 'Fork',
     step6_body: 'Match 5 in an L or T shape to create a "Fork". When activated, it clears a wide area around it. Swipe the highlighted tile right!',
     step7_title: 'Salad Bowl',
