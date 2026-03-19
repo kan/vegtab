@@ -4,29 +4,24 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
 import { generateTransferCode, redeemTransferCode, showToast, api } from '@/api/client';
-import { setLocale } from '@/i18n';
-import { useTheme } from '@/theme';
 import { useSound } from '@/sound';
-import { useAnim } from '@/anim';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
 import { isTutorialFirstVisit, dismissTutorialPrompt } from '@/composables/useTutorialPlayer';
 import RankingModal from '@/components/RankingModal.vue';
 import VegetableIcon from '@/components/VegetableIcon.vue';
 import { MODE_ICONS } from '@/utils/constants';
+import SettingsModal from '@/components/SettingsModal.vue';
 import {
   linkIcon, trophyIcon,
-  speakerLoudIcon, speakerMutedIcon, musicNoteIcon, vibrationIcon,
-  sunIcon, moonIcon, globeIcon, mobileIcon, keyIcon, infoIcon,
-  pencilIcon, speedIcon, questionIcon,
+  mobileIcon, keyIcon, infoIcon,
+  pencilIcon, questionIcon,
 } from '@/assets/icons';
 
 const { t, locale } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
-const { isDark, toggle: doToggleTheme } = useTheme();
-const { seEnabled, bgmEnabled, vibrationEnabled, soundPromptNeeded, acceptSound, declineSound, toggleSE, toggleBGM, toggleVibration } = useSound();
-const { animSpeed, cycleSpeed } = useAnim();
+const { soundPromptNeeded, acceptSound, declineSound } = useSound();
 
 // Title vegetable icons (random pair, different left/right)
 const titleVegeLeft = Math.floor(Math.random() * 5) as 0 | 1 | 2 | 3 | 4;
@@ -34,6 +29,9 @@ const titleVegeRight = ((titleVegeLeft + 1 + Math.floor(Math.random() * 4)) % 5)
 
 // Hamburger menu
 const menuOpen = ref(false);
+
+// Settings modal
+const showSettings = ref(false);
 
 // Ranking modal
 const rankingSeed = ref(0);
@@ -177,37 +175,16 @@ function declineTutorial() {
 }
 
 // --- Web Notification for daily update ---
-const NOTIF_KEY = 'tomado_notification';
-const notificationSupported = typeof Notification !== 'undefined';
-const notificationEnabled = ref(loadNotifSetting());
-
-function loadNotifSetting(): boolean {
-  try { return localStorage.getItem(NOTIF_KEY) === '1'; } catch { return false; }
-}
-
-async function toggleNotification() {
-  if (!notificationEnabled.value) {
-    // Enable: request permission
-    if (!notificationSupported) return;
-    const perm = Notification.permission === 'granted'
-      ? 'granted'
-      : await Notification.requestPermission();
-    if (perm !== 'granted') return;
-    notificationEnabled.value = true;
-  } else {
-    notificationEnabled.value = false;
-  }
-  try { localStorage.setItem(NOTIF_KEY, notificationEnabled.value ? '1' : '0'); } catch { /* */ }
-}
-
 function sendDailyNotification() {
-  if (!notificationEnabled.value || !notificationSupported) return;
-  if (Notification.permission !== 'granted') return;
-  const n = new Notification(t('common.appName'), {
-    body: t('home.newDailyReady'),
-    icon: '/tomado-icon.svg',
-  });
-  n.onclick = () => { window.focus(); n.close(); };
+  try {
+    if (localStorage.getItem('tomado_notification') !== '1') return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const n = new Notification(t('common.appName'), {
+      body: t('home.newDailyReady'),
+      icon: '/tomado-icon.svg',
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch { /* ignore */ }
 }
 
 // --- Daily help ---
@@ -461,55 +438,23 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
       <span class="hamburger-icon">&#x2630;</span>
     </button>
 
-    <!-- Settings menu overlay -->
+    <!-- Menu overlay -->
     <Teleport to="body">
       <div v-if="menuOpen" class="menu-overlay" @click.self="menuOpen = false">
         <div class="menu-panel">
           <div class="menu-header">
-            <h3 class="menu-title">{{ t('home.settings') }}</h3>
+            <span />
             <button class="menu-close" @click="menuOpen = false">&times;</button>
           </div>
           <div class="menu-items">
-            <button :class="['menu-item', { off: !seEnabled }]" @click="toggleSE">
-              <img class="menu-item-icon" :src="seEnabled ? speakerLoudIcon : speakerMutedIcon" alt="" />
-              <span class="menu-item-label">{{ t('home.soundSE') }}</span>
-              <span :class="['menu-item-status', { on: seEnabled }]">{{ seEnabled ? 'ON' : 'OFF' }}</span>
-            </button>
-            <button :class="['menu-item', { off: !bgmEnabled }]" @click="toggleBGM">
-              <img class="menu-item-icon" :src="musicNoteIcon" alt="" />
-              <span class="menu-item-label">{{ t('home.soundBGM') }}</span>
-              <span :class="['menu-item-status', { on: bgmEnabled }]">{{ bgmEnabled ? 'ON' : 'OFF' }}</span>
-            </button>
-            <button :class="['menu-item', { off: !vibrationEnabled }]" @click="toggleVibration">
-              <img class="menu-item-icon" :src="vibrationIcon" alt="" />
-              <span class="menu-item-label">{{ t('home.soundVibration') }}</span>
-              <span :class="['menu-item-status', { on: vibrationEnabled }]">{{ vibrationEnabled ? 'ON' : 'OFF' }}</span>
-            </button>
-            <button v-if="notificationSupported" :class="['menu-item', { off: !notificationEnabled }]" @click="toggleNotification">
-              <span class="menu-item-icon notif-icon">&#x1F514;</span>
-              <span class="menu-item-label">{{ t('home.notification') }}</span>
-              <span :class="['menu-item-status', { on: notificationEnabled }]">{{ notificationEnabled ? 'ON' : 'OFF' }}</span>
-            </button>
-            <button class="menu-item" @click="cycleSpeed">
-              <img class="menu-item-icon" :src="speedIcon" alt="" />
-              <span class="menu-item-label">{{ t('home.animSpeed') }}</span>
-              <span class="menu-item-status on">{{ animSpeed }}x</span>
+            <button class="menu-item" @click="menuOpen = false; showSettings = true">
+              <svg class="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span class="menu-item-label">{{ t('home.settingsTitle') }}</span>
             </button>
             <div class="menu-divider" />
             <button class="menu-item" @click="openShareCodeInput">
               <img class="menu-item-icon" :src="linkIcon" alt="" />
               <span class="menu-item-label">{{ t('home.enterShareCode') }}</span>
-            </button>
-            <div class="menu-divider" />
-            <button class="menu-item" @click="doToggleTheme">
-              <img class="menu-item-icon" :src="isDark ? sunIcon : moonIcon" alt="" />
-              <span class="menu-item-label">{{ t('home.darkMode') }}</span>
-              <span :class="['menu-item-status', { on: isDark }]">{{ isDark ? 'ON' : 'OFF' }}</span>
-            </button>
-            <button class="menu-item" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
-              <img class="menu-item-icon" :src="globeIcon" alt="" />
-              <span class="menu-item-label">{{ t('home.language') }}</span>
-              <span class="menu-item-status on">{{ locale === 'ja' ? '日本語' : 'English' }}</span>
             </button>
             <div class="menu-divider" />
             <button class="menu-item" @click="openTransferMenu">
@@ -533,6 +478,9 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
         </div>
       </div>
     </Teleport>
+
+    <!-- Settings modal -->
+    <SettingsModal :open="showSettings" @close="showSettings = false" />
 
     <!-- Sound prompt modal (first visit) -->
     <Teleport to="body">
@@ -749,11 +697,7 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-}
-.notif-icon {
-  font-size: 18px;
-  text-align: center;
-  line-height: 22px;
+  color: var(--text-secondary);
 }
 .menu-item-label {
   flex: 1;

@@ -41,6 +41,7 @@ export default {
     darkMode: 'Dark Mode',
     language: 'Language',
     settings: 'Settings',
+    settingsTitle: 'Settings',
     soundPromptTitle: 'Enable Sound?',
     soundPromptMessage: 'Would you like to enable sound effects?',
     soundPromptYes: 'Enable Sound',

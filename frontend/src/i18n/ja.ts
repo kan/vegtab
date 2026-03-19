@@ -41,6 +41,7 @@ export default {
     darkMode: 'ダークモード',
     language: '言語',
     settings: '設定',
+    settingsTitle: '各種設定',
     soundPromptTitle: 'サウンドを有効にしますか？',
     soundPromptMessage: '効果音を有効にしますか？',
     soundPromptYes: 'サウンドON',
