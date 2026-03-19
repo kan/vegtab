@@ -123,8 +123,8 @@ const cal = useCalendar();
 const showCalendar = ref(false);
 
 // --- Daily seed ---
-const today = todayJST();
-const todaySeed = computed(() => gameStore.generateDailySeed(today));
+const today = ref(todayJST());
+const todaySeed = computed(() => gameStore.generateDailySeed(today.value));
 const todayBestSprint = computed(() => gameStore.getBestScore(todaySeed.value, 'sprint'));
 const todayBestClear = computed(() => gameStore.getBestMoves(todaySeed.value, 'clear'));
 const todayBestSurvival = computed(() => gameStore.getBestMoves(todaySeed.value, 'survival'));
@@ -136,16 +136,16 @@ function playMode(mode: string) {
 
 // --- Calendar ---
 function playCalendarSeed(dateStr: string, seed: number) {
-  if (dateStr > today) return;
+  if (dateStr > today.value) return;
   router.push(`/puzzle/${seed}`);
 }
 
 function isToday(dateStr: string): boolean {
-  return dateStr === today;
+  return dateStr === today.value;
 }
 
 function isFuture(dateStr: string): boolean {
-  return dateStr > today;
+  return dateStr > today.value;
 }
 
 // --- User name ---
@@ -176,6 +176,40 @@ function declineTutorial() {
   dismissTutorialPrompt();
 }
 
+// --- Web Notification for daily update ---
+const NOTIF_KEY = 'tomado_notification';
+const notificationSupported = typeof Notification !== 'undefined';
+const notificationEnabled = ref(loadNotifSetting());
+
+function loadNotifSetting(): boolean {
+  try { return localStorage.getItem(NOTIF_KEY) === '1'; } catch { return false; }
+}
+
+async function toggleNotification() {
+  if (!notificationEnabled.value) {
+    // Enable: request permission
+    if (!notificationSupported) return;
+    const perm = Notification.permission === 'granted'
+      ? 'granted'
+      : await Notification.requestPermission();
+    if (perm !== 'granted') return;
+    notificationEnabled.value = true;
+  } else {
+    notificationEnabled.value = false;
+  }
+  try { localStorage.setItem(NOTIF_KEY, notificationEnabled.value ? '1' : '0'); } catch { /* */ }
+}
+
+function sendDailyNotification() {
+  if (!notificationEnabled.value || !notificationSupported) return;
+  if (Notification.permission !== 'granted') return;
+  const n = new Notification(t('common.appName'), {
+    body: t('home.newDailyReady'),
+    icon: '/tomado-icon.svg',
+  });
+  n.onclick = () => { window.focus(); n.close(); };
+}
+
 // --- Daily help ---
 const showDailyHelp = ref(false);
 
@@ -186,6 +220,18 @@ let countdownTimer: ReturnType<typeof setInterval> | undefined;
 function updateCountdown() {
   const now = new Date();
   const diff = nextMidnightJST() - now.getTime();
+  if (diff <= 0) {
+    // Midnight passed — refresh daily seed
+    const newToday = todayJST();
+    if (newToday !== today.value) {
+      today.value = newToday;
+      showToast('info', 'home.newDailyReady');
+      sendDailyNotification();
+      fetchRankingPreview();
+    }
+    countdown.value = '00:00:00';
+    return;
+  }
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
   const s = Math.floor((diff % 60000) / 1000);
@@ -304,7 +350,7 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
       <div v-if="showDailyHelp" class="daily-help-box">{{ t('home.dailyHelp') }}</div>
       <div class="daily-card-v2">
         <div class="daily-header">
-          <span class="daily-date">{{ todayJST() }}</span>
+          <span class="daily-date">{{ today }}</span>
           <span class="daily-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
           <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('common.ranking')"><img :src="trophyIcon" class="menu-icon" alt="" /></button>
         </div>
@@ -438,6 +484,11 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
               <img class="menu-item-icon" :src="vibrationIcon" alt="" />
               <span class="menu-item-label">{{ t('home.soundVibration') }}</span>
               <span :class="['menu-item-status', { on: vibrationEnabled }]">{{ vibrationEnabled ? 'ON' : 'OFF' }}</span>
+            </button>
+            <button v-if="notificationSupported" :class="['menu-item', { off: !notificationEnabled }]" @click="toggleNotification">
+              <span class="menu-item-icon notif-icon">&#x1F514;</span>
+              <span class="menu-item-label">{{ t('home.notification') }}</span>
+              <span :class="['menu-item-status', { on: notificationEnabled }]">{{ notificationEnabled ? 'ON' : 'OFF' }}</span>
             </button>
             <button class="menu-item" @click="cycleSpeed">
               <img class="menu-item-icon" :src="speedIcon" alt="" />
@@ -698,6 +749,11 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
   width: 22px;
   height: 22px;
   flex-shrink: 0;
+}
+.notif-icon {
+  font-size: 18px;
+  text-align: center;
+  line-height: 22px;
 }
 .menu-item-label {
   flex: 1;
