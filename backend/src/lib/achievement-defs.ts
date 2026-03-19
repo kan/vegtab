@@ -12,6 +12,7 @@ export interface AchievementDef {
 }
 
 export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
+  { type: 'tutorial_complete', category: 'collection', threshold: 1, comparator: 'gte', secret: false },
   { type: 'sprint_score_500', category: 'sprint', threshold: 500, comparator: 'gte', secret: false },
   { type: 'sprint_score_1000', category: 'sprint', threshold: 1000, comparator: 'gte', secret: false },
   { type: 'sprint_score_2000', category: 'sprint', threshold: 2000, comparator: 'gte', secret: false },

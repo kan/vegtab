@@ -12,7 +12,7 @@ export const ITEM_INFO: Record<ItemType, { label: string; desc: string }> = {
   v_cut: { label: 'Knife', desc: 'Clears a vertical line' },
   h_cut: { label: 'Knife (H)', desc: 'Clears a horizontal line' },
   burst: { label: 'Fork', desc: 'Clears surrounding tiles' },
-  flush: { label: 'Pot', desc: 'Clears all tiles of one color' },
+  flush: { label: 'Salad Bowl', desc: 'Clears all tiles of one color' },
 };
 
 /** Shorthand for ITEM_INFO[type].label */

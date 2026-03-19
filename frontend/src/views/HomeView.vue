@@ -10,6 +10,7 @@ import { useSound } from '@/sound';
 import { useAnim } from '@/anim';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
+import { isTutorialFirstVisit, dismissTutorialPrompt } from '@/composables/useTutorialPlayer';
 import RankingModal from '@/components/RankingModal.vue';
 import VegetableIcon from '@/components/VegetableIcon.vue';
 import { MODE_ICONS } from '@/utils/constants';
@@ -17,7 +18,7 @@ import {
   linkIcon, trophyIcon,
   speakerLoudIcon, speakerMutedIcon, musicNoteIcon, vibrationIcon,
   sunIcon, moonIcon, globeIcon, mobileIcon, keyIcon, infoIcon,
-  pencilIcon, speedIcon,
+  pencilIcon, speedIcon, questionIcon,
 } from '@/assets/icons';
 
 const { t, locale } = useI18n();
@@ -156,6 +157,25 @@ function saveName() {
   editingName.value = false;
 }
 
+// --- Tutorial first visit ---
+const showTutorialPrompt = ref(false);
+
+function checkFirstVisit() {
+  if (isTutorialFirstVisit()) {
+    showTutorialPrompt.value = true;
+  }
+}
+
+function acceptTutorial() {
+  showTutorialPrompt.value = false;
+  router.push('/tutorial');
+}
+
+function declineTutorial() {
+  showTutorialPrompt.value = false;
+  dismissTutorialPrompt();
+}
+
 // --- Daily help ---
 const showDailyHelp = ref(false);
 
@@ -175,6 +195,7 @@ function updateCountdown() {
 onMounted(() => {
   updateCountdown();
   countdownTimer = setInterval(updateCountdown, 1000);
+  checkFirstVisit();
 });
 
 onUnmounted(() => {
@@ -449,6 +470,10 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
               <span class="menu-item-label">{{ t('transfer.redeem') }}</span>
             </button>
             <div class="menu-divider" />
+            <button class="menu-item" @click="menuOpen = false; router.push('/tutorial')">
+              <img class="menu-item-icon" :src="questionIcon" alt="" />
+              <span class="menu-item-label">{{ t('tutorial.howToPlay') }}</span>
+            </button>
             <button class="menu-item" @click="menuOpen = false; router.push('/about')">
               <img class="menu-item-icon" :src="infoIcon" alt="" />
               <span class="menu-item-label">{{ t('home.about') }}</span>
@@ -533,6 +558,20 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
               {{ t('transfer.confirm') }}
             </button>
             <button class="modal-btn-secondary" @click="showRedeemInput = false">{{ t('common.cancel') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Tutorial first visit prompt -->
+    <Teleport to="body">
+      <div v-if="showTutorialPrompt" class="modal-overlay">
+        <div class="modal">
+          <h3 class="modal-title">{{ t('tutorial.firstVisitTitle') }}</h3>
+          <p class="modal-desc">{{ t('tutorial.firstVisitMessage') }}</p>
+          <div class="modal-actions">
+            <button class="modal-btn-primary" @click="acceptTutorial">{{ t('tutorial.firstVisitYes') }}</button>
+            <button class="modal-btn-secondary" @click="declineTutorial">{{ t('tutorial.firstVisitNo') }}</button>
           </div>
         </div>
       </div>
