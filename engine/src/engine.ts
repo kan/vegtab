@@ -201,7 +201,7 @@ function activateItem(
   return { score: totalScore, rngState: rng, chainSteps, clearedPositions: allCleared };
 }
 
-/** コーヒー+アイテム合成: 対象色の全タイルからアイテム効果を発動 */
+/** サラダボウル+アイテム合成: 対象色の全タイルからアイテム効果を発動 */
 function activateCoffeeSynthesis(
   board: (Cell | null)[][],
   pos: Position,
@@ -415,7 +415,7 @@ export function processAction(state: GameState, action: Action): GameState {
 
     const item = cell.item;
 
-    // 虫めがねはtapでは起動しない（magnifying_glass actionを使う）
+    // スプーンはtapでは起動しない（magnifying_glass actionを使う）
     if (item === 'scope') return state;
 
     let targetColor: number | undefined;
@@ -453,7 +453,7 @@ export function processAction(state: GameState, action: Action): GameState {
     if (cell1.item && cell2.item) {
       const synthesis = getSynthesisEffect(cell1.item, cell2.item);
       if (synthesis) {
-        // 虫めがね合成でユーザー選択が必要な場合は無効（別Actionで処理）
+        // スプーン合成でユーザー選択が必要な場合は無効（別Actionで処理）
         if (synthesis.effect === 'scope+scope' ||
             synthesis.effect === 'scope+v_cut' ||
             synthesis.effect === 'scope+h_cut' ||
@@ -489,10 +489,10 @@ export function processAction(state: GameState, action: Action): GameState {
       const otherCell = cell1.item ? cell2 : cell1;
       const otherPos = cell1.item ? targetPos : action.pos;
 
-      // 虫めがねはスワイプ起動不可（tapの代わりにmagnifying_glass actionで）
+      // スプーンはスワイプ起動不可（tapの代わりにmagnifying_glass actionで）
       if (itemCell.item === 'scope') return state;
 
-      // コーヒーのtargetColorを事前保存（pre-chainで消去される可能性）
+      // サラダボウルのtargetColorを事前保存（pre-chainで消去される可能性）
       const savedOtherColor = otherCell.item ? undefined : otherCell.color;
 
       // まず入れ替え
@@ -730,7 +730,7 @@ function processSynthesis(
     return { score: totalScore, rngState: rng, clearedPositions: allCleared };
   }
 
-  // 非コーヒー合成
+  // 非サラダボウル合成
   board[pos1.row][pos1.col] = null;
   board[pos2.row][pos2.col] = null;
 
@@ -744,7 +744,7 @@ function processSynthesis(
   return { score: totalScore, rngState: rng, clearedPositions: allCleared };
 }
 
-/** 虫めがね合成を処理（ユーザー選択後に呼ばれる） */
+/** スプーン合成を処理（ユーザー選択後に呼ばれる） */
 export function processScopeSynthesis(
   state: GameState,
   pos1: Position,
@@ -846,7 +846,7 @@ export function processScopeSynthesis(
   return newState;
 }
 
-/** #15: スプーン（虫めがね）と野菜を入れ替え後、pre-chainsを処理してからscope発動 */
+/** #15: スプーン（スプーン）と野菜を入れ替え後、pre-chainsを処理してからscope発動 */
 export function processScopeSwap(
   state: GameState, pos: Position, dir: Direction, targetCells: Position[],
 ): GameState {
@@ -902,7 +902,7 @@ export function processAutoActivation(state: GameState): GameState {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const cell = board[r][c];
         if (!cell?.item) continue;
-        if (cell.item === 'scope') continue; // 虫めがねは自動発動しない（ユーザー選択が必要）
+        if (cell.item === 'scope') continue; // スプーンは自動発動しない（ユーザー選択が必要）
         const pos = { row: r, col: c };
         let targetColor: number | undefined;
         if (cell.item === 'flush') {

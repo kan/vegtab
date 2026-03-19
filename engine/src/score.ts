@@ -18,7 +18,7 @@ export function calculateStepScore(
   return baseScore + simultaneousBonus;
 }
 
-/** コーヒー×コーヒー全消しボーナス */
+/** サラダボウル×サラダボウル全消しボーナス */
 export function getFullClearBonus(): number {
   return FULL_CLEAR_BONUS;
 }

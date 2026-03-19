@@ -4,7 +4,7 @@ import { getFlushTargets } from '../src/item.js';
 import { BOARD_SIZE, Cell, Color, GameState } from '../src/types.js';
 
 /**
- * flush (サラダボウル/コーヒーカップ) の連鎖発動テスト
+ * flush (サラダボウル) の連鎖発動テスト
  *
  * burst 等のアイテムが flush を誘爆する際、flush のターゲット色は
  * トリガーアイテムがタイルを消去する *前* の盤面スナップショットから決定される。

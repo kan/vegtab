@@ -9,9 +9,9 @@ export const ALL_ITEM_TYPES: readonly ItemType[] = [
 
 export const ITEM_INFO: Record<ItemType, { label: string; desc: string }> = {
   scope: { label: 'Spoon', desc: 'Tap to remove 1 tile' },
-  v_cut: { label: 'Knife', desc: 'Clears a vertical line' },
-  h_cut: { label: 'Knife (H)', desc: 'Clears a horizontal line' },
-  burst: { label: 'Fork', desc: 'Clears surrounding tiles' },
+  v_cut: { label: 'Scissors', desc: 'Clears a vertical line' },
+  h_cut: { label: 'Scissors (H)', desc: 'Clears a horizontal line' },
+  burst: { label: 'Dish Set', desc: 'Clears surrounding tiles' },
   flush: { label: 'Salad Bowl', desc: 'Clears all tiles of one color' },
 };
 
