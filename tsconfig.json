@@ -12,6 +12,7 @@
     "declarationMap": true,
     "sourceMap": true
   },
+  "exclude": ["backend/**", "frontend/**", "engine/tests/**", "node_modules"],
   "references": [
     { "path": "engine" }
   ]

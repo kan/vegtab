@@ -99,7 +99,7 @@ describe('Match Detection', () => {
     board[0][0] = { color: 2 };
     board[0][1] = { color: 2 };
     board[1][0] = { color: 2 };
-    board[1][1] = { color: 2, item: 'scissors' };
+    board[1][1] = { color: 2, item: 'v_cut' };
     const matches = findMatches(board);
     const match2x2 = matches.find(m => m.shape === '2x2' && m.color === 2);
     expect(match2x2).toBeUndefined();
@@ -108,7 +108,7 @@ describe('Match Detection', () => {
   it('アイテムセルはマッチに含まれない', () => {
     const board = emptyBoard();
     board[0][0] = { color: 1 };
-    board[0][1] = { color: 1, item: 'scissors' };
+    board[0][1] = { color: 1, item: 'v_cut' };
     board[0][2] = { color: 1 };
     // アイテムがあるのでマッチは成立しない
     const color1Matches = findMatches(board).filter(m => m.color === 1);

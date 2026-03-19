@@ -415,7 +415,7 @@ export function processAction(state: GameState, action: Action): GameState {
 
     const item = cell.item;
 
-    // スプーンはtapでは起動しない（magnifying_glass actionを使う）
+    // スプーンはtapでは起動しない（scope actionを使う）
     if (item === 'scope') return state;
 
     let targetColor: number | undefined;
@@ -458,7 +458,7 @@ export function processAction(state: GameState, action: Action): GameState {
             synthesis.effect === 'scope+v_cut' ||
             synthesis.effect === 'scope+h_cut' ||
             synthesis.effect === 'scope+burst') {
-          return state; // フロントエンドが magnifying_glass_synthesis アクションを送る
+          return state; // フロントエンドが scope_synthesis アクションを送る
         }
 
         const synthResult = processSynthesis(
@@ -489,7 +489,7 @@ export function processAction(state: GameState, action: Action): GameState {
       const otherCell = cell1.item ? cell2 : cell1;
       const otherPos = cell1.item ? targetPos : action.pos;
 
-      // スプーンはスワイプ起動不可（tapの代わりにmagnifying_glass actionで）
+      // スプーンはスワイプ起動不可（tapの代わりにscope actionで）
       if (itemCell.item === 'scope') return state;
 
       // サラダボウルのtargetColorを事前保存（pre-chainで消去される可能性）
@@ -846,7 +846,7 @@ export function processScopeSynthesis(
   return newState;
 }
 
-/** #15: スプーン（スプーン）と野菜を入れ替え後、pre-chainsを処理してからscope発動 */
+/** #15: スプーンと野菜を入れ替え後、pre-chainsを処理してからscope発動 */
 export function processScopeSwap(
   state: GameState, pos: Position, dir: Direction, targetCells: Position[],
 ): GameState {

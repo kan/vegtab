@@ -167,7 +167,7 @@ const step5_after = setCells(step5_board, [
   [3, 5, null],
 ]);
 
-// --- Step 6: Fork [guided] ---
+// --- Step 6: Dish Set [guided] ---
 // L-shape 5-match → burst. Swap (3,2) right → vertical (2,3)(3,3)(4,3) + horizontal (3,3)(3,4)(3,5).
 
 const step6_board = makeBoard([
@@ -206,7 +206,7 @@ const step7_after = setCells(step7_board, [
   [3, 4, null], [3, 5, null],
 ]);
 
-// --- Step 8: Spoon × Knife [guided] ---
+// --- Step 8: Spoon × Scissors [guided] ---
 const step8_board = makeBoard([
   [3, 3, CI(0, 'scope')],
   [3, 4, CI(0, 'h_cut')],
@@ -220,7 +220,7 @@ const step8_after = setCells(step8_board, [
   ...range8().map(c => [3, c, null] as [number, number, null]),
 ]);
 
-// --- Step 9: Knife × Knife [guided] ---
+// --- Step 9: Scissors × Scissors [guided] ---
 const step9_board = makeBoard([
   [3, 3, CI(0, 'v_cut')],
   [3, 4, CI(0, 'h_cut')],
@@ -249,7 +249,7 @@ const step10_after = setCells(step10_board, [
   ...step10_matched.map(p => [p.row, p.col, null] as [number, number, null]),
 ]);
 
-// --- Step 11: Fork × Spoon [demo] ---
+// --- Step 11: Dish Set × Spoon [demo] ---
 const step11_board = makeBoard([
   [3, 3, CI(0, 'burst')],
   [3, 4, CI(0, 'scope')],
@@ -266,7 +266,7 @@ const step11_after = setCells(step11_board, [
   ...step11_matched.map(p => [p.row, p.col, null] as [number, number, null]),
 ]);
 
-// --- Step 12: Fork × Knife [demo] ---
+// --- Step 12: Dish Set × Scissors [guided] ---
 const step12_board = makeBoard([
   [3, 3, CI(0, 'burst')],
   [3, 4, CI(0, 'v_cut')],
@@ -279,7 +279,7 @@ const step12_after = setCells(step12_board, [
   ...step12_matched.map(p => [p.row, p.col, null] as [number, number, null]),
 ]);
 
-// --- Step 13: Fork × Fork [demo] ---
+// --- Step 13: Dish Set × Dish Set [guided] ---
 const step13_board = makeBoard([
   [3, 3, CI(0, 'burst')],
   [3, 4, CI(0, 'burst')],
@@ -295,12 +295,12 @@ const step13_after = setCells(step13_board, [
   ...step13_matched.map(p => [p.row, p.col, null] as [number, number, null]),
 ]);
 
-// --- Step 14: Pot × Item [demo] ---
+// --- Step 14: Salad Bowl × Item [demo] ---
 const step14_board = makeBoard([
   [3, 3, CI(0, 'flush')],
   [3, 4, CI(0, 'v_cut')],
 ]);
-// Pot transforms same-color tiles to items, then all activate
+// Salad Bowl transforms same-color tiles to items, then all activate
 // Show several color-0 tiles highlighted
 const step14_matched: Position[] = [];
 for (let r = 0; r < BOARD_SIZE; r++) {

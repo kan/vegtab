@@ -838,7 +838,7 @@ async function animateFlushAll(pos: Position, targets: Position[]) {
 async function animateFlushSynthesis(pos: Position, targets: Position[], effectType: string) {
   const otherItem = effectType.replace('flush+', '') as string;
 
-  // Coffee blink
+  // Salad Bowl blink
   const cs = cellSize.value;
   const iconSize = Math.round(cs * 0.7);
   const offsetX = pos.col * cs + (cs - iconSize) / 2;
