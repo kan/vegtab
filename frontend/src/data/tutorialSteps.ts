@@ -149,8 +149,8 @@ const step4_after = setCells(step4_board, [
   [2, 3, null],
 ]);
 
-// --- Step 5: Knife [guided] ---
-// 4-match horizontal → h_cut. Swap (2,5) down → row3 cols 2-5 = 3,3,3,3.
+// --- Step 5: Scissors [guided] ---
+// 4-match horizontal → v_cut. Swap (2,5) down → row3 cols 2-5 = 3,3,3,3.
 
 const step5_board = makeBoard([
   [3, 3, C(3)], [3, 4, C(3)],  // safeBg(3,2)=3 already
@@ -163,7 +163,7 @@ const step5_matched: Position[] = [
 const step5_after = setCells(step5_board, [
   [2, 5, C(1)],  // swapped from (3,5)
   [3, 2, null], [3, 3, null],
-  [3, 4, CI(3, 'h_cut')],  // knife generated
+  [3, 4, CI(3, 'v_cut')],  // scissors (vertical) generated
   [3, 5, null],
 ]);
 
