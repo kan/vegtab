@@ -272,7 +272,7 @@ export default {
     step17_title: 'Survival Mode',
     step17_body: 'Every 5 moves, you must meet a score quota or it\'s game over. The quota increases gradually. How long can you survive?',
     step18_title: 'Cascade Mode',
-    step18_body: '4 colors, 20 moves — stack up chains! Chains of 2+ earn CP (Cascade Points). Upcoming tiles are shown so you can plan your chains!',
+    step18_body: '4 colors, 15 moves — stack up chains! Chains of 2+ earn CP (Cascade Points). Upcoming tiles are shown so you can plan your chains!',
     step19_title: 'Daily Puzzle',
     step19_body: 'A new puzzle is generated every day, and all players share the same board. The same moves always produce the same results, so you can retry and find the optimal strategy. Past puzzles are accessible from the calendar on the HOME screen.',
     step20_title: 'Ranking',
