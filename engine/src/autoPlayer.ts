@@ -14,6 +14,7 @@ export type GameMetrics = {
   remainingObstacles?: number;
   segmentsSurvived?: number;
   maxChainIndex?: number;
+  cascadePoints?: number;
 };
 
 const SWAP_DIRS = [
@@ -93,5 +94,6 @@ export function playGame(seed: number, mode: GameMode, params?: GameInitParams):
     remainingObstacles: mode === 'clear' ? countObstacles(state.board) : undefined,
     segmentsSurvived: mode === 'survival' ? Math.floor(state.moveCount / 5) : undefined,
     maxChainIndex: state.maxChainIndex,
+    cascadePoints: state.cascadePoints,
   };
 }

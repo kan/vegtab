@@ -173,6 +173,7 @@ watch([() => store.isGameOver, () => store.autoActivating], ([ended, activating]
       isCleared: store.isCleared ?? false,
       moveLimit: store.moveLimit,
       maxChain: store.maxChain,
+      cascadePoints: store.cascadePoints,
       generatedItemTypes: [...store.generatedItemTypes],
       replayLog: [...store.replayLog],
     });
@@ -211,7 +212,7 @@ async function shareScore() {
   if (selectedMode.value === 'clear') {
     text = `${appName} ${modeLabel} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
   } else if (selectedMode.value === 'cascade') {
-    text = `${appName} ${modeLabel} ${code} | ${store.maxChainIndex}${t('mode.chain')} ${store.score.toLocaleString()}pts`;
+    text = `${appName} ${modeLabel} ${code} | ${t('mode.cascadePoints')} ${store.cascadePoints} (${store.maxChainIndex}${t('mode.chain')}) ${store.score.toLocaleString()}pts`;
   } else {
     text = `${appName} ${modeLabel} ${code} | ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
   }
@@ -275,7 +276,7 @@ const gameOverScore = computed(() => {
     return t('puzzle.moveCount', { count: store.moveCount });
   }
   if (selectedMode.value === 'cascade') {
-    return `${store.maxChainIndex} ${t('mode.chain')}`;
+    return `${t('mode.cascadePoints')} ${store.cascadePoints}`;
   }
   return t('puzzle.pts', { score: store.score });
 });
@@ -306,7 +307,7 @@ const gameOverScore = computed(() => {
               <div class="move-label">{{ t('puzzle.score', { score: store.score }) }}</div>
             </template>
             <template v-else-if="selectedMode === 'cascade'">
-              <div class="score-label">{{ t('mode.maxChain') }}: {{ store.maxChainIndex }}</div>
+              <div class="score-label">{{ t('mode.cascadePoints') }}: {{ store.cascadePoints }}</div>
               <div class="move-label">{{ t('puzzle.score', { score: store.score }) }}</div>
             </template>
             <template v-else-if="selectedMode !== 'survival'">

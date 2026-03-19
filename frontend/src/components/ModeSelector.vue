@@ -38,8 +38,8 @@ function bestForMode(mode: GameMode): string {
     return m > 0 ? `${m} ${t('mode.moves')}` : '';
   }
   if (mode === 'cascade') {
-    const c = gameStore.getBestMaxChain(props.seed);
-    return c > 0 ? `${c} ${t('mode.chain')}` : '';
+    const cp = gameStore.getBestCascadePoints(props.seed);
+    return cp > 0 ? `${t('mode.cascadePoints')} ${cp}` : '';
   }
   return '';
 }

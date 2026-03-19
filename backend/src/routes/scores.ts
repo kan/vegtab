@@ -15,6 +15,7 @@ const submitScoreSchema = z.object({
   score: z.number().int(),
   isCleared: z.boolean(),
   maxChain: z.number().int().optional().default(0),
+  cascadePoints: z.number().int().optional().default(0),
   generatedItemTypes: z.array(z.string()).optional().default([]),
   replayLog: z.array(z.unknown()),
 });
@@ -35,10 +36,10 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
   const seed = await findOrCreateDailySeed(c.env.DB, data.date);
 
   const existing = await c.env.DB.prepare(
-    `SELECT id, score, move_count, is_cleared, max_chain, replay_log_key FROM play_scores
+    `SELECT id, score, move_count, is_cleared, max_chain, cascade_points, replay_log_key FROM play_scores
      WHERE user_id = ? AND seed_id = ? AND mode = ?`
   ).bind(userId, seed.id, data.mode).first<{
-    id: string; score: number; move_count: number; is_cleared: number; max_chain: number; replay_log_key: string | null;
+    id: string; score: number; move_count: number; is_cleared: number; max_chain: number; cascade_points: number; replay_log_key: string | null;
   }>();
 
   // Determine if new score is better
@@ -59,9 +60,9 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
         isBetter = false; // both failed, keep existing
       }
     } else if (data.mode === 'cascade') {
-      // Cascade: higher max chain is better; same chain → higher score
-      isBetter = data.maxChain > (existing.max_chain ?? 0)
-        || (data.maxChain === (existing.max_chain ?? 0) && data.score > existing.score);
+      // Cascade: higher cascade points is better; same points → higher score
+      isBetter = data.cascadePoints > (existing.cascade_points ?? 0)
+        || (data.cascadePoints === (existing.cascade_points ?? 0) && data.score > existing.score);
     } else {
       // Survival: more moves is better; same moves → higher score
       isBetter = data.moveCount > existing.move_count
@@ -77,12 +78,12 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     await Promise.all([
       c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog)),
       c.env.DB.prepare(
-        `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, max_chain, replay_log_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, max_chain, cascade_points, replay_log_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         scoreId, userId, seed.id, data.mode,
         data.moveLimit ?? null, data.moveCount, data.score,
-        data.isCleared ? 1 : 0, data.maxChain, replayLogKey
+        data.isCleared ? 1 : 0, data.maxChain, data.cascadePoints, replayLogKey
       ).run(),
     ]);
   } else if (isBetter) {
@@ -91,11 +92,11 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     await Promise.all([
       c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog)),
       c.env.DB.prepare(
-        `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, max_chain = ?, replay_log_key = ?
+        `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, max_chain = ?, cascade_points = ?, replay_log_key = ?
          WHERE id = ?`
       ).bind(
         data.moveLimit ?? null, data.moveCount, data.score,
-        data.isCleared ? 1 : 0, data.maxChain, replayLogKey,
+        data.isCleared ? 1 : 0, data.maxChain, data.cascadePoints, replayLogKey,
         scoreId
       ).run(),
     ]);
@@ -115,6 +116,7 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
         isCleared: data.isCleared,
         date: data.date,
         maxChain: data.maxChain,
+        cascadePoints: data.cascadePoints,
         generatedItemTypes: data.generatedItemTypes,
       }),
     ]);
@@ -170,11 +172,11 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
   const scoreId = c.req.param('scoreId');
 
   const score = await c.env.DB.prepare(
-    `SELECT ps.replay_log_key, ps.mode, ps.move_limit, s.seed_value
+    `SELECT ps.replay_log_key, ps.mode, ps.move_limit, ps.score as final_score, ps.cascade_points, s.seed_value
      FROM play_scores ps JOIN puzzle_seeds s ON s.id = ps.seed_id
      WHERE ps.id = ? AND ps.user_id = ?`
   ).bind(scoreId, userId).first<{
-    replay_log_key: string | null; mode: string; move_limit: number | null; seed_value: string;
+    replay_log_key: string | null; mode: string; move_limit: number | null; final_score: number; cascade_points: number; seed_value: string;
   }>();
 
   if (!score) return c.json({ error: 'Not found' }, 404);
@@ -195,5 +197,7 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
     seed: Number(score.seed_value),
     mode: score.mode,
     moveLimit: score.move_limit,
+    finalScore: score.final_score,
+    cascadePoints: score.cascade_points,
   });
 });

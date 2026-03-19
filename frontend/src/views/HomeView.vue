@@ -127,7 +127,7 @@ const todaySeed = computed(() => gameStore.generateDailySeed(today));
 const todayBestSprint = computed(() => gameStore.getBestScore(todaySeed.value, 'sprint'));
 const todayBestClear = computed(() => gameStore.getBestMoves(todaySeed.value, 'clear'));
 const todayBestSurvival = computed(() => gameStore.getBestMoves(todaySeed.value, 'survival'));
-const todayBestCascade = computed(() => gameStore.getBestMaxChain(todaySeed.value));
+const todayBestCascade = computed(() => gameStore.getBestCascadePoints(todaySeed.value));
 
 function playMode(mode: string) {
   router.push(`/puzzle/${todaySeed.value}?mode=${mode}`);
@@ -183,7 +183,7 @@ onUnmounted(() => {
 
 // --- Ranking preview (from API) ---
 const rankingMode = ref<'sprint' | 'clear' | 'survival' | 'cascade'>('sprint');
-const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number; maxChain?: number }>>([]);
+const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number; maxChain?: number; cascadePoints?: number }>>([]);
 const rankingLoading = ref(false);
 
 let previewSeq = 0;
@@ -193,7 +193,7 @@ async function fetchRankingPreview() {
   rankingLoading.value = true;
   try {
     const data = await api<{
-      ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number; maxChain?: number }>;
+      ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number; maxChain?: number; cascadePoints?: number }>;
     }>(`/api/rankings/by-value/${todaySeed.value}?mode=${rankingMode.value}`);
     if (seq !== previewSeq) return;
     rankingPreview.value = data.ranking.slice(0, 10).map(e => ({
@@ -202,6 +202,7 @@ async function fetchRankingPreview() {
       score: e.score,
       moves: e.moveCount,
       maxChain: e.maxChain,
+      cascadePoints: e.cascadePoints,
     }));
   } catch {
     if (seq !== previewSeq) return;
@@ -219,9 +220,9 @@ onMounted(() => {
   fetchRankingPreview();
 });
 
-function rankingDisplayValue(entry: { score: number; moves: number; maxChain?: number }) {
+function rankingDisplayValue(entry: { score: number; moves: number; maxChain?: number; cascadePoints?: number }) {
   if (rankingMode.value === 'cascade') {
-    return `${entry.maxChain ?? 0} ${t('mode.chain')}`;
+    return `${t('mode.cascadePoints')} ${entry.cascadePoints ?? 0}`;
   }
   if (rankingMode.value === 'clear' || rankingMode.value === 'survival') {
     return `${entry.moves} ${t('mode.moves')}`;
@@ -229,7 +230,7 @@ function rankingDisplayValue(entry: { score: number; moves: number; maxChain?: n
   return entry.score.toLocaleString();
 }
 
-function rankingSubValue(entry: { score: number; moves: number; maxChain?: number }): string | null {
+function rankingSubValue(entry: { score: number; moves: number; maxChain?: number; cascadePoints?: number }): string | null {
   if (rankingMode.value === 'cascade' || rankingMode.value === 'clear' || rankingMode.value === 'survival') {
     return entry.score.toLocaleString();
   }
@@ -312,7 +313,7 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
           <button class="mode-btn" @click="playMode('cascade')">
             <img class="mode-btn-icon" :src="MODE_ICONS.cascade" alt="" />
             <span class="mode-btn-name">{{ t('mode.cascade') }}</span>
-            <span v-if="todayBestCascade > 0" class="mode-btn-best">{{ todayBestCascade }}{{ t('mode.chain') }}</span>
+            <span v-if="todayBestCascade > 0" class="mode-btn-best">{{ t('mode.cascadePoints') }} {{ todayBestCascade }}</span>
             <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
           </button>
         </div>

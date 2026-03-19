@@ -86,17 +86,18 @@ describe('Balance: Cascade mode', () => {
     results = SEEDS.map(seed => playGame(seed, 'cascade'));
   });
 
-  it('全ゲームが20手以内で終了する', () => {
+  it('全ゲームが15手以内で終了する', () => {
     for (const r of results) {
-      expect(r.moveCount).toBeLessThanOrEqual(20);
+      expect(r.moveCount).toBeLessThanOrEqual(15);
     }
   });
 
-  it('平均最大連鎖数が5以上', () => {
-    const chains = results.map(r => r.maxChainIndex!);
-    logStats('Cascade maxChain', chains);
-    const { avg } = stats(chains);
-    expect(avg).toBeGreaterThanOrEqual(5);
+  it('平均CPが妥当な範囲にある', () => {
+    const cps = results.map(r => r.cascadePoints!);
+    logStats('Cascade CP', cps);
+    const { avg } = stats(cps);
+    expect(avg).toBeGreaterThan(5);
+    expect(avg).toBeLessThan(200);
   });
 
   it('平均スコアが妥当な範囲にある', () => {

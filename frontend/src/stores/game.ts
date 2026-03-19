@@ -20,6 +20,7 @@ export interface PlayRecord {
   isCleared?: boolean;
   moveLimit?: number;
   maxChain?: number;
+  cascadePoints?: number;
   generatedItemTypes?: string[];
   replayLog?: ReplayAction[];
 }
@@ -193,6 +194,7 @@ export const useGameStore = defineStore('game', () => {
       score: record.score,
       isCleared: record.isCleared ?? false,
       maxChain: record.maxChain ?? 0,
+      cascadePoints: record.cascadePoints ?? 0,
       generatedItemTypes: record.generatedItemTypes ?? [],
       replayLog: record.replayLog ?? [],
     };
@@ -281,6 +283,12 @@ export const useGameStore = defineStore('game', () => {
     return Math.max(...records.map(r => r.maxChain ?? 0));
   }
 
+  function getBestCascadePoints(seed: number): number {
+    const records = getRecordsForSeed(seed, 'cascade');
+    if (records.length === 0) return 0;
+    return Math.max(...records.map(r => r.cascadePoints ?? 0));
+  }
+
   // --- Calendar helpers ---
 
   function getDailySeeds(year: number, month: number): { date: string; seed: number }[] {
@@ -333,7 +341,7 @@ export const useGameStore = defineStore('game', () => {
     playRecords,
     generateDailySeed: dailySeed, randomSeed,
     isTodaysDailySeed,
-    addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves, getBestMaxChain,
+    addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves, getBestMaxChain, getBestCascadePoints,
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, syncScoresFromServer, initialized,
     getShareCode,

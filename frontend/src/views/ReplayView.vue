@@ -38,12 +38,17 @@ onMounted(async () => {
       seed: number;
       mode: GameMode;
       moveLimit: number | null;
+      finalScore?: number;
+      cascadePoints?: number;
     }>(`/api/scores/${scoreId}/replay`);
 
     replayMode.value = data.mode;
     replaySeed.value = data.seed;
     player.load(data.seed, data.mode, data.replayLog, {
       moveLimit: data.moveLimit ?? undefined,
+    }, {
+      finalScore: data.finalScore,
+      cascadePoints: data.cascadePoints,
     });
     loading.value = false;
   } catch {
@@ -155,6 +160,7 @@ function getCellClass(row: number, col: number): string {
       <!-- Score display -->
       <div class="replay-score-bar">
         <span class="replay-score">{{ t('puzzle.score', { score: player.currentScore.value }) }}</span>
+        <span v-if="replayMode === 'cascade'" class="replay-cp">{{ t('mode.cascadePoints') }}: {{ player.currentCascadePoints.value }}</span>
         <span class="replay-moves">{{ t('puzzle.moveCount', { count: player.currentMoveCount.value }) }}</span>
       </div>
 
@@ -296,6 +302,11 @@ function getCellClass(row: number, col: number): string {
   font-size: 16px;
   font-weight: 700;
   color: var(--brand);
+}
+.replay-cp {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ff8f00;
 }
 .replay-moves {
   font-size: 13px;

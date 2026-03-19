@@ -60,6 +60,29 @@ export function fillEmptyCells(board: (Cell | null)[][], columnRngStates: number
   return states;
 }
 
+/**
+ * 各列の次に落ちてくるタイルの色を先読みする（RNG状態を消費しない）。
+ * @returns Color[BOARD_SIZE][count] — 各列の次count個の色
+ */
+export function peekNextColors(
+  columnRngStates: number[],
+  count: number,
+  numColors: number = NUM_COLORS,
+): Color[][] {
+  const result: Color[][] = [];
+  for (let col = 0; col < BOARD_SIZE; col++) {
+    const colors: Color[] = [];
+    let rng = columnRngStates[col];
+    for (let i = 0; i < count; i++) {
+      let color: Color;
+      [rng, color] = nextColor(rng, numColors);
+      colors.push(color);
+    }
+    result.push(colors);
+  }
+  return result;
+}
+
 /** 盤面のディープコピー */
 export function cloneBoard(board: (Cell | null)[][]): (Cell | null)[][] {
   return board.map(row => row.map(cell =>

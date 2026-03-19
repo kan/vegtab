@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS play_scores (
   score INTEGER NOT NULL,
   is_cleared INTEGER NOT NULL DEFAULT 0,
   max_chain INTEGER DEFAULT 0,
+  cascade_points INTEGER NOT NULL DEFAULT 0,
   replay_log_key TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

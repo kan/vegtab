@@ -22,7 +22,7 @@ import { generateObstacles, damageObstacles, damageObstacleAt } from './obstacle
 import { DEFAULT_QUOTA_TABLE } from './survival.js';
 
 const DEFAULT_MOVE_LIMIT = 15;
-const DEFAULT_CASCADE_MOVE_LIMIT = 20;
+const DEFAULT_CASCADE_MOVE_LIMIT = 15;
 
 /** 方向から隣接位置を計算 */
 function getAdjacentPos(pos: Position, dir: Direction): Position {
@@ -85,6 +85,7 @@ export function initializeGame(
     case 'cascade':
       state.moveLimit = params?.moveLimit ?? DEFAULT_CASCADE_MOVE_LIMIT;
       state.maxChainIndex = 0;
+      state.cascadePoints = 0;
       break;
   }
 
@@ -106,6 +107,7 @@ export function cloneGameState(state: GameState): GameState {
     segmentStartScore: state.segmentStartScore,
     numColors: state.numColors,
     maxChainIndex: state.maxChainIndex,
+    cascadePoints: state.cascadePoints,
     lastChainCount: state.lastChainCount,
   };
 }
@@ -297,12 +299,16 @@ export function processDamage(board: (Cell | null)[][], clearedPositions: Positi
   return rng;
 }
 
-/** cascade モードの maxChainIndex を更新 */
+/** cascade モードの maxChainIndex と cascadePoints を更新 */
 function updateMaxChain(state: GameState, steps: ChainStep[]): void {
   let maxInAction = 0;
   for (const step of steps) {
     if (step.chainIndex > maxInAction) {
       maxInAction = step.chainIndex;
+    }
+    // Cascade points: accumulate chainIndex for chains >= 2
+    if (state.cascadePoints !== undefined && step.chainIndex >= 2) {
+      state.cascadePoints += step.chainIndex;
     }
   }
   state.lastChainCount = maxInAction;

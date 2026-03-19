@@ -24,7 +24,7 @@ async function fetchRanking(
   if (cached) {
     const cachedEntry = cached.entries.find(e => e.userId === userId);
     const userRank = cachedEntry
-      ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount }
+      ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount, cascadePoints: cachedEntry.cascadePoints }
       : await getUserRank(db, userId, seedId, mode as GameMode);
     return { ranking: cached.entries, userRank };
   }
@@ -65,17 +65,17 @@ rankingRoutes.get('/:seedId', async (c) => {
 });
 
 function cascadeRankingSQL(): string {
-  return `SELECT r.user_id, u.display_name, r.best_chain, ps2.score, ps2.move_count, ps2.id as score_id
+  return `SELECT r.user_id, u.display_name, r.best_cascade_points, ps2.score, ps2.move_count, ps2.max_chain, ps2.id as score_id
      FROM (
-       SELECT user_id, MAX(max_chain) as best_chain
+       SELECT user_id, MAX(cascade_points) as best_cascade_points
        FROM play_scores
        WHERE seed_id = ? AND mode = ?
        GROUP BY user_id
      ) r
-     JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.max_chain = r.best_chain
+     JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.cascade_points = r.best_cascade_points
        AND ps2.seed_id = ? AND ps2.mode = ?
      JOIN users u ON u.id = r.user_id
-     ORDER BY r.best_chain DESC, ps2.score DESC
+     ORDER BY r.best_cascade_points DESC, ps2.score DESC
      LIMIT ?`;
 }
 
@@ -87,6 +87,7 @@ interface RankingEntry {
   moveCount: number;
   isCleared?: boolean;
   maxChain?: number;
+  cascadePoints?: number;
   scoreId?: string;
 }
 
@@ -178,9 +179,9 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode, user
   if (mode === 'cascade') {
     const entries = await db.prepare(cascadeRankingSQL())
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
-      .all<{ user_id: string; display_name: string | null; best_chain: number; score: number; move_count: number; score_id: string }>();
+      .all<{ user_id: string; display_name: string | null; best_cascade_points: number; score: number; move_count: number; max_chain: number; score_id: string }>();
     return (entries.results ?? []).map((e, i) =>
-      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.move_count, maxChain: e.best_chain }),
+      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.move_count, maxChain: e.max_chain, cascadePoints: e.best_cascade_points }),
     );
   }
 
@@ -200,7 +201,7 @@ async function getUserRank(
   userId: string,
   seedId: string,
   mode: GameMode
-): Promise<{ rank: number; score: number; moveCount?: number; maxChain?: number } | null> {
+): Promise<{ rank: number; score: number; moveCount?: number; maxChain?: number; cascadePoints?: number } | null> {
   if (mode === 'sprint') {
     return getSprintUserRank(db, userId, seedId);
   }
@@ -279,21 +280,21 @@ async function getSurvivalUserRank(
 
 async function getCascadeUserRank(
   db: D1Database, userId: string, seedId: string
-): Promise<{ rank: number; score: number; maxChain: number } | null> {
+): Promise<{ rank: number; score: number; maxChain: number; cascadePoints: number } | null> {
   const userBest = await db.prepare(
-    `SELECT MAX(max_chain) as best_chain, score FROM play_scores
+    `SELECT cascade_points as best_cp, max_chain, score FROM play_scores
      WHERE user_id = ? AND seed_id = ? AND mode = 'cascade'
-     ORDER BY max_chain DESC, score DESC LIMIT 1`
-  ).bind(userId, seedId).first<{ best_chain: number | null; score: number | null }>();
+     ORDER BY cascade_points DESC, score DESC LIMIT 1`
+  ).bind(userId, seedId).first<{ best_cp: number | null; max_chain: number | null; score: number | null }>();
 
-  if (!userBest?.best_chain) return null;
+  if (userBest?.best_cp == null) return null;
 
   const rankResult = await db.prepare(
     `SELECT COUNT(DISTINCT user_id) + 1 as rank FROM play_scores
      WHERE seed_id = ? AND mode = 'cascade'
-     AND (max_chain > ? OR (max_chain = ? AND score > ?))`
-  ).bind(seedId, userBest.best_chain, userBest.best_chain, userBest.score ?? 0).first<{ rank: number }>();
+     AND (cascade_points > ? OR (cascade_points = ? AND score > ?))`
+  ).bind(seedId, userBest.best_cp, userBest.best_cp, userBest.score ?? 0).first<{ rank: number }>();
   if (!rankResult) return null;
 
-  return { rank: rankResult.rank, score: userBest.score ?? 0, maxChain: userBest.best_chain };
+  return { rank: rankResult.rank, score: userBest.score ?? 0, maxChain: userBest.max_chain ?? 0, cascadePoints: userBest.best_cp };
 }

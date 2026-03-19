@@ -40,6 +40,7 @@ onUnmounted(() => {
   floatingTimers.forEach(t => clearTimeout(t));
   floatingTimers.length = 0;
   floatingScores.length = 0;
+  floatingChainLabels.length = 0;
 });
 
 function updateCellSize() {
@@ -48,6 +49,9 @@ function updateCellSize() {
   }
 }
 const boardSize = computed(() => cellSize.value * BOARD_SIZE);
+const PREVIEW_COUNT = 4;
+const previewTileSize = computed(() => Math.max(0, Math.round(cellSize.value * 0.28)));
+const previewHeight = computed(() => store.nextTilePreview ? previewTileSize.value * PREVIEW_COUNT + 4 : 0);
 
 // --- Visual board ---
 const visualBoard = ref<(Cell | null)[][] | null>(null);
@@ -87,23 +91,49 @@ let scopeHintTimer: ReturnType<typeof setTimeout> | undefined;
 
 // --- Floating score ---
 const floatingScores = reactive<{ id: number; x: number; y: number; text: string }[]>([]);
+// --- Floating chain labels (Cascade mode) ---
+const floatingChainLabels = reactive<{ id: number; x: number; y: number; chainText: string; cpText: string }[]>([]);
 let floatingId = 0;
 const floatingTimers: ReturnType<typeof setTimeout>[] = [];
 
-function addFloatingScore(positions: Position[], score: number) {
-  if (score <= 0 || positions.length === 0) return;
+function centroidPx(positions: Position[]): { x: number; y: number } {
   const cs = cellSize.value;
   const cx = positions.reduce((s, p) => s + p.col, 0) / positions.length;
   const cy = positions.reduce((s, p) => s + p.row, 0) / positions.length;
-  const x = (cx + 0.5) * cs;
-  const y = (cy + 0.5) * cs;
+  return { x: (cx + 0.5) * cs, y: (cy + 0.5) * cs };
+}
+
+function addFloatingTimer(ms: number, cb: () => void) {
+  const timerId = setTimeout(() => {
+    cb();
+    const ti = floatingTimers.indexOf(timerId);
+    if (ti !== -1) floatingTimers.splice(ti, 1);
+  }, ms);
+  floatingTimers.push(timerId);
+}
+
+function addFloatingScore(positions: Position[], score: number) {
+  if (score <= 0 || positions.length === 0) return;
+  const { x, y } = centroidPx(positions);
   const id = floatingId++;
   floatingScores.push({ id, x, y, text: `+${score}` });
-  const timerId = setTimeout(() => {
+  addFloatingTimer(scaled(800), () => {
     const idx = floatingScores.findIndex(f => f.id === id);
     if (idx !== -1) floatingScores.splice(idx, 1);
-  }, scaled(800));
-  floatingTimers.push(timerId);
+  });
+}
+
+function addFloatingChainLabel(positions: Position[], chainIndex: number) {
+  if (positions.length === 0) return;
+  const { x, y } = centroidPx(positions);
+  const id = floatingId++;
+  const chainText = t('mode.chainLabel', { count: chainIndex });
+  const cpText = t('mode.chainCascadeGain', { points: chainIndex });
+  floatingChainLabels.push({ id, x, y: y - 16, chainText, cpText });
+  addFloatingTimer(scaled(1200), () => {
+    const idx = floatingChainLabels.findIndex(f => f.id === id);
+    if (idx !== -1) floatingChainLabels.splice(idx, 1);
+  });
 }
 
 function showItemEffectScore(effect: ItemEffectStep) {
@@ -879,6 +909,10 @@ async function animateChainStep(chain: ChainAnimData) {
   if (chain.chainIndex >= 2) {
     playSE('chain'); vibrate(25);
     shaking.value = true; setTimeout(() => { shaking.value = false; }, scaled(300));
+    // Cascade mode: show chain label + CP gain
+    if (store.mode === 'cascade') {
+      addFloatingChainLabel(chain.clearedPositions, chain.chainIndex);
+    }
   } else {
     playSE('match'); vibrate(15);
   }
@@ -946,6 +980,24 @@ function tileTransition(r: number, c: number) {
 
 <template>
   <div ref="wrapperEl" class="board-wrapper">
+    <!-- Next tile preview (Cascade mode) -->
+    <div v-if="store.nextTilePreview" class="next-preview" :style="{ width: boardSize + 'px', height: previewHeight + 'px' }">
+      <div
+        v-for="col in BOARD_SIZE"
+        :key="'preview-' + col"
+        class="next-preview-col"
+        :style="{ width: cellSize + 'px' }"
+      >
+        <div
+          v-for="(color, i) in store.nextTilePreview[col - 1]"
+          :key="i"
+          class="next-preview-tile"
+        >
+          <VegetableIcon :color="color" :size="previewTileSize" />
+        </div>
+      </div>
+    </div>
+
     <div
       ref="boardEl"
       :class="['puzzle-board', { shaking }]"
@@ -1043,6 +1095,17 @@ function tileTransition(r: number, c: number) {
         class="floating-score"
         :style="{ left: fs.x + 'px', top: fs.y + 'px' }"
       >{{ fs.text }}</div>
+
+      <!-- Floating chain labels (Cascade mode) -->
+      <div
+        v-for="cl in floatingChainLabels"
+        :key="cl.id"
+        class="floating-chain-label"
+        :style="{ left: cl.x + 'px', top: cl.y + 'px' }"
+      >
+        <span class="chain-text">{{ cl.chainText }}</span>
+        <span class="chain-cp-text">{{ cl.cpText }}</span>
+      </div>
 
       <!-- Scope selection overlay -->
       <template v-if="scope.scopeSelecting.value">
@@ -1314,6 +1377,60 @@ function tileTransition(r: number, c: number) {
 @keyframes hint-fade {
   0%, 70% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+/* Next tile preview */
+.next-preview {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+  opacity: 0.6;
+}
+.next-preview-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1px;
+}
+.next-preview-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Floating chain label */
+.floating-chain-label {
+  position: absolute;
+  pointer-events: none;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  transform: translate(-50%, -50%);
+  animation: chain-label-float calc(1.2s / var(--anim-duration-factor, 1)) ease-out forwards;
+  white-space: nowrap;
+}
+.chain-text {
+  font-size: 18px;
+  font-weight: 900;
+  color: #ff8f00;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 8px rgba(255,143,0,0.5);
+  line-height: 1.1;
+}
+.chain-cp-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff6f00;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  line-height: 1.1;
+}
+@keyframes chain-label-float {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
+  15%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  60%  { opacity: 1; transform: translate(-50%, -50%) translateY(-12px); }
+  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-36px) scale(0.8); }
 }
 
 /* Screen shake */

@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import {
   initializeGame, processAction, processScopeSynthesis,
   cloneBoard, findItemPosition, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
-  calculateStepScore,
+  calculateStepScore, peekNextColors,
   determineItemFromMatches, checkGameOverState,
   isValidPosition, getItemTargets, findFlushTargetColor,
   getSynthesisEffect, getSynthesisTargets,
@@ -474,6 +474,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     return countObstacles(gameState.value.board);
   });
   const maxChainIndex = computed(() => gameState.value?.maxChainIndex ?? 0);
+  const cascadePoints = computed(() => gameState.value?.cascadePoints ?? 0);
+  /** Cascade mode: preview of next tiles per column */
+  const nextTilePreview = computed<Color[][] | null>(() => {
+    if (!gameState.value || gameState.value.mode !== 'cascade') return null;
+    return peekNextColors(gameState.value.rngState, 4, gameState.value.numColors ?? NUM_COLORS);
+  });
   const nc = computed(() => gameState.value?.numColors ?? NUM_COLORS);
   const quotaTable = computed(() => gameState.value?.quotaTable);
   const quotaTarget = computed(() => {
@@ -1163,6 +1169,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (gameState.value?.maxChainIndex !== undefined && chain.chainIndex > gameState.value.maxChainIndex) {
         gameState.value.maxChainIndex = chain.chainIndex;
       }
+      // Accumulate cascade points: chainIndex for chainIndex >= 2
+      if (gameState.value?.cascadePoints !== undefined && chain.chainIndex >= 2) {
+        gameState.value.cascadePoints += chain.chainIndex;
+      }
       if (chain.itemGen) {
         generatedItemTypes.value.add(chain.itemGen.item);
       }
@@ -1204,19 +1214,23 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   function applyState(state: GameState) {
     _displayScore.value = null;
-    // resolveFinalState does not carry numColors / maxChainIndex;
+    // resolveFinalState does not carry numColors / maxChainIndex / cascadePoints;
     // preserve them from the previous state so cascade display works.
     const prev = gameState.value;
     if (prev) {
-      const patched = (state.numColors === undefined && prev.numColors !== undefined)
-        || (state.maxChainIndex === undefined && prev.maxChainIndex !== undefined);
-      if (patched) {
+      const needsPatch = (state.numColors === undefined && prev.numColors !== undefined)
+        || (state.maxChainIndex === undefined && prev.maxChainIndex !== undefined)
+        || (state.cascadePoints === undefined && prev.cascadePoints !== undefined);
+      if (needsPatch) {
         state = { ...state };
         if (state.numColors === undefined && prev.numColors !== undefined) {
           state.numColors = prev.numColors;
         }
         if (state.maxChainIndex === undefined && prev.maxChainIndex !== undefined) {
           state.maxChainIndex = prev.maxChainIndex;
+        }
+        if (state.cascadePoints === undefined && prev.cascadePoints !== undefined) {
+          state.cascadePoints = prev.cascadePoints;
         }
       }
     }
@@ -1234,7 +1248,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   return {
     gameState, seed, replayLog,
     board, score, moveCount, autoActivating, isGameOver, isCleared,
-    mode, moveLimit, remainingMoves, maxChainIndex,
+    mode, moveLimit, remainingMoves, maxChainIndex, cascadePoints, nextTilePreview,
     obstacleCount, quotaTable, quotaTarget, movesUntilCheck, segmentScore,
     startGame, restoreState, recordAction, swap, tap,
     activateScope, applyScopeSynthesis,

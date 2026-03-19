@@ -15,6 +15,9 @@ export function useReplayPlayer() {
   const currentStep = ref(0);
   const isPlaying = ref(false);
   const speed = ref(1000); // ms per step
+  /** Recorded final values from the database (authoritative) */
+  const recordedFinalScore = ref<number | null>(null);
+  const recordedCascadePoints = ref<number | null>(null);
 
   let playTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -28,8 +31,16 @@ export function useReplayPlayer() {
     currentState.value?.board ?? null,
   );
 
-  const currentScore = computed(() => currentState.value?.score ?? 0);
+  const isAtEnd = computed(() => currentStep.value >= totalSteps.value);
+  const currentScore = computed(() => {
+    if (isAtEnd.value && recordedFinalScore.value !== null) return recordedFinalScore.value;
+    return currentState.value?.score ?? 0;
+  });
   const currentMoveCount = computed(() => currentState.value?.moveCount ?? 0);
+  const currentCascadePoints = computed(() => {
+    if (isAtEnd.value && recordedCascadePoints.value !== null) return recordedCascadePoints.value;
+    return currentState.value?.cascadePoints ?? 0;
+  });
 
   const currentAction = computed<ReplayAction | null>(() =>
     currentStep.value > 0 ? actions.value[currentStep.value - 1] ?? null : null,
@@ -39,9 +50,14 @@ export function useReplayPlayer() {
     actions.value[currentStep.value] ?? null,
   );
 
-  function load(seed: number, mode: GameMode, replayActions: ReplayAction[], params?: GameInitParams) {
+  function load(
+    seed: number, mode: GameMode, replayActions: ReplayAction[], params?: GameInitParams,
+    recorded?: { finalScore?: number; cascadePoints?: number },
+  ) {
     pause();
     actions.value = replayActions;
+    recordedFinalScore.value = recorded?.finalScore ?? null;
+    recordedCascadePoints.value = recorded?.cascadePoints ?? null;
 
     // Build all states by replaying actions
     const states: GameState[] = [];
@@ -145,6 +161,9 @@ export function useReplayPlayer() {
     currentBoard,
     currentScore,
     currentMoveCount,
+    currentCascadePoints,
+    recordedFinalScore,
+    recordedCascadePoints,
     currentAction,
     nextAction,
     isPlaying,

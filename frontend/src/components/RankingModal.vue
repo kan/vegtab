@@ -31,10 +31,11 @@ interface RankEntry {
   isMe: boolean;
   scoreId?: string;
   maxChain?: number;
+  cascadePoints?: number;
 }
 
 const rankings = ref<RankEntry[]>([]);
-const myRank = ref<{ rank: number; score: number; moveCount?: number; maxChain?: number } | null>(null);
+const myRank = ref<{ rank: number; score: number; moveCount?: number; maxChain?: number; cascadePoints?: number } | null>(null);
 
 watch(() => props.mode, (m) => { if (m) activeMode.value = m; });
 watch(() => props.open, (o) => {
@@ -64,9 +65,10 @@ async function fetchRanking() {
         moveCount: number;
         isCleared?: boolean;
         maxChain?: number;
+        cascadePoints?: number;
         scoreId?: string;
       }>;
-      userRank: { rank: number; score: number; moveCount?: number; maxChain?: number } | null;
+      userRank: { rank: number; score: number; moveCount?: number; maxChain?: number; cascadePoints?: number } | null;
     }>(`/api/rankings/by-value/${props.seed}?mode=${activeMode.value}`);
 
     if (seq !== fetchSeq) return; // stale response
@@ -78,6 +80,7 @@ async function fetchRanking() {
       isMe: e.userId === userId,
       scoreId: e.scoreId,
       maxChain: e.maxChain,
+      cascadePoints: e.cascadePoints,
     }));
     myRank.value = data.userRank;
   } catch {
@@ -91,7 +94,7 @@ async function fetchRanking() {
 const myRankDisplay = computed(() => {
   if (!myRank.value) return '';
   if (activeMode.value === 'cascade') {
-    return `${myRank.value.maxChain ?? 0} ${t('mode.chain')}`;
+    return `${t('mode.cascadePoints')} ${myRank.value.cascadePoints ?? 0}`;
   }
   if (activeMode.value === 'clear' || activeMode.value === 'survival') {
     return `${myRank.value.moveCount ?? 0} ${t('mode.moves')}`;
@@ -116,7 +119,7 @@ function rankMedalIcon(rank: number): string | null {
 
 function displayValue(entry: RankEntry): string {
   if (activeMode.value === 'cascade') {
-    return `${entry.maxChain ?? 0} ${t('mode.chain')}`;
+    return `${t('mode.cascadePoints')} ${entry.cascadePoints ?? 0}`;
   }
   if (activeMode.value === 'clear' || activeMode.value === 'survival') {
     return `${entry.moves} ${t('mode.moves')}`;

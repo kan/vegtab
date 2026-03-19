@@ -7,6 +7,7 @@ export interface ScoreData {
   isCleared: boolean;
   date: string;
   maxChain: number;
+  cascadePoints: number;
   generatedItemTypes: string[];
 }
 
@@ -114,6 +115,13 @@ function computeCandidates(data: ScoreData): Record<string, number> {
       c['clear_under_10'] = data.moveCount;
       c['clear_under_7'] = data.moveCount;
     }
+  }
+
+  if (data.mode === 'cascade') {
+    c['cascade_cp_20'] = data.cascadePoints;
+    c['cascade_cp_50'] = data.cascadePoints;
+    c['cascade_cp_100'] = data.cascadePoints;
+    c['cascade_cp_150'] = data.cascadePoints;
   }
 
   if (data.mode === 'survival') {
