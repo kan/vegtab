@@ -1,12 +1,17 @@
+import type { VapidKeys } from '@block65/webcrypto-web-push';
 import type { Bindings } from '../types';
-import { sendPushNotification, importVapidKeys, type PushPayload } from './web-push';
+import { sendPushNotification, type PushPayload } from './web-push';
 
 const BATCH_SIZE = 100;
 
 export async function sendDailyPushNotifications(env: Bindings): Promise<void> {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return;
 
-  const vapidKeys = await importVapidKeys(env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
+  const vapidKeys: VapidKeys = {
+    subject: env.VAPID_SUBJECT,
+    publicKey: env.VAPID_PUBLIC_KEY,
+    privateKey: env.VAPID_PRIVATE_KEY,
+  };
   const payload: PushPayload = {
     title: 'Vege-Table',
     body: "Today's daily puzzle is ready! 🥬",
@@ -33,7 +38,6 @@ export async function sendDailyPushNotifications(env: Bindings): Promise<void> {
           { endpoint: sub.endpoint, keyP256dh: sub.key_p256dh, keyAuth: sub.key_auth },
           payload,
           vapidKeys,
-          env.VAPID_SUBJECT,
         ),
       ),
     );
