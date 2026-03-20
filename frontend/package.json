@@ -24,6 +24,10 @@
     "vue-tsc": "^2.2.10"
   },
   "dependencies": {
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/ios": "^8.2.0",
     "sharp-cli": "^5.2.0",
     "vue-i18n": "^11.3.0"
   }
