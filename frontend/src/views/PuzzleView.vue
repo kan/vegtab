@@ -48,9 +48,10 @@ watch(() => store.remainingMoves, (remaining) => {
 });
 
 // --- View phase ---
-type ViewPhase = 'modeSelect' | 'playing';
+type ViewPhase = 'pastNotice' | 'modeSelect' | 'playing';
 const viewPhase = ref<ViewPhase>('modeSelect');
 const selectedMode = ref<GameMode>('sprint');
+const isPastPuzzle = ref(false);
 
 const SESSION_KEY = 'tomado_puzzle_state';
 
@@ -127,6 +128,8 @@ function handleRoute() {
     return;
   }
 
+  isPastPuzzle.value = !gameStore.isTodaysDailySeed(seed);
+
   if (modeQuery && ['sprint', 'clear', 'survival', 'cascade'].includes(modeQuery)) {
     // Try to restore an in-progress session first
     if (tryRestoreSession(seed, modeQuery)) return;
@@ -134,8 +137,22 @@ function handleRoute() {
     return;
   }
 
+  // Past puzzle: show notice before mode select
+  if (isPastPuzzle.value) {
+    viewPhase.value = 'pastNotice';
+    return;
+  }
+
   // Show mode selector
   viewPhase.value = 'modeSelect';
+}
+
+function proceedFromPastNotice() {
+  viewPhase.value = 'modeSelect';
+}
+
+function openPastRanking() {
+  showRanking.value = true;
 }
 
 function onModeSelect(mode: GameMode) {
@@ -246,6 +263,7 @@ onUnmounted(() => {
 
 // --- Ranking ---
 const showRanking = ref(false);
+const rankingSeed = computed(() => store.seed || Number(route.params.seed) || 0);
 
 const myBest = computed(() => {
   if (store.seed === undefined) return 0;
@@ -287,6 +305,21 @@ const gameOverScore = computed(() => {
 
 <template>
   <div class="puzzle-view">
+    <!-- Past puzzle notice -->
+    <Teleport to="body">
+      <div v-if="viewPhase === 'pastNotice'" class="modal-overlay">
+        <div class="modal">
+          <h3 class="modal-title">{{ t('puzzle.pastNoticeTitle') }}</h3>
+          <p class="modal-desc">{{ t('puzzle.pastNoticeMessage') }}</p>
+          <div class="modal-actions">
+            <button class="modal-btn-primary" @click="proceedFromPastNotice">{{ t('puzzle.pastNoticePlay') }}</button>
+            <button class="modal-btn-secondary" @click="openPastRanking">{{ t('common.ranking') }}</button>
+            <button class="modal-btn-secondary" @click="router.push('/')">{{ t('common.home') }}</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
     <!-- Mode select overlay -->
     <ModeSelector
       v-if="viewPhase === 'modeSelect'"
@@ -409,10 +442,11 @@ const gameOverScore = computed(() => {
         </div>
       </Teleport>
 
-      <RankingModal :seed="store.seed!" :open="showRanking" :mode="selectedMode" @close="showRanking = false" />
       <SettingsModal :open="showSettings" @close="showSettings = false" />
       <DebugPanel v-if="isDev" ref="debugPanel" />
     </template>
+
+    <RankingModal :seed="rankingSeed" :open="showRanking" :mode="selectedMode" @close="showRanking = false" />
   </div>
 </template>
 

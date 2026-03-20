@@ -211,12 +211,16 @@ export const useGameStore = defineStore('game', () => {
     const date = findDailyDate(record.seed);
     if (!date) return;
     try {
-      const res = await api<{ scoreId: string; shareCode: string; newAchievements: string[] }>('/api/scores', {
+      const res = await api<{ scoreId: string | null; shareCode: string; newAchievements: string[]; pastDate?: boolean }>('/api/scores', {
         method: 'POST',
         body: JSON.stringify(buildScorePayload(record, date)),
         offlineQueue: true,
       });
       handleScoreResponse(res, record.seed);
+      if (res.pastDate) {
+        showToast('info', 'toast.pastDateNoRanking');
+        return;
+      }
       if (res.newAchievements?.length > 0) {
         const { useAchievementStore } = await import('@/stores/achievements');
         useAchievementStore().handleNewAchievements(res.newAchievements);

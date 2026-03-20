@@ -19,6 +19,7 @@ const loading = ref(true);
 const error = ref('');
 const replayMode = ref<GameMode>('sprint');
 const replaySeed = ref(0);
+const replayPlayerName = ref('');
 
 const player = useReplayPlayer();
 
@@ -40,10 +41,12 @@ onMounted(async () => {
       moveLimit: number | null;
       finalScore?: number;
       cascadePoints?: number;
+      displayName?: string;
     }>(`/api/scores/${scoreId}/replay`);
 
     replayMode.value = data.mode;
     replaySeed.value = data.seed;
+    replayPlayerName.value = data.displayName ?? '';
     player.load(data.seed, data.mode, data.replayLog, {
       moveLimit: data.moveLimit ?? undefined,
     }, {
@@ -123,7 +126,10 @@ function getCellClass(row: number, col: number): string {
         <button class="btn-back" @click="router.back()">&larr;</button>
         <div class="replay-info">
           <span class="replay-title">{{ t('replay.title') }}</span>
-          <span class="replay-meta">{{ t('common.seed', { seed: replaySeed }) }} &middot; {{ t(`mode.${replayMode}`) }}</span>
+          <span class="replay-meta">
+            <template v-if="replayPlayerName">{{ replayPlayerName }} &middot; </template>
+            {{ t('common.seed', { seed: replaySeed }) }} &middot; {{ t(`mode.${replayMode}`) }}
+          </span>
         </div>
       </header>
 

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Bindings, Variables } from '../types';
 import { generateId } from '../lib/id';
-import { isDateNearToday } from '../lib/date';
+import { isDateNearToday, todayJST } from '../lib/date';
 import { findOrCreateDailySeed } from '../lib/seed';
 import { evaluateAchievements } from '../lib/achievements';
 
@@ -32,9 +32,16 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     return c.json({ error: 'Invalid date' }, 400);
   }
 
-  // Find or create the daily seed, and check for existing score in one query
+  // Find or create the daily seed
   const seed = await findOrCreateDailySeed(c.env.DB, data.date);
 
+  // Past dates: allow play but don't record to ranking
+  const isPastDate = data.date < todayJST();
+  if (isPastDate) {
+    return c.json({ scoreId: null, shareCode: seed.share_code, newAchievements: [], pastDate: true }, 200);
+  }
+
+  // Check for existing score
   const existing = await c.env.DB.prepare(
     `SELECT id, score, move_count, is_cleared, max_chain, cascade_points, replay_log_key FROM play_scores
      WHERE user_id = ? AND seed_id = ? AND mode = ?`
@@ -167,19 +174,32 @@ scoreRoutes.get('/my', async (c) => {
 });
 
 // GET /api/scores/:scoreId/replay - Get replay data for a score
+// Past daily puzzles: public (any user can view). Today's puzzles: own scores only.
 scoreRoutes.get('/:scoreId/replay', async (c) => {
   const userId = c.get('userId');
   const scoreId = c.req.param('scoreId');
 
   const score = await c.env.DB.prepare(
-    `SELECT ps.replay_log_key, ps.mode, ps.move_limit, ps.score as final_score, ps.cascade_points, s.seed_value
-     FROM play_scores ps JOIN puzzle_seeds s ON s.id = ps.seed_id
-     WHERE ps.id = ? AND ps.user_id = ?`
-  ).bind(scoreId, userId).first<{
-    replay_log_key: string | null; mode: string; move_limit: number | null; final_score: number; cascade_points: number; seed_value: string;
+    `SELECT ps.replay_log_key, ps.mode, ps.move_limit, ps.score as final_score, ps.cascade_points,
+            ps.user_id, s.seed_value, s.daily_date, u.display_name
+     FROM play_scores ps
+     JOIN puzzle_seeds s ON s.id = ps.seed_id
+     LEFT JOIN users u ON u.id = ps.user_id
+     WHERE ps.id = ?`
+  ).bind(scoreId).first<{
+    replay_log_key: string | null; mode: string; move_limit: number | null;
+    final_score: number; cascade_points: number; seed_value: string;
+    user_id: string; daily_date: string | null; display_name: string | null;
   }>();
 
   if (!score) return c.json({ error: 'Not found' }, 404);
+
+  // Access control: past dates are public, today is own-only
+  const isPast = score.daily_date != null && score.daily_date < todayJST();
+  if (!isPast && score.user_id !== userId) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+
   if (!score.replay_log_key) return c.json({ error: 'No replay data' }, 404);
 
   const obj = await c.env.R2.get(score.replay_log_key);
@@ -187,7 +207,6 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
 
   const replayLog = JSON.parse(await obj.text());
 
-  // Empty replay logs are not playable
   if (!Array.isArray(replayLog) || replayLog.length === 0) {
     return c.json({ error: 'No replay data' }, 404);
   }
@@ -199,5 +218,6 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
     moveLimit: score.move_limit,
     finalScore: score.final_score,
     cascadePoints: score.cascade_points,
+    displayName: score.display_name ?? 'NO NAME',
   });
 });

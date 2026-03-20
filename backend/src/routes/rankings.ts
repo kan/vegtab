@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
+import { todayJST } from '../lib/date';
 
 const DEFAULT_DISPLAY_NAME = 'NO NAME';
 
@@ -19,22 +20,34 @@ async function fetchRanking(
     return { error: 'Invalid mode' as const };
   }
 
+  // Determine if this seed is a past daily puzzle
+  const seedInfo = await db.prepare(
+    'SELECT daily_date FROM puzzle_seeds WHERE id = ?'
+  ).bind(seedId).first<{ daily_date: string | null }>();
+  const isPastDate = seedInfo?.daily_date != null && seedInfo.daily_date < todayJST();
+
   const cacheKey = `ranking:${seedId}:${mode}`;
   const cached = await kv.get(cacheKey, 'json') as RankingData | null;
   if (cached) {
+    // For past dates, expose scoreId on all entries
+    const entries = isPastDate
+      ? cached.entries.map(e => ({ ...e, scoreId: e.scoreId ?? e._scoreId }))
+      : cached.entries.map(e => ({ ...e, scoreId: e.userId === userId ? (e.scoreId ?? e._scoreId) : undefined }));
     const cachedEntry = cached.entries.find(e => e.userId === userId);
     const userRank = cachedEntry
       ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount, cascadePoints: cachedEntry.cascadePoints }
       : await getUserRank(db, userId, seedId, mode as GameMode);
-    return { ranking: cached.entries, userRank };
+    return { ranking: entries, userRank };
   }
 
   const [rankingEntries, userRank] = await Promise.all([
-    queryRanking(db, seedId, mode as GameMode, userId),
+    queryRanking(db, seedId, mode as GameMode, userId, isPastDate),
     getUserRank(db, userId, seedId, mode as GameMode),
   ]);
 
-  await kv.put(cacheKey, JSON.stringify({ entries: rankingEntries }), {
+  // Cache always stores _scoreId so we can resolve per-user visibility on cache hit
+  const cacheEntries = rankingEntries.map(e => ({ ...e, _scoreId: e.scoreId }));
+  await kv.put(cacheKey, JSON.stringify({ entries: cacheEntries }), {
     expirationTtl: RANKING_CACHE_TTL,
   });
 
@@ -89,6 +102,8 @@ interface RankingEntry {
   maxChain?: number;
   cascadePoints?: number;
   scoreId?: string;
+  /** Internal: always present in cache, resolved to scoreId per visibility rules */
+  _scoreId?: string;
 }
 
 interface RankingData {
@@ -145,6 +160,7 @@ function survivalRankingSQL(): string {
 function mapBaseEntry(
   e: { user_id: string; display_name: string | null; score_id: string },
   i: number, userId: string, extra: Partial<RankingEntry>,
+  isPastDate = false,
 ): RankingEntry {
   return {
     rank: i + 1,
@@ -152,18 +168,18 @@ function mapBaseEntry(
     displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
     score: 0,
     moveCount: 0,
-    scoreId: e.user_id === userId ? e.score_id : undefined,
+    scoreId: (isPastDate || e.user_id === userId) ? e.score_id : undefined,
     ...extra,
   };
 }
 
-async function queryRanking(db: D1Database, seedId: string, mode: GameMode, userId: string): Promise<RankingEntry[]> {
+async function queryRanking(db: D1Database, seedId: string, mode: GameMode, userId: string, isPastDate = false): Promise<RankingEntry[]> {
   if (mode === 'sprint') {
     const entries = await db.prepare(sprintRankingSQL())
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
       .all<{ user_id: string; display_name: string | null; best_score: number; move_count: number; score_id: string }>();
     return (entries.results ?? []).map((e, i) =>
-      mapBaseEntry(e, i, userId, { score: e.best_score, moveCount: e.move_count }),
+      mapBaseEntry(e, i, userId, { score: e.best_score, moveCount: e.move_count }, isPastDate),
     );
   }
 
@@ -172,7 +188,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode, user
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
       .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; is_cleared: number; score_id: string }>();
     return (entries.results ?? []).map((e, i) =>
-      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.best_move_count, isCleared: true }),
+      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.best_move_count, isCleared: true }, isPastDate),
     );
   }
 
@@ -181,7 +197,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode, user
       .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
       .all<{ user_id: string; display_name: string | null; best_cascade_points: number; score: number; move_count: number; max_chain: number; score_id: string }>();
     return (entries.results ?? []).map((e, i) =>
-      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.move_count, maxChain: e.max_chain, cascadePoints: e.best_cascade_points }),
+      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.move_count, maxChain: e.max_chain, cascadePoints: e.best_cascade_points }, isPastDate),
     );
   }
 
@@ -190,7 +206,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode, user
     .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
     .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; score_id: string }>();
   return (entries.results ?? []).map((e, i) =>
-    mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.best_move_count }),
+    mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.best_move_count }, isPastDate),
   );
 }
 

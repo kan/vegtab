@@ -213,7 +213,7 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
               <span v-if="subDisplayValue(entry)" class="rank-sub">{{ subDisplayValue(entry) }}</span>
             </div>
             <button
-              v-if="entry.isMe && entry.scoreId"
+              v-if="entry.scoreId"
               class="btn-replay"
               @click="goToReplay(entry.scoreId!)"
               :title="t('replay.viewReplay')"
