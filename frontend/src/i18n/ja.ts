@@ -138,6 +138,7 @@ export default {
     pastDateNoRanking: '過去のパズルのスコアはランキングに記録されません',
     scoreSubmitFailed: 'スコアの送信に失敗しました。',
     rankingFetchFailed: 'ランキングを取得できませんでした。',
+    pushFailed: 'プッシュ通知の設定に失敗しました。',
   },
   achievement: {
     title: '実績',

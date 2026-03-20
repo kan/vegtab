@@ -199,6 +199,33 @@ export class ApiError extends Error {
   }
 }
 
+// --- Push notifications ---
+export async function getVapidPublicKey(): Promise<string> {
+  const data = await api<{ publicKey: string }>('/api/push/vapid-public-key');
+  return data.publicKey;
+}
+
+export async function subscribePush(subscription: PushSubscription): Promise<void> {
+  const json = subscription.toJSON();
+  await api('/api/push/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({
+      endpoint: json.endpoint,
+      keys: {
+        p256dh: json.keys?.p256dh ?? '',
+        auth: json.keys?.auth ?? '',
+      },
+    }),
+  });
+}
+
+export async function unsubscribePush(endpoint: string): Promise<void> {
+  await api('/api/push/unsubscribe', {
+    method: 'DELETE',
+    body: JSON.stringify({ endpoint }),
+  });
+}
+
 // --- Account transfer ---
 export async function generateTransferCode(): Promise<{ code: string; expiresIn: number }> {
   return api<{ code: string; expiresIn: number }>('/api/auth/transfer-code', { method: 'POST' });

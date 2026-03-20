@@ -174,18 +174,7 @@ function declineTutorial() {
   dismissTutorialPrompt();
 }
 
-// --- Web Notification for daily update ---
-function sendDailyNotification() {
-  try {
-    if (localStorage.getItem('vegtab_notification') !== '1') return;
-    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    const n = new Notification(t('common.appName'), {
-      body: t('home.newDailyReady'),
-      icon: '/vegtab-icon.svg',
-    });
-    n.onclick = () => { window.focus(); n.close(); };
-  } catch { /* ignore */ }
-}
+// Daily notification is now handled by backend push (Cron Trigger)
 
 // --- Daily help ---
 const showDailyHelp = ref(false);
@@ -203,7 +192,6 @@ function updateCountdown() {
     if (newToday !== today.value) {
       today.value = newToday;
       showToast('info', 'home.newDailyReady');
-      sendDailyNotification();
       fetchRankingPreview();
     }
     countdown.value = '00:00:00';

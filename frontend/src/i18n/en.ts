@@ -138,6 +138,7 @@ export default {
     pastDateNoRanking: 'Scores for past puzzles are not recorded in the ranking',
     scoreSubmitFailed: 'Failed to submit score.',
     rankingFetchFailed: 'Could not load ranking.',
+    pushFailed: 'Failed to set up push notifications.',
   },
   achievement: {
     title: 'Achievements',

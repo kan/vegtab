@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { setLocale } from '@/i18n';
 import { useTheme } from '@/theme';
 import { useSound } from '@/sound';
 import { useAnim } from '@/anim';
+import { getVapidPublicKey, subscribePush, unsubscribePush, showToast } from '@/api/client';
 import {
   speakerLoudIcon, speakerMutedIcon, musicNoteIcon, vibrationIcon,
   sunIcon, moonIcon, globeIcon, speedIcon,
@@ -17,28 +19,66 @@ const { isDark, toggle: doToggleTheme } = useTheme();
 const { seEnabled, bgmEnabled, vibrationEnabled, toggleSE, toggleBGM, toggleVibration } = useSound();
 const { animSpeed, cycleSpeed } = useAnim();
 
-// --- Web Notification ---
-const NOTIF_KEY = 'vegtab_notification';
-const notificationSupported = typeof Notification !== 'undefined';
+// --- Push Notification ---
+const pushSupported = typeof window !== 'undefined'
+  && 'serviceWorker' in navigator
+  && 'PushManager' in window;
 
-function loadNotifSetting(): boolean {
-  try { return localStorage.getItem(NOTIF_KEY) === '1'; } catch { return false; }
+const pushEnabled = ref(false);
+const pushLoading = ref(false);
+
+onMounted(async () => {
+  if (!pushSupported) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    pushEnabled.value = !!sub;
+  } catch { /* ignore */ }
+});
+
+async function togglePush() {
+  if (pushLoading.value) return;
+  pushLoading.value = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (pushEnabled.value) {
+      // Unsubscribe
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await unsubscribePush(sub.endpoint);
+        await sub.unsubscribe();
+      }
+      pushEnabled.value = false;
+    } else {
+      // Subscribe
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') return;
+      const vapidKey = await getVapidPublicKey();
+      if (!vapidKey) {
+        showToast('error', 'toast.pushFailed');
+        return;
+      }
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+      });
+      await subscribePush(sub);
+      pushEnabled.value = true;
+    }
+  } catch {
+    showToast('error', 'toast.pushFailed');
+  } finally {
+    pushLoading.value = false;
+  }
 }
 
-let notifEnabled = loadNotifSetting();
-
-async function toggleNotification() {
-  if (!notifEnabled) {
-    if (!notificationSupported) return;
-    const perm = Notification.permission === 'granted'
-      ? 'granted'
-      : await Notification.requestPermission();
-    if (perm !== 'granted') return;
-    notifEnabled = true;
-  } else {
-    notifEnabled = false;
-  }
-  try { localStorage.setItem(NOTIF_KEY, notifEnabled ? '1' : '0'); } catch { /* */ }
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr.buffer as ArrayBuffer;
 }
 </script>
 
@@ -66,10 +106,10 @@ async function toggleNotification() {
             <span class="s-label">{{ t('home.soundVibration') }}</span>
             <span :class="['s-status', { on: vibrationEnabled }]">{{ vibrationEnabled ? 'ON' : 'OFF' }}</span>
           </button>
-          <button v-if="notificationSupported" :class="['s-item', { off: !notifEnabled }]" @click="toggleNotification">
+          <button v-if="pushSupported" :class="['s-item', { off: !pushEnabled }]" @click="togglePush" :disabled="pushLoading">
             <span class="s-icon notif-icon">&#x1F514;</span>
             <span class="s-label">{{ t('home.notification') }}</span>
-            <span :class="['s-status', { on: notifEnabled }]">{{ notifEnabled ? 'ON' : 'OFF' }}</span>
+            <span :class="['s-status', { on: pushEnabled }]">{{ pushLoading ? '...' : pushEnabled ? 'ON' : 'OFF' }}</span>
           </button>
           <button class="s-item" @click="cycleSpeed">
             <img class="s-icon" :src="speedIcon" alt="" />
