@@ -8,8 +8,10 @@ import { seedRoutes } from './routes/seeds';
 import { scoreRoutes } from './routes/scores';
 import { rankingRoutes } from './routes/rankings';
 import { achievementRoutes } from './routes/achievements';
+import { pushRoutes } from './routes/push';
 import { shareRoutes } from './routes/share';
 import { authMiddleware } from './middleware/auth';
+import { sendDailyPushNotifications } from './lib/push-cron';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -38,5 +40,11 @@ app.route('/api/seeds', seedRoutes);
 app.route('/api/scores', scoreRoutes);
 app.route('/api/rankings', rankingRoutes);
 app.route('/api/achievements', achievementRoutes);
+app.route('/api/push', pushRoutes);
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
+    ctx.waitUntil(sendDailyPushNotifications(env));
+  },
+};

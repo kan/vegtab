@@ -12,6 +12,9 @@ export default defineWorkersConfig({
           bindings: {
             JWT_SECRET: 'test-secret-key-for-vitest',
             ENVIRONMENT: 'test',
+            VAPID_PUBLIC_KEY: 'BDd3_hVL9fZi9Ybo2UUzA284WG5FZR30_95YeZJsiApwXKpNcF1rRPF3foIiBHXRdJI2Qhumhf6_LFTeZaNndIo',
+            VAPID_PRIVATE_KEY: 'MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgDZUgF-TF6MBMjRb8bkOhGTIzsElDAKfqHLuP6qJaxTyhRANCAAREN_f9VfX2YvWG6NlFMwNvOFhuRWUd9P_eWXmSbIgKcFyqTXBda0Txd36CoAR0nXSSNkIbpoX-vyxU3mWjZ3SK',
+            VAPID_SUBJECT: 'mailto:test@vegtab.app',
           },
         },
       },

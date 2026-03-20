@@ -5,6 +5,7 @@ compatibility_date = "2024-12-01"
 [vars]
 ENVIRONMENT = "development"
 FRONTEND_URL = "*"
+VAPID_SUBJECT = "mailto:admin@vegtab.app"
 
 [[d1_databases]]
 binding = "DB"
@@ -20,9 +21,12 @@ id = "f35acac0b7e144588ec0509e6b3fa4fa"
 binding = "R2"
 bucket_name = "tomado-replay-logs"
 
+[triggers]
+crons = ["5 0 * * *"]
+
 # --- Production environment ---
 [env.production]
-vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://vegtab.app" }
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://vegtab.app", VAPID_SUBJECT = "mailto:admin@vegtab.app" }
 routes = [
   { pattern = "vegtab.app/api/*", zone_name = "vegtab.app" },
   { pattern = "vegtab.app/s/*", zone_name = "vegtab.app" },
@@ -41,3 +45,6 @@ id = "f35acac0b7e144588ec0509e6b3fa4fa"
 [[env.production.r2_buckets]]
 binding = "R2"
 bucket_name = "tomado-replay-logs"
+
+[env.production.triggers]
+crons = ["5 0 * * *"]
