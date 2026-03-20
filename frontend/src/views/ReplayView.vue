@@ -9,7 +9,7 @@ import ItemIcon from '@/components/ItemIcon.vue';
 import ObstacleTile from '@/components/ObstacleTile.vue';
 import type { ReplayAction } from '@/stores/puzzle';
 import { ctrlPrevTrackIcon, ctrlRewindIcon, ctrlPauseIcon, ctrlPlayIcon, ctrlForwardIcon, ctrlNextTrackIcon } from '@/assets/icons';
-import type { GameMode } from '@tomado/engine';
+import type { GameMode } from '@vegtab/engine';
 
 const { t } = useI18n();
 const route = useRoute();

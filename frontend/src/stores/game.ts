@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { formatDateJST, todayJST } from '@/utils/date';
 import { api, register, isAuthenticated, showToast } from '@/api/client';
-import { generateDailySeed } from '@tomado/engine';
+import { generateDailySeed } from '@vegtab/engine';
 import { type ReplayAction } from '@/stores/puzzle';
 import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
 

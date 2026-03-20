@@ -1,6 +1,6 @@
 # SPEC.md (Architecture & Requirements Guide)
 
-※ ゲーム名: **Vege-Table**。旧称「Project Tomado」からピボット完了。ドメイン `3tomado.app` は旧称のまま。
+※ ゲーム名: **Vege-Table**。ドメイン: `vegtab.app`。
 
 ## 1. プロジェクト概要
 

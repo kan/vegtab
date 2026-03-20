@@ -1,4 +1,4 @@
-name = "tomado-api"
+name = "vegtab-api"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 
@@ -22,10 +22,10 @@ bucket_name = "tomado-replay-logs"
 
 # --- Production environment ---
 [env.production]
-vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://3tomado.app" }
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://vegtab.app" }
 routes = [
-  { pattern = "3tomado.app/api/*", zone_name = "3tomado.app" },
-  { pattern = "3tomado.app/s/*", zone_name = "3tomado.app" },
+  { pattern = "vegtab.app/api/*", zone_name = "vegtab.app" },
+  { pattern = "vegtab.app/s/*", zone_name = "vegtab.app" },
 ]
 
 [[env.production.d1_databases]]

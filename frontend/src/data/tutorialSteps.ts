@@ -1,5 +1,5 @@
-import type { Color, Cell, Position, Direction, ItemType } from '@tomado/engine';
-import { BOARD_SIZE } from '@tomado/engine';
+import type { Color, Cell, Position, Direction, ItemType } from '@vegtab/engine';
+import { BOARD_SIZE } from '@vegtab/engine';
 
 // --- Types ---
 

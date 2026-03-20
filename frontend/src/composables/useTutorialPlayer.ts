@@ -1,5 +1,5 @@
 import { ref, computed, reactive } from 'vue';
-import type { Position, Direction, Cell } from '@tomado/engine';
+import type { Position, Direction, Cell } from '@vegtab/engine';
 import { allTutorialSteps, getSectionForStep, type TutorialStep } from '@/data/tutorialSteps';
 import { pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';

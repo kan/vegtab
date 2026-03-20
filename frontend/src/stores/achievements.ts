@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { api, showToast } from '@/api/client';
-import { ACHIEVEMENT_DEFS, getAchievementDef, type AchievementDef } from '@tomado/engine';
+import { ACHIEVEMENT_DEFS, getAchievementDef, type AchievementDef } from '@vegtab/engine';
 import { i18n } from '@/i18n';
 
 export interface AchievementState {

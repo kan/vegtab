@@ -1,5 +1,5 @@
 import { ref, reactive } from 'vue';
-import { BOARD_SIZE, type Position, type Direction } from '@tomado/engine';
+import { BOARD_SIZE, type Position, type Direction } from '@vegtab/engine';
 import { useAnim } from '@/anim';
 
 function adj(p: Position, d: Direction): Position {

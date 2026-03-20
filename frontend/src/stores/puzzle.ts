@@ -14,7 +14,7 @@ import {
   type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
   type Action,
   BOARD_SIZE, NUM_COLORS,
-} from '@tomado/engine';
+} from '@vegtab/engine';
 
 /** Replay action — extends engine Action with scope synthesis and scope swap */
 export type ReplayAction = Action

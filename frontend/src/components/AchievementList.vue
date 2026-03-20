@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAchievementStore } from '@/stores/achievements';
-import { ACHIEVEMENT_DEFS } from '@tomado/engine';
+import { ACHIEVEMENT_DEFS } from '@vegtab/engine';
 import { trophyIcon, questionIcon, lockIcon, checkIcon } from '@/assets/icons';
 
 const { t } = useI18n();

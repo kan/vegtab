@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Color } from '@tomado/engine';
+import type { Color } from '@vegtab/engine';
 import { onionIcon, cucumberIcon, eggplantIcon, tomatoIcon, daikonIcon } from '@/assets/icons';
 
 const props = defineProps<{

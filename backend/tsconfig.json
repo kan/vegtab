@@ -12,7 +12,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "paths": {
-      "@tomado/engine": ["../engine/src/index.ts"]
+      "@vegtab/engine": ["../engine/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],

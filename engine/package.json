@@ -1,5 +1,5 @@
 {
-  "name": "@tomado/engine",
+  "name": "@vegtab/engine",
   "version": "0.0.1",
   "private": true,
   "description": "3-match puzzle engine (pure TypeScript, framework-independent)",

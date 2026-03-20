@@ -4,8 +4,7 @@
 **Vege-Table** — デイリーパズル（3マッチ）でスコアを競うカジュアルゲーム。Wordleモデル。
 詳細な仕様は `docs/SPEC.md` を必ず参照すること。
 
-※ 旧称「Project Tomado」からピボット完了。ゲーム名は **Vege-Table**。
-※ 本番URL `https://3tomado.app`（ドメイン名は旧称のまま）。
+※ 本番URL `https://vegtab.app`
 
 ## リポジトリ構成
 ```
@@ -48,9 +47,9 @@ npm install                    # ルートで全 workspace の依存をインス
 ### Cloudflare リソース（初回のみ）
 ```bash
 cd backend
-wrangler d1 create tomado-db                    # D1 データベース
+wrangler d1 create vegtab-db                    # D1 データベース
 wrangler kv namespace create KV                 # KV namespace
-wrangler r2 bucket create tomado-replay-logs    # R2 バケット
+wrangler r2 bucket create vegtab-replay-logs    # R2 バケット
 wrangler secret put JWT_SECRET                  # JWT シークレット（リモート用）
 ```
 各コマンドの出力にある ID を `backend/wrangler.toml` に反映する。
@@ -59,7 +58,7 @@ wrangler secret put JWT_SECRET                  # JWT シークレット（リ�
 - `backend/.dev.vars` に `JWT_SECRET=<任意の値>` を設定（`.gitignore` 済み）
 - ローカル D1 のマイグレーション適用:
   ```bash
-  cd backend && npx wrangler d1 migrations apply tomado-db --local
+  cd backend && npx wrangler d1 migrations apply vegtab-db --local
   ```
 
 ## ローカル開発の起動

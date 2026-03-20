@@ -14,7 +14,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@tomado/engine": ["../engine/src/index.ts"]
+      "@vegtab/engine": ["../engine/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.vue", "env.d.ts"]

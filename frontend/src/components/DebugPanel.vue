@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { usePuzzleStore } from '@/stores/puzzle';
-import type { ItemType } from '@tomado/engine';
+import type { ItemType } from '@vegtab/engine';
 import { ALL_ITEM_TYPES } from '@/utils/constants';
 import ItemIcon from './ItemIcon.vue';
 

@@ -7,7 +7,7 @@ import {
   type GameState, type GameMode, type Cell, type GameInitParams,
   type Position, type Direction,
   BOARD_SIZE, NUM_COLORS,
-} from '@tomado/engine';
+} from '@vegtab/engine';
 import type { ReplayAction } from '@/stores/puzzle';
 
 /** Chain intermediate step for animation */

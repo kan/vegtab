@@ -23,7 +23,7 @@ TODOを消化してスタミナやアイテムを獲得し、シード固定の�
 ### インストール
 
 ```bash
-git clone <repo-url> && cd tomado
+git clone <repo-url> && cd vegtab
 npm install
 ```
 
@@ -33,7 +33,7 @@ npm install
 cd backend
 
 # D1 データベース
-wrangler d1 create tomado-db
+wrangler d1 create vegtab-db
 # → 出力の database_id を wrangler.toml に反映
 
 # KV namespace
@@ -41,7 +41,7 @@ wrangler kv namespace create KV
 # → 出力の id を wrangler.toml に反映
 
 # R2 バケット（リプレイログ保存用）
-wrangler r2 bucket create tomado-replay-logs
+wrangler r2 bucket create vegtab-replay-logs
 
 # JWT シークレット（リモートデプロイ用）
 wrangler secret put JWT_SECRET
@@ -51,7 +51,7 @@ wrangler secret put JWT_SECRET
 echo 'JWT_SECRET=local-dev-secret' > .dev.vars
 
 # ローカル D1 マイグレーション適用
-npx wrangler d1 migrations apply tomado-db --local
+npx wrangler d1 migrations apply vegtab-db --local
 ```
 
 ## 開発
@@ -96,7 +96,7 @@ npm run db:migrate:prod -w backend
 npx -w backend wrangler secret put JWT_SECRET --env production
 
 # 3. Cloudflare Pages プロジェクト作成
-npx wrangler pages project create tomado
+npx wrangler pages project create vegtab
 ```
 
 ### リリース手順
@@ -127,20 +127,20 @@ npm run db:migrate:prod -w backend
 
 ## カスタムドメイン設定
 
-`3tomado.app` のようなカスタムドメインを設定する手順。
+`vegtab.app` のようなカスタムドメインを設定する手順。
 
 ### 1. ドメイン取得 & Cloudflare DNS
 
-1. レジストラで `3tomado.app` を取得
-2. Cloudflare ダッシュボード → **Add a site** → `3tomado.app` を追加
+1. レジストラで `vegtab.app` を取得
+2. Cloudflare ダッシュボード → **Add a site** → `vegtab.app` を追加
 3. レジストラのネームサーバーを Cloudflare 指定のものに変更
 4. DNS 反映を待つ（通常 数分〜数時間）
 
 ### 2. フロントエンド — Cloudflare Pages にカスタムドメイン
 
-1. Cloudflare ダッシュボード → **Workers & Pages** → `tomado` プロジェクト
+1. Cloudflare ダッシュボード → **Workers & Pages** → `vegtab` プロジェクト
 2. **Custom domains** タブ → **Set up a custom domain**
-3. `3tomado.app` を入力 → **Activate domain**
+3. `vegtab.app` を入力 → **Activate domain**
 4. DNS CNAME が自動追加され、SSL証明書も自動発行される
 
 ### 3. バックエンド — Workers ルーティング
@@ -155,27 +155,27 @@ Workers が `/api/*` と `/s/*` を処理し、それ以外は Pages がSPAを�
 
 ```toml
 routes = [
-  { pattern = "3tomado.app/api/*", zone_name = "3tomado.app" },
-  { pattern = "3tomado.app/s/*", zone_name = "3tomado.app" },
+  { pattern = "vegtab.app/api/*", zone_name = "vegtab.app" },
+  { pattern = "vegtab.app/s/*", zone_name = "vegtab.app" },
 ]
 ```
 
 `frontend/.env.production`:
 ```
-VITE_API_BASE=https://3tomado.app
+VITE_API_BASE=https://vegtab.app
 ```
 
-**方法B: サブドメイン分離 `api.3tomado.app`**
+**方法B: サブドメイン分離 `api.vegtab.app`**
 
 ```toml
 routes = [
-  { pattern = "api.3tomado.app/*", zone_name = "3tomado.app" },
+  { pattern = "api.vegtab.app/*", zone_name = "vegtab.app" },
 ]
 ```
 
 `frontend/.env.production`:
 ```
-VITE_API_BASE=https://api.3tomado.app
+VITE_API_BASE=https://api.vegtab.app
 ```
 
 ### 4. 設定ファイル更新チェックリスト
@@ -194,13 +194,13 @@ npm run deploy
 
 ```bash
 # ヘルスチェック
-curl https://3tomado.app/api/health
+curl https://vegtab.app/api/health
 
 # OGP (クローラーとして)
-curl -A "Twitterbot" https://3tomado.app/s/TEST123
+curl -A "Twitterbot" https://vegtab.app/s/TEST123
 
 # ブラウザでアクセス
-open https://3tomado.app
+open https://vegtab.app
 ```
 
 ## アーキテクチャ
@@ -213,7 +213,7 @@ open https://3tomado.app
  localStorage          D1 (SQLite) ... ユーザー/TODO/スコア等
  (オフラインFB)        KV ............. ランキングキャッシュ
       |                R2 ............. リプレイログ
- [@tomado/engine]  ←→  [@tomado/engine]
+ [@vegtab/engine]  ←→  [@vegtab/engine]
  (ゲーム進行)          (リプレイ検証)
 ```
 

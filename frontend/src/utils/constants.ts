@@ -1,4 +1,4 @@
-import type { ItemType, GameMode } from '@tomado/engine';
+import type { ItemType, GameMode } from '@vegtab/engine';
 import { lightningIcon, brickIcon, infinityIcon, linkIcon } from '@/assets/icons';
 
 export const DEFAULT_DISPLAY_NAME = 'NO NAME';

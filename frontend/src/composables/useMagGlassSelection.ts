@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import type { Position } from '@tomado/engine';
+import type { Position } from '@vegtab/engine';
 
 export interface ScopeSynthesisInfo {
   pos1: Position;

@@ -181,7 +181,7 @@ function sendDailyNotification() {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const n = new Notification(t('common.appName'), {
       body: t('home.newDailyReady'),
-      icon: '/tomado-icon.svg',
+      icon: '/vegtab-icon.svg',
     });
     n.onclick = () => { window.focus(); n.close(); };
   } catch { /* ignore */ }

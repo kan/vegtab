@@ -1,6 +1,6 @@
 import type { Bindings } from '../types';
 
-const DEFAULT_BASE_URL = 'https://3tomado.app';
+const DEFAULT_BASE_URL = 'https://vegtab.app';
 
 /** Return the canonical base URL (first entry if comma-separated). */
 export function getBaseUrl(env: Bindings): string {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { BOARD_SIZE, type Position, type Direction, type Cell } from '@tomado/engine';
+import { BOARD_SIZE, type Position, type Direction, type Cell } from '@vegtab/engine';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import VegetableIcon from './VegetableIcon.vue';
 import ItemIcon from './ItemIcon.vue';

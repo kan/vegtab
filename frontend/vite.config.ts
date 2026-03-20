@@ -7,7 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
-      '@tomado/engine': path.resolve(__dirname, '../engine/src/index.ts'),
+      '@vegtab/engine': path.resolve(__dirname, '../engine/src/index.ts'),
     },
   },
   server: {
