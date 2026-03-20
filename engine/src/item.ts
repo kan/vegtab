@@ -123,35 +123,85 @@ export function placeDeferredItems(board: (Cell | null)[][], items: { pos: Posit
 }
 
 /**
- * 複数のマッチから最も優先度の高いアイテムを1つ決定
- * swapPositions: ユーザーのスワイプに関わる2つの位置 [origin, target]
- *   - originを優先し、originがマッチに含まれなければtargetを使う
- *
- * 2×2マッチと直線マッチの重複ルール:
- *   - 2×2と3直線の重複 → scope成立
- *   - 2×2と4直線以上 or L/T字5マス以上の重複 → 上位アイテム優先、scope消滅
+ * マッチを色+位置の連結でコンポーネントに分割する
  */
-export function determineItemFromMatches(
-  matches: Match[],
-  swapPositions?: [Position, Position]
-): { item: ItemType; pos: Position } | null {
-  const priority = ITEM_PRIORITY;
-
-  // 全マッチの位置をセットにまとめる
-  const allMatchPositions = new Set<string>();
+function groupMatchesByComponent(matches: Match[]): Match[][] {
+  const byColor = new Map<number, Match[]>();
   for (const m of matches) {
-    for (const p of m.positions) {
-      allMatchPositions.add(`${p.row},${p.col}`);
+    const arr = byColor.get(m.color) ?? [];
+    arr.push(m);
+    byColor.set(m.color, arr);
+  }
+
+  const result: Match[][] = [];
+
+  for (const [, colorMatches] of byColor) {
+    const parent = colorMatches.map((_, i) => i);
+    function find(x: number): number {
+      while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+      return x;
+    }
+    function union(a: number, b: number) {
+      const ra = find(a), rb = find(b);
+      if (ra !== rb) parent[ra] = rb;
+    }
+
+    // 位置 → マッチindexのマッピング
+    const posToMatch = new Map<string, number[]>();
+    for (let i = 0; i < colorMatches.length; i++) {
+      for (const p of colorMatches[i].positions) {
+        const key = `${p.row},${p.col}`;
+        const arr = posToMatch.get(key) ?? [];
+        arr.push(i);
+        posToMatch.set(key, arr);
+      }
+    }
+
+    // 位置を共有するマッチを結合
+    for (const indices of posToMatch.values()) {
+      for (let i = 1; i < indices.length; i++) {
+        union(indices[0], indices[i]);
+      }
+    }
+
+    const groups = new Map<number, Match[]>();
+    for (let i = 0; i < colorMatches.length; i++) {
+      const root = find(i);
+      const arr = groups.get(root) ?? [];
+      arr.push(colorMatches[i]);
+      groups.set(root, arr);
+    }
+
+    for (const group of groups.values()) {
+      result.push(group);
     }
   }
 
-  // スワイプ位置のうちマッチに含まれるものを優先順で選択
+  return result;
+}
+
+/**
+ * 1つのコンポーネント内で最も優先度の高いアイテムを決定
+ */
+function determineBestItemForComponent(
+  componentMatches: Match[],
+  swapPositions?: [Position, Position],
+): { item: ItemType; pos: Position } | null {
+  // コンポーネント内の全位置
+  const allPositions = new Set<string>();
+  for (const m of componentMatches) {
+    for (const p of m.positions) {
+      allPositions.add(`${p.row},${p.col}`);
+    }
+  }
+
+  // このコンポーネントに属するスワイプ位置
   let swapPos: Position | undefined;
   if (swapPositions) {
     const [origin, target] = swapPositions;
-    if (allMatchPositions.has(`${origin.row},${origin.col}`)) {
+    if (allPositions.has(`${origin.row},${origin.col}`)) {
       swapPos = origin;
-    } else if (allMatchPositions.has(`${target.row},${target.col}`)) {
+    } else if (allPositions.has(`${target.row},${target.col}`)) {
       swapPos = target;
     }
   }
@@ -159,11 +209,11 @@ export function determineItemFromMatches(
   let best: { item: ItemType; pos: Position; priority: number } | null = null;
 
   // 1. 個別マッチから直線アイテム判定 (v_cut, h_cut, flush)
-  for (const match of matches) {
+  for (const match of componentMatches) {
     const item = determineItem(match);
     if (item === null) continue;
 
-    const p = priority[item];
+    const p = ITEM_PRIORITY[item];
     if (best === null || p > best.priority) {
       const pos = swapPos ?? getCenterPosition(match.positions);
       best = { item, pos, priority: p };
@@ -171,16 +221,15 @@ export function determineItemFromMatches(
   }
 
   // 2. 連結グループからburst判定 (5+マス非直線)
-  //    2×2マッチは除外して直線マッチのみでグループ化する
-  if (!best || best.priority < priority.burst) {
-    const straightMatches = matches.filter(m => m.shape !== '2x2');
+  if (!best || best.priority < ITEM_PRIORITY.burst) {
+    const straightMatches = componentMatches.filter(m => m.shape !== '2x2');
     const groups = mergeConnectedMatches(straightMatches);
     for (const group of groups) {
       if (group.positions.length >= 5) {
         const isH = group.positions.every(p => p.row === group.positions[0].row);
         const isV = group.positions.every(p => p.col === group.positions[0].col);
         if (!isH && !isV) {
-          const p = priority.burst;
+          const p = ITEM_PRIORITY.burst;
           if (!best || p > best.priority) {
             const pos = swapPos ?? getCenterPosition(group.positions);
             best = { item: 'burst', pos, priority: p };
@@ -191,19 +240,39 @@ export function determineItemFromMatches(
   }
 
   // 3. 2×2マッチからscope判定
-  const has2x2 = matches.some(m => m.shape === '2x2');
+  const has2x2 = componentMatches.some(m => m.shape === '2x2');
   if (has2x2) {
-    // 2×2が上位アイテム(4直線以上 or L/T字5+)と重複していなければscope成立
-    // best が v_cut/h_cut 以上 (priority >= 3) なら上位優先でscope消滅
-    // best が null または priority < 3 ならscope成立
-    if (!best || best.priority < priority.v_cut) {
-      const match2x2 = matches.find(m => m.shape === '2x2')!;
+    if (!best || best.priority < ITEM_PRIORITY.v_cut) {
+      const match2x2 = componentMatches.find(m => m.shape === '2x2')!;
       const pos = swapPos ?? getCenterPosition(match2x2.positions);
-      best = { item: 'scope', pos, priority: priority.scope };
+      best = { item: 'scope', pos, priority: ITEM_PRIORITY.scope };
     }
   }
 
   return best ? { item: best.item, pos: best.pos } : null;
+}
+
+/**
+ * 複数のマッチからアイテムを決定（独立したコンポーネントごとに1つ）
+ * swapPositions: ユーザーのスワイプに関わる2つの位置 [origin, target]
+ *
+ * 2×2マッチと直線マッチの重複ルール:
+ *   - 2×2と3直線の重複 → scope成立
+ *   - 2×2と4直線以上 or L/T字5マス以上の重複 → 上位アイテム優先、scope消滅
+ */
+export function determineItemFromMatches(
+  matches: Match[],
+  swapPositions?: [Position, Position]
+): { item: ItemType; pos: Position }[] {
+  const components = groupMatchesByComponent(matches);
+  const results: { item: ItemType; pos: Position }[] = [];
+
+  for (const component of components) {
+    const item = determineBestItemForComponent(component, swapPositions);
+    if (item) results.push(item);
+  }
+
+  return results;
 }
 
 /** 位置群の中央を返す */

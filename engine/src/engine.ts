@@ -553,7 +553,7 @@ export function processAction(state: GameState, action: Action): GameState {
     newState.moveCount++;
 
     // アイテム生成判定
-    const itemGen = determineItemFromMatches(matches, [action.pos, targetPos]);
+    const itemGens = determineItemFromMatches(matches, [action.pos, targetPos]);
 
     // マッチ消去
     const cleared = getUniquePositions(matches);
@@ -568,8 +568,8 @@ export function processAction(state: GameState, action: Action): GameState {
     }
 
     // アイテム配置
-    if (itemGen) {
-      board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
+    for (const ig of itemGens) {
+      board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
     }
 
     // おじゃまタイルへのダメージ
@@ -948,7 +948,7 @@ function processChains(
     if (matches.length === 0) break;
 
     // アイテム生成判定（盤面には置かず記録のみ）
-    const itemGen = suppressItemGen ? null : determineItemFromMatches(matches);
+    const itemGens = suppressItemGen ? [] : determineItemFromMatches(matches);
 
     // 消去
     const cleared = getUniquePositions(matches);
@@ -962,9 +962,9 @@ function processChains(
 
     // アイテムは遅延配置（連鎖完了後にまとめて配置）
     const generatedItems: { pos: Position; item: ItemType }[] = [];
-    if (itemGen) {
-      deferredItems.push(itemGen);
-      generatedItems.push(itemGen);
+    for (const ig of itemGens) {
+      deferredItems.push(ig);
+      generatedItems.push(ig);
     }
 
     steps.push({

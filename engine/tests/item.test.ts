@@ -52,36 +52,32 @@ describe('Item Generation', () => {
 
 describe('determineItemFromMatches - connected groups', () => {
   it('L字型5マス（横3+縦3共有1）でburstを生成', () => {
-    // H: (0,0)(0,1)(0,2)  V: (0,2)(1,2)(2,2) → 5 connected non-straight
     const matches: Match[] = [
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }], color: 1 as Color },
       { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 1 as Color },
     ];
     const result = determineItemFromMatches(matches);
-    expect(result).not.toBeNull();
-    expect(result!.item).toBe('burst');
+    expect(result).toHaveLength(1);
+    expect(result[0].item).toBe('burst');
   });
 
   it('T字型7マス（横5+縦3共有1）でflushが優先', () => {
-    // H5: (0,0)-(0,4) → flush from straight match; also T-shape but flush > burst
     const matches: Match[] = [
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }, { row: 0, col: 4 }], color: 2 as Color },
       { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 2 as Color },
     ];
     const result = determineItemFromMatches(matches);
-    expect(result).not.toBeNull();
-    expect(result!.item).toBe('flush');
+    expect(result).toHaveLength(1);
+    expect(result[0].item).toBe('flush');
   });
 
   it('同色3+3共有なし（4マス）はburst生成しない', () => {
-    // Two separate 3-matches of same color, no overlap → group of 6 but not connected
     const matches: Match[] = [
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }], color: 1 as Color },
       { positions: [{ row: 2, col: 4 }, { row: 2, col: 5 }, { row: 2, col: 6 }], color: 1 as Color },
     ];
     const result = determineItemFromMatches(matches);
-    // No individual match ≥ 4, and groups are not connected → no item
-    expect(result).toBeNull();
+    expect(result).toHaveLength(0);
   });
 
   it('異なる色のマッチは別グループとして扱う', () => {
@@ -90,19 +86,17 @@ describe('determineItemFromMatches - connected groups', () => {
       { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 2 as Color },
     ];
     const result = determineItemFromMatches(matches);
-    // Different colors, no merging → each is 3-length, no item
-    expect(result).toBeNull();
+    expect(result).toHaveLength(0);
   });
 
   it('横4マス+縦3マス共有1（6マス）でburstよりv_cutを選択しない（burst優先）', () => {
-    // H4: (0,0)-(0,3) → v_cut; but merged group is 6 non-straight → burst (priority 3 > 2)
     const matches: Match[] = [
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }], color: 1 as Color },
       { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 1 as Color },
     ];
     const result = determineItemFromMatches(matches);
-    expect(result).not.toBeNull();
-    expect(result!.item).toBe('burst');
+    expect(result).toHaveLength(1);
+    expect(result[0].item).toBe('burst');
   });
 });
 
@@ -114,20 +108,19 @@ describe('determineItemFromMatches - swap position', () => {
     const origin = { row: 0, col: 1 };
     const target = { row: 1, col: 1 };
     const result = determineItemFromMatches(matches, [origin, target]);
-    expect(result).not.toBeNull();
-    expect(result!.pos).toEqual(origin);
+    expect(result).toHaveLength(1);
+    expect(result[0].pos).toEqual(origin);
   });
 
   it('swapPositions[0]がマッチに含まれない場合swapPositions[1]にフォールバック', () => {
     const matches: Match[] = [
       { positions: [{ row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }, { row: 2, col: 3 }], color: 1 as Color },
     ];
-    // originはマッチに含まれない、targetは含まれる
     const origin = { row: 3, col: 2 };
     const target = { row: 2, col: 2 };
     const result = determineItemFromMatches(matches, [origin, target]);
-    expect(result).not.toBeNull();
-    expect(result!.pos).toEqual(target);
+    expect(result).toHaveLength(1);
+    expect(result[0].pos).toEqual(target);
   });
 
   it('swapPositionsなしの場合マッチ中央にアイテム配置', () => {
@@ -135,8 +128,8 @@ describe('determineItemFromMatches - swap position', () => {
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }], color: 1 as Color },
     ];
     const result = determineItemFromMatches(matches);
-    expect(result).not.toBeNull();
-    expect(result!.pos).toEqual({ row: 0, col: 2 }); // center of sorted positions
+    expect(result).toHaveLength(1);
+    expect(result[0].pos).toEqual({ row: 0, col: 2 });
   });
 });
 
@@ -150,8 +143,8 @@ describe('determineItemFromMatches - 2×2 scope', () => {
       },
     ];
     const result = determineItemFromMatches(matches);
-    expect(result).not.toBeNull();
-    expect(result!.item).toBe('scope');
+    expect(result).toHaveLength(1);
+    expect(result[0].item).toBe('scope');
   });
 
   it('2×2 + 3直線の重複ではscopeが成立', () => {
@@ -167,8 +160,8 @@ describe('determineItemFromMatches - 2×2 scope', () => {
       },
     ];
     const result = determineItemFromMatches(matches);
-    expect(result).not.toBeNull();
-    expect(result!.item).toBe('scope');
+    expect(result).toHaveLength(1);
+    expect(result[0].item).toBe('scope');
   });
 
   it('2×2 + 4直線の重複では上位アイテム（v_cut）が優先', () => {
@@ -184,8 +177,8 @@ describe('determineItemFromMatches - 2×2 scope', () => {
       },
     ];
     const result = determineItemFromMatches(matches);
-    expect(result).not.toBeNull();
-    expect(result!.item).toBe('v_cut');
+    expect(result).toHaveLength(1);
+    expect(result[0].item).toBe('v_cut');
   });
 
   it('2×2 + L字5マス以上の重複では上位アイテム（burst）が優先', () => {
@@ -195,13 +188,71 @@ describe('determineItemFromMatches - 2×2 scope', () => {
         color: 1 as Color,
         shape: '2x2',
       },
-      // L字: 横3 + 縦3 (共有1) = 5マス非直線 → burst
       { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }], color: 1 as Color },
       { positions: [{ row: 0, col: 2 }, { row: 1, col: 2 }, { row: 2, col: 2 }], color: 1 as Color },
     ];
     const result = determineItemFromMatches(matches);
-    expect(result).not.toBeNull();
-    expect(result!.item).toBe('burst');
+    expect(result).toHaveLength(1);
+    expect(result[0].item).toBe('burst');
+  });
+});
+
+describe('determineItemFromMatches - 複数コンポーネント', () => {
+  it('独立した2つの横4マッチで2つのv_cutを生成', () => {
+    const matches: Match[] = [
+      { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }], color: 1 as Color },
+      { positions: [{ row: 3, col: 2 }, { row: 3, col: 3 }, { row: 3, col: 4 }, { row: 3, col: 5 }], color: 2 as Color },
+    ];
+    const result = determineItemFromMatches(matches);
+    expect(result).toHaveLength(2);
+    expect(result.map(r => r.item).sort()).toEqual(['v_cut', 'v_cut']);
+  });
+
+  it('独立した2つの縦4マッチで2つのh_cutを生成', () => {
+    const matches: Match[] = [
+      { positions: [{ row: 0, col: 0 }, { row: 1, col: 0 }, { row: 2, col: 0 }, { row: 3, col: 0 }], color: 1 as Color },
+      { positions: [{ row: 2, col: 5 }, { row: 3, col: 5 }, { row: 4, col: 5 }, { row: 5, col: 5 }], color: 3 as Color },
+    ];
+    const result = determineItemFromMatches(matches);
+    expect(result).toHaveLength(2);
+    expect(result.map(r => r.item).sort()).toEqual(['h_cut', 'h_cut']);
+  });
+
+  it('横4マッチ + 独立3マッチで1つだけv_cutを生成', () => {
+    const matches: Match[] = [
+      { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }], color: 1 as Color },
+      { positions: [{ row: 5, col: 5 }, { row: 5, col: 6 }, { row: 5, col: 7 }], color: 2 as Color },
+    ];
+    const result = determineItemFromMatches(matches);
+    expect(result).toHaveLength(1);
+    expect(result[0].item).toBe('v_cut');
+  });
+
+  it('同色の独立した2つの4マッチで2つのアイテムを生成', () => {
+    // 同色でも位置が離れていれば別コンポーネント
+    const matches: Match[] = [
+      { positions: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }, { row: 0, col: 3 }], color: 1 as Color },
+      { positions: [{ row: 5, col: 4 }, { row: 5, col: 5 }, { row: 5, col: 6 }, { row: 5, col: 7 }], color: 1 as Color },
+    ];
+    const result = determineItemFromMatches(matches);
+    expect(result).toHaveLength(2);
+  });
+
+  it('スワイプ時、各コンポーネントにswapPosが正しく割り当てられる', () => {
+    const matches: Match[] = [
+      { positions: [{ row: 2, col: 0 }, { row: 2, col: 1 }, { row: 2, col: 2 }, { row: 2, col: 3 }], color: 1 as Color },
+      { positions: [{ row: 5, col: 0 }, { row: 5, col: 1 }, { row: 5, col: 2 }, { row: 5, col: 3 }], color: 2 as Color },
+    ];
+    const origin = { row: 2, col: 1 };
+    const target = { row: 5, col: 1 };  // 別コンポーネントの位置がtarget
+    const result = determineItemFromMatches(matches, [origin, target]);
+    expect(result).toHaveLength(2);
+    // originを含むコンポーネントはorigin位置にアイテム
+    const item1 = result.find(r => r.pos.row === 2);
+    expect(item1?.pos).toEqual(origin);
+    // targetを含むコンポーネントはtarget位置にアイテム
+    const item2 = result.find(r => r.pos.row === 5);
+    expect(item2?.pos).toEqual(target);
   });
 });
 

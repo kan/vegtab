@@ -28,7 +28,7 @@ export interface ChainAnimData {
   matches: Match[];
   clearedPositions: Position[];
   destroyedObstacles: Position[];
-  itemGen: { pos: Position; item: ItemType } | null;
+  itemGens: { pos: Position; item: ItemType }[];
   score: number;
   chainIndex: number;
   dropMoves: { col: number; fromRow: number; toRow: number }[];
@@ -408,13 +408,13 @@ function computeChainSteps(
 
   while (matches.length > 0) {
     const clearedPositions = getUniquePositions(matches);
-    const itemGen = suppressItemGen ? null : determineItemFromMatches(matches);
+    const itemGens = suppressItemGen ? [] : determineItemFromMatches(matches);
     const stepScore = calculateStepScore(matches, chainIndex);
     totalScore += stepScore;
 
     for (const p of clearedPositions) board[p.row][p.col] = null;
     // アイテムは遅延配置（連鎖完了後にまとめて配置）
-    if (itemGen) deferredItems.push(itemGen);
+    for (const ig of itemGens) deferredItems.push(ig);
 
     // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
     const destroyed = damageObstacles(board, clearedPositions);
@@ -425,7 +425,7 @@ function computeChainSteps(
 
     chains.push({
       matches, clearedPositions, destroyedObstacles: destroyed,
-      itemGen, score: stepScore, chainIndex,
+      itemGens, score: stepScore, chainIndex,
       dropMoves: dm, newTileEntries: nt,
       boardAfterDrop: cloneBoard(board),
     });
@@ -823,18 +823,18 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
     while (matches.length > 0) {
       const clearedPositions = getUniquePositions(matches);
-      const itemGen = determineItemFromMatches(matches, chainIndex === 1 ? [pos, target] : undefined);
+      const itemGens = determineItemFromMatches(matches, chainIndex === 1 ? [pos, target] : undefined);
       const stepScore = calculateStepScore(matches, chainIndex);
       totalScore += stepScore;
 
       for (const p of clearedPositions) board[p.row][p.col] = null;
-      if (itemGen) {
+      for (const ig of itemGens) {
         if (chainIndex === 1) {
           // 1連鎖目（ユーザースワイプ直後）のみ即時配置
-          board[itemGen.pos.row][itemGen.pos.col] = { color: 0 as Color, item: itemGen.item };
+          board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
         } else {
           // 2連鎖目以降は遅延配置
-          deferredItems.push(itemGen);
+          deferredItems.push(ig);
         }
       }
 
@@ -847,7 +847,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
       chains.push({
         matches, clearedPositions, destroyedObstacles: destroyed,
-        itemGen, score: stepScore, chainIndex,
+        itemGens, score: stepScore, chainIndex,
         dropMoves, newTileEntries, boardAfterDrop: cloneBoard(board),
       });
       chainIndex++;
@@ -1173,8 +1173,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (gameState.value?.cascadePoints !== undefined && chain.chainIndex >= 2) {
         gameState.value.cascadePoints += chain.chainIndex;
       }
-      if (chain.itemGen) {
-        generatedItemTypes.value.add(chain.itemGen.item);
+      for (const ig of chain.itemGens) {
+        generatedItemTypes.value.add(ig.item);
       }
     }
   }
