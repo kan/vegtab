@@ -355,7 +355,7 @@ API失敗時にリクエストをキューに保存し、オンライン復帰�
 - 各ステップに固定のハードコード盤面データ（エンジン非依存）
 
 **進捗管理:**
-- localStorage（`tomado_tutorial`キー）にステップ位置と完了状態を保存
+- localStorage（`vegtab_tutorial`キー）にステップ位置と完了状態を保存
 - 完了時に「準備完了！」実績を解除（`tutorial_complete`、`POST /api/achievements/unlock`）
 
 **アイテム表示名（野菜テーマ）:**

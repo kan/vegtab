@@ -28,12 +28,12 @@ export interface PlayRecord {
 // --- Store ---
 
 export const useGameStore = defineStore('game', () => {
-  const displayName = ref(loadStr('tomado_display_name', ''));
-  const playRecords = ref<PlayRecord[]>(loadJson('tomado_play_records', []));
+  const displayName = ref(loadStr('vegtab_display_name', ''));
+  const playRecords = ref<PlayRecord[]>(loadJson('vegtab_play_records', []));
   const initialized = ref(false);
   // Cache: engine seed number → shareCode (populated from score submission response)
   const shareCodeCache = ref<Record<number, string>>(
-    loadJson('tomado_share_codes_v2', {})
+    loadJson('vegtab_share_codes_v2', {})
   );
 
   /** Initialize: ensure authenticated and sync with server */
@@ -114,7 +114,7 @@ export const useGameStore = defineStore('game', () => {
   async function setDisplayName(name: string) {
     const oldName = effectiveName.value;
     displayName.value = name.slice(0, 20);
-    localStorage.setItem('tomado_display_name', displayName.value);
+    localStorage.setItem('vegtab_display_name', displayName.value);
 
     // Update playerName on existing local records that had the old name
     const newName = effectiveName.value;
@@ -319,17 +319,17 @@ export const useGameStore = defineStore('game', () => {
   // --- Persistence ---
 
   function saveRecords() {
-    localStorage.setItem('tomado_play_records', JSON.stringify(playRecords.value));
+    localStorage.setItem('vegtab_play_records', JSON.stringify(playRecords.value));
   }
 
   function saveShareCodeCache() {
-    localStorage.setItem('tomado_share_codes_v2', JSON.stringify(shareCodeCache.value));
+    localStorage.setItem('vegtab_share_codes_v2', JSON.stringify(shareCodeCache.value));
   }
 
   /** Reset local state after account transfer, then resync from server */
   async function resetAfterTransfer(newDisplayName: string | null) {
     displayName.value = newDisplayName ?? '';
-    localStorage.setItem('tomado_display_name', displayName.value);
+    localStorage.setItem('vegtab_display_name', displayName.value);
     playRecords.value = [];
     saveRecords();
     shareCodeCache.value = {};

@@ -1,7 +1,7 @@
 import { ref, computed, readonly, watch } from 'vue';
 
 // --- Settings ---
-const KEY = 'tomado_anim_speed';
+const KEY = 'vegtab_anim_speed';
 type AnimSpeed = 1 | 2 | 3 | 4;
 const SPEEDS: readonly AnimSpeed[] = [1, 2, 3, 4];
 

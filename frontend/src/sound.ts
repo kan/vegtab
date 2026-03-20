@@ -7,9 +7,9 @@ export type SEType =
 
 // --- Settings ---
 const KEYS = {
-  se: 'tomado_sound_se',
-  bgm: 'tomado_sound_bgm',
-  vibration: 'tomado_sound_vibration',
+  se: 'vegtab_sound_se',
+  bgm: 'vegtab_sound_bgm',
+  vibration: 'vegtab_sound_vibration',
 } as const;
 
 const seEnabled = ref(false);

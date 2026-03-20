@@ -3,7 +3,7 @@ import en from './en';
 import ja from './ja';
 
 const savedLocale = (() => {
-  try { return localStorage.getItem('tomado_locale') ?? undefined; } catch { return undefined; }
+  try { return localStorage.getItem('vegtab_locale') ?? undefined; } catch { return undefined; }
 })();
 
 // Detect browser language, default to English
@@ -18,6 +18,6 @@ export const i18n = createI18n({
 
 export function setLocale(locale: 'en' | 'ja') {
   i18n.global.locale.value = locale;
-  localStorage.setItem('tomado_locale', locale);
+  localStorage.setItem('vegtab_locale', locale);
 }
 

@@ -53,7 +53,7 @@ const viewPhase = ref<ViewPhase>('modeSelect');
 const selectedMode = ref<GameMode>('sprint');
 const isPastPuzzle = ref(false);
 
-const SESSION_KEY = 'tomado_puzzle_state';
+const SESSION_KEY = 'vegtab_puzzle_state';
 
 function saveSession() {
   if (!store.gameState || store.isGameOver) return;

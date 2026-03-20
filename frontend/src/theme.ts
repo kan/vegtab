@@ -1,6 +1,6 @@
 import { ref, readonly, type Ref } from 'vue';
 
-const STORAGE_KEY = 'tomado_theme';
+const STORAGE_KEY = 'vegtab_theme';
 
 export type Theme = 'light' | 'dark';
 

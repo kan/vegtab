@@ -177,7 +177,7 @@ function declineTutorial() {
 // --- Web Notification for daily update ---
 function sendDailyNotification() {
   try {
-    if (localStorage.getItem('tomado_notification') !== '1') return;
+    if (localStorage.getItem('vegtab_notification') !== '1') return;
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     const n = new Notification(t('common.appName'), {
       body: t('home.newDailyReady'),

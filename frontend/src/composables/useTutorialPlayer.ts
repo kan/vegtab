@@ -4,7 +4,7 @@ import { allTutorialSteps, getSectionForStep, type TutorialStep } from '@/data/t
 import { pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
 
-const STORAGE_KEY = 'tomado_tutorial';
+const STORAGE_KEY = 'vegtab_tutorial';
 
 interface TutorialProgress {
   completed: boolean;

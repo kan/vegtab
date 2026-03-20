@@ -2,10 +2,10 @@ import { enqueue, processQueue } from './offlineQueue';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787';
 
-const TOKEN_KEY = 'tomado_access_token';
-const REFRESH_KEY = 'tomado_refresh_token';
-const DEVICE_KEY = 'tomado_device_id';
-const USER_ID_KEY = 'tomado_user_id';
+const TOKEN_KEY = 'vegtab_access_token';
+const REFRESH_KEY = 'vegtab_refresh_token';
+const DEVICE_KEY = 'vegtab_device_id';
+const USER_ID_KEY = 'vegtab_user_id';
 
 let accessToken: string | null = localStorage.getItem(TOKEN_KEY);
 let refreshToken: string | null = localStorage.getItem(REFRESH_KEY);

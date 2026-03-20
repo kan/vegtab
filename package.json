@@ -8,7 +8,7 @@
     "test": "npm test --workspaces --if-present",
     "build": "npm run build -w frontend",
     "deploy:backend": "npm run deploy:prod -w backend",
-    "deploy:frontend": "npm run build -w frontend && npx wrangler pages deploy frontend/dist --project-name vegtab",
+    "deploy:frontend": "npm run build -w frontend && npx wrangler pages deploy frontend/dist --project-name tomado",
     "deploy": "npm run deploy:backend && npm run deploy:frontend"
   },
   "workspaces": [

@@ -18,7 +18,7 @@ const { seEnabled, bgmEnabled, vibrationEnabled, toggleSE, toggleBGM, toggleVibr
 const { animSpeed, cycleSpeed } = useAnim();
 
 // --- Web Notification ---
-const NOTIF_KEY = 'tomado_notification';
+const NOTIF_KEY = 'vegtab_notification';
 const notificationSupported = typeof Notification !== 'undefined';
 
 function loadNotifSetting(): boolean {

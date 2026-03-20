@@ -11,7 +11,7 @@ export interface AchievementState {
   unlockedAt: string | null;
 }
 
-const STORAGE_KEY = 'tomado_achievements';
+const STORAGE_KEY = 'vegtab_achievements';
 
 export const useAchievementStore = defineStore('achievements', () => {
   const achievements = ref<AchievementState[]>(loadFromStorage());
