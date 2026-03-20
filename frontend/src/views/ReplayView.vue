@@ -95,6 +95,9 @@ const speedOptions = [
 ];
 
 function getCellClass(row: number, col: number): string {
+  const key = `${row},${col}`;
+  if (player.clearingCells.has(key)) return 'cell-clearing';
+  if (player.matchedCells.has(key)) return 'cell-matched';
   const action = player.nextAction.value;
   if (!action) return '';
   if (action.type === 'scope_synthesis') {
@@ -172,13 +175,13 @@ function getCellClass(row: number, col: number): string {
 
       <!-- Controls -->
       <div class="replay-controls">
-        <button class="ctrl-btn" @click="player.goTo(0)" :disabled="player.currentStep.value === 0"><img :src="ctrlPrevTrackIcon" class="ctrl-icon" alt="" /></button>
-        <button class="ctrl-btn" @click="player.prev()" :disabled="player.currentStep.value === 0"><img :src="ctrlRewindIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.goTo(0)" :disabled="player.currentStep.value === 0 || player.isAnimating.value"><img :src="ctrlPrevTrackIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.prev()" :disabled="player.currentStep.value === 0 || player.isAnimating.value"><img :src="ctrlRewindIcon" class="ctrl-icon" alt="" /></button>
         <button class="ctrl-btn ctrl-play" @click="player.isPlaying.value ? player.pause() : player.play()">
           <img :src="player.isPlaying.value ? ctrlPauseIcon : ctrlPlayIcon" class="ctrl-icon" alt="" />
         </button>
-        <button class="ctrl-btn" @click="player.next()" :disabled="player.currentStep.value >= player.totalSteps.value"><img :src="ctrlForwardIcon" class="ctrl-icon" alt="" /></button>
-        <button class="ctrl-btn" @click="player.goTo(player.totalSteps.value)" :disabled="player.currentStep.value >= player.totalSteps.value"><img :src="ctrlNextTrackIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.next()" :disabled="player.currentStep.value >= player.totalSteps.value || player.isAnimating.value"><img :src="ctrlForwardIcon" class="ctrl-icon" alt="" /></button>
+        <button class="ctrl-btn" @click="player.goTo(player.totalSteps.value)" :disabled="player.currentStep.value >= player.totalSteps.value || player.isAnimating.value"><img :src="ctrlNextTrackIcon" class="ctrl-icon" alt="" /></button>
       </div>
 
       <!-- Slider -->
@@ -290,6 +293,22 @@ function getCellClass(row: number, col: number): string {
 .cell-highlight {
   background: rgba(46, 125, 50, 0.15);
   box-shadow: inset 0 0 0 2px var(--brand);
+}
+.cell-matched {
+  background: rgba(255, 200, 50, 0.4);
+  animation: replay-match-pulse 0.35s ease both;
+}
+.cell-clearing {
+  animation: replay-clear-out 0.25s ease forwards;
+}
+@keyframes replay-match-pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+@keyframes replay-clear-out {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.3); }
 }
 .replay-item-overlay {
   position: absolute;

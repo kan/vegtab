@@ -1,23 +1,86 @@
-import { ref, computed, onUnmounted } from 'vue';
+import { ref, computed, reactive, onUnmounted } from 'vue';
 import {
   initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation,
-  cloneGameState,
+  cloneGameState, cloneBoard,
+  findMatches, getUniquePositions, applyGravity, fillEmptyCells,
+  damageObstacles,
   type GameState, type GameMode, type Cell, type GameInitParams,
-  type Direction,
+  type Position, type Direction,
+  BOARD_SIZE, NUM_COLORS,
 } from '@tomado/engine';
 import type { ReplayAction } from '@/stores/puzzle';
+
+/** Chain intermediate step for animation */
+interface ChainStep {
+  matchedPositions: Position[];
+  boardAfterDrop: (Cell | null)[][];
+}
+
+/** Pre-computed animation data for a single replay action */
+interface StepAnimData {
+  boardAfterSwap?: (Cell | null)[][];
+  chains: ChainStep[];
+}
+
+function getAdjacentPos(pos: Position, dir: Direction): Position {
+  switch (dir) {
+    case 'up': return { row: pos.row - 1, col: pos.col };
+    case 'down': return { row: pos.row + 1, col: pos.col };
+    case 'left': return { row: pos.row, col: pos.col - 1 };
+    case 'right': return { row: pos.row, col: pos.col + 1 };
+  }
+}
+
+/** Compute chain intermediate boards for a swap action */
+function computeSwapChains(state: GameState, pos: Position, dir: Direction): StepAnimData {
+  const board = cloneBoard(state.board);
+  const target = getAdjacentPos(pos, dir);
+
+  // Swap
+  const tmp = board[pos.row][pos.col];
+  board[pos.row][pos.col] = board[target.row][target.col];
+  board[target.row][target.col] = tmp;
+  const boardAfterSwap = cloneBoard(board);
+
+  const chains: ChainStep[] = [];
+  let rng = [...state.rngState];
+  const nc = state.numColors ?? NUM_COLORS;
+  const passThrough = state.mode === 'clear';
+
+  let matches = findMatches(board);
+  while (matches.length > 0) {
+    const cleared = getUniquePositions(matches);
+    const matchedPositions = [...cleared];
+
+    for (const p of cleared) board[p.row][p.col] = null;
+    damageObstacles(board, cleared);
+    applyGravity(board, passThrough);
+    rng = fillEmptyCells(board, rng, nc);
+
+    chains.push({ matchedPositions, boardAfterDrop: cloneBoard(board) });
+    matches = findMatches(board);
+  }
+
+  return { boardAfterSwap, chains };
+}
 
 export function useReplayPlayer() {
   const actions = ref<ReplayAction[]>([]);
   const gameStates = ref<GameState[]>([]);
-  /** Chain count for each action (index matches actions) */
   const chainCounts = ref<number[]>([]);
+  const stepAnimations = ref<StepAnimData[]>([]);
   const currentStep = ref(0);
   const isPlaying = ref(false);
-  const speed = ref(1000); // ms per step
-  /** Recorded final values from the database (authoritative) */
+  const speed = ref(1000);
   const recordedFinalScore = ref<number | null>(null);
   const recordedCascadePoints = ref<number | null>(null);
+
+  // Animation state
+  const isAnimating = ref(false);
+  const animBoard = ref<(Cell | null)[][] | null>(null);
+  const matchedCells = reactive(new Set<string>());
+  const clearingCells = reactive(new Set<string>());
+  let animCancelled = false;
 
   let playTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -28,7 +91,7 @@ export function useReplayPlayer() {
   );
 
   const currentBoard = computed<(Cell | null)[][] | null>(() =>
-    currentState.value?.board ?? null,
+    animBoard.value ?? currentState.value?.board ?? null,
   );
 
   const isAtEnd = computed(() => currentStep.value >= totalSteps.value);
@@ -50,22 +113,43 @@ export function useReplayPlayer() {
     actions.value[currentStep.value] ?? null,
   );
 
+  function wait(ms: number): Promise<void> {
+    return new Promise(r => setTimeout(r, ms));
+  }
+
+  function cancelAnimation() {
+    animCancelled = true;
+    animBoard.value = null;
+    matchedCells.clear();
+    clearingCells.clear();
+    isAnimating.value = false;
+  }
+
   function load(
     seed: number, mode: GameMode, replayActions: ReplayAction[], params?: GameInitParams,
     recorded?: { finalScore?: number; cascadePoints?: number },
   ) {
     pause();
+    cancelAnimation();
     actions.value = replayActions;
     recordedFinalScore.value = recorded?.finalScore ?? null;
     recordedCascadePoints.value = recorded?.cascadePoints ?? null;
 
-    // Build all states by replaying actions
     const states: GameState[] = [];
     const chains: number[] = [];
+    const anims: StepAnimData[] = [];
     let state = initializeGame(seed, mode, params);
     states.push(state);
 
     for (const action of replayActions) {
+      // Compute chain animation data for swap actions
+      if (action.type === 'swap') {
+        anims.push(computeSwapChains(state, action.pos, action.dir));
+      } else {
+        anims.push({ chains: [] });
+      }
+
+      // Compute final state (authoritative)
       if (action.type === 'scope_synthesis') {
         state = processScopeSynthesis(state, action.pos1, action.pos2, action.targetCells);
       } else if (action.type === 'scope_swap') {
@@ -77,35 +161,84 @@ export function useReplayPlayer() {
       chains.push(state.lastChainCount ?? 0);
     }
 
-    // Sprint auto-activation: process remaining items after game over
+    // Sprint auto-activation
     if (state.isGameOver && mode === 'sprint') {
       const afterAuto = processAutoActivation(state);
       if (afterAuto.score !== state.score) {
-        actions.value = [...replayActions, { type: 'auto_activate' }];
+        actions.value = [...replayActions, { type: 'auto_activate' as const }];
         states.push(afterAuto);
         chains.push(0);
+        anims.push({ chains: [] });
       }
     }
 
     gameStates.value = states;
     chainCounts.value = chains;
+    stepAnimations.value = anims;
     currentStep.value = 0;
   }
 
   function goTo(step: number) {
+    cancelAnimation();
     const clamped = Math.max(0, Math.min(step, totalSteps.value));
     currentStep.value = clamped;
   }
 
-  function next() {
-    if (currentStep.value < totalSteps.value) {
-      currentStep.value++;
-    } else {
+  async function next() {
+    if (isAnimating.value) return;
+    if (currentStep.value >= totalSteps.value) {
       pause();
+      return;
     }
+
+    const stepIndex = currentStep.value;
+    const anim = stepAnimations.value[stepIndex];
+
+    // If this step has chain animation data, play it
+    if (anim && anim.chains.length > 0) {
+      isAnimating.value = true;
+      animCancelled = false;
+      const factor = 1000 / speed.value; // speed.value=1000 → factor=1, 500→2, etc.
+
+      // Show board after swap
+      if (anim.boardAfterSwap) {
+        animBoard.value = anim.boardAfterSwap;
+        await wait(150 / factor);
+        if (animCancelled) return;
+      }
+
+      // Animate each chain step
+      for (const chain of anim.chains) {
+        if (animCancelled) return;
+
+        // Highlight matched cells
+        for (const p of chain.matchedPositions) matchedCells.add(`${p.row},${p.col}`);
+        await wait(350 / factor);
+        if (animCancelled) return;
+
+        // Clear animation
+        for (const p of chain.matchedPositions) clearingCells.add(`${p.row},${p.col}`);
+        await wait(250 / factor);
+        if (animCancelled) return;
+
+        matchedCells.clear();
+        clearingCells.clear();
+
+        // Show board after drop
+        animBoard.value = chain.boardAfterDrop;
+        await wait(200 / factor);
+        if (animCancelled) return;
+      }
+
+      animBoard.value = null;
+      isAnimating.value = false;
+    }
+
+    currentStep.value = stepIndex + 1;
   }
 
   function prev() {
+    cancelAnimation();
     if (currentStep.value > 0) {
       currentStep.value--;
     }
@@ -127,29 +260,36 @@ export function useReplayPlayer() {
     }
   }
 
-  function scheduleNext() {
+  async function scheduleNext() {
     if (!isPlaying.value) return;
-    playTimer = setTimeout(() => {
-      if (!isPlaying.value) return;
-      if (currentStep.value < totalSteps.value) {
-        currentStep.value++;
-        scheduleNext();
-      } else {
-        isPlaying.value = false;
-      }
-    }, speed.value);
+    if (currentStep.value >= totalSteps.value) {
+      isPlaying.value = false;
+      return;
+    }
+
+    await next();
+    if (!isPlaying.value) return;
+
+    // Wait between steps (only for non-animated steps, animated ones have built-in timing)
+    const anim = stepAnimations.value[currentStep.value - 1];
+    if (!anim || anim.chains.length === 0) {
+      await wait(speed.value);
+    } else {
+      // Brief pause after animation before next step
+      await wait(Math.max(200, speed.value / 3));
+    }
+
+    scheduleNext();
   }
 
   function setSpeed(ms: number) {
     speed.value = ms;
-    if (isPlaying.value) {
-      if (playTimer) clearTimeout(playTimer);
-      scheduleNext();
-    }
+    // No need to restart timer — scheduleNext is async and reads speed.value each iteration
   }
 
   onUnmounted(() => {
     pause();
+    cancelAnimation();
   });
 
   return {
@@ -167,6 +307,9 @@ export function useReplayPlayer() {
     currentAction,
     nextAction,
     isPlaying,
+    isAnimating,
+    matchedCells,
+    clearingCells,
     speed,
     load,
     goTo,
