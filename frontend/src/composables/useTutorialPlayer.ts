@@ -2,7 +2,6 @@ import { ref, computed, reactive } from 'vue';
 import type { Position, Direction, Cell } from '@tomado/engine';
 import { allTutorialSteps, getSectionForStep, type TutorialStep } from '@/data/tutorialSteps';
 import { pk, adj } from '@/composables/useDragHandler';
-import { useAnim } from '@/anim';
 import { playSE, vibrate } from '@/sound';
 
 const STORAGE_KEY = 'tomado_tutorial';
@@ -26,7 +25,13 @@ export function dismissTutorialPrompt(): void {
 }
 
 export function useTutorialPlayer() {
-  const { ANIM, scaled } = useAnim();
+  // Fixed 2x speed for tutorial animations (independent of game speed setting)
+  const TUTORIAL_SPEED = 2;
+  const ANIM = {
+    MATCH_SHOW: 350 / TUTORIAL_SPEED,
+    CLEAR: 250 / TUTORIAL_SPEED,
+  };
+  function scaled(ms: number) { return ms / TUTORIAL_SPEED; }
 
   // State
   const currentStepIndex = ref(0);
@@ -105,12 +110,12 @@ export function useTutorialPlayer() {
     // Highlight matched
     playSE('match'); vibrate(15);
     for (const p of cells) matchedCells.add(pk(p.row, p.col));
-    await wait(ANIM.value.MATCH_SHOW);
+    await wait(ANIM.MATCH_SHOW);
 
     // Clear
     playSE('clear');
     for (const p of cells) clearingCells.add(pk(p.row, p.col));
-    await wait(ANIM.value.CLEAR);
+    await wait(ANIM.CLEAR);
 
     matchedCells.clear();
     clearingCells.clear();
