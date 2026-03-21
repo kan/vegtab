@@ -60,32 +60,50 @@ onMounted(async () => {
   }
 });
 
+/** Convert internal (row, col) to chess-style notation: col→a-h, row→8-1 */
+function toChessCoord(row: number, col: number): string {
+  return String.fromCharCode(97 + col) + (8 - row);
+}
+
 function actionLabel(action: ReplayAction, index: number): string {
   const num = index + 1;
   const chain = player.chainCounts.value[index] ?? 0;
   const chainSuffix = chain >= 2 ? ` 🔗${chain}` : '';
   if (action.type === 'swap') {
     const dirLabel = t(`replay.dir_${action.dir}`);
-    return `${num}. (${action.pos.row},${action.pos.col}) ${dirLabel}${chainSuffix}`;
+    return `${num}. ${toChessCoord(action.pos.row, action.pos.col)} ${dirLabel}${chainSuffix}`;
   }
   if (action.type === 'tap') {
-    return `${num}. (${action.pos.row},${action.pos.col}) ${t('replay.tap')}${chainSuffix}`;
+    return `${num}. ${toChessCoord(action.pos.row, action.pos.col)} ${t('replay.tap')}${chainSuffix}`;
   }
   if (action.type === 'scope') {
-    return `${num}. (${action.pos.row},${action.pos.col}) ${t('replay.scope')}${chainSuffix}`;
+    return `${num}. ${toChessCoord(action.pos.row, action.pos.col)} ${t('replay.scope')}${chainSuffix}`;
   }
   if (action.type === 'scope_synthesis') {
-    return `${num}. (${action.pos1.row},${action.pos1.col})+(${action.pos2.row},${action.pos2.col}) ${t('replay.scope')}${chainSuffix}`;
+    return `${num}. ${toChessCoord(action.pos1.row, action.pos1.col)}+${toChessCoord(action.pos2.row, action.pos2.col)} ${t('replay.scope')}${chainSuffix}`;
   }
   if (action.type === 'scope_swap') {
     const dirLabel = t(`replay.dir_${action.dir}`);
-    return `${num}. (${action.pos.row},${action.pos.col}) ${dirLabel} + ${t('replay.scope')}${chainSuffix}`;
+    return `${num}. ${toChessCoord(action.pos.row, action.pos.col)} ${dirLabel} + ${t('replay.scope')}${chainSuffix}`;
   }
   if (action.type === 'auto_activate') {
     return `${num}. ${t('replay.autoActivate')}`;
   }
   return `${num}. ???`;
 }
+
+const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1'];
+
+// Coordinate highlight: hover/click on rank or file label
+const highlightRow = ref<number | null>(null);
+const highlightCol = ref<number | null>(null);
+
+function onRankHover(rankIdx: number) { highlightRow.value = rankIdx; }
+function onFileHover(fileIdx: number) { highlightCol.value = fileIdx; }
+function onRankClick(rankIdx: number) { highlightRow.value = highlightRow.value === rankIdx ? null : rankIdx; }
+function onFileClick(fileIdx: number) { highlightCol.value = highlightCol.value === fileIdx ? null : fileIdx; }
+function clearHighlight() { highlightRow.value = null; highlightCol.value = null; }
 
 const speedOptions = [
   { label: '0.5x', ms: 2000 },
@@ -99,13 +117,15 @@ function getCellClass(row: number, col: number): string {
   if (player.clearingCells.has(key)) return 'cell-clearing';
   if (player.matchedCells.has(key)) return 'cell-matched';
   const action = player.nextAction.value;
-  if (!action) return '';
-  if (action.type === 'scope_synthesis') {
-    if ((action.pos1.row === row && action.pos1.col === col)
-      || (action.pos2.row === row && action.pos2.col === col)) return 'cell-highlight';
-  } else if ('pos' in action) {
-    if (action.pos.row === row && action.pos.col === col) return 'cell-highlight';
+  if (action) {
+    if (action.type === 'scope_synthesis') {
+      if ((action.pos1.row === row && action.pos1.col === col)
+        || (action.pos2.row === row && action.pos2.col === col)) return 'cell-highlight';
+    } else if ('pos' in action) {
+      if (action.pos.row === row && action.pos.col === col) return 'cell-highlight';
+    }
   }
+  if (highlightRow.value === row || highlightCol.value === col) return 'cell-coord-highlight';
   return '';
 }
 </script>
@@ -136,33 +156,59 @@ function getCellClass(row: number, col: number): string {
         </div>
       </header>
 
-      <!-- Board -->
+      <!-- Board with coordinate labels -->
       <div class="replay-board-wrapper">
-        <div class="replay-board" :style="{ width: CELL_SIZE * 8 + 'px', height: CELL_SIZE * 8 + 'px' }">
-          <template v-if="player.currentBoard.value">
+        <div class="board-with-labels">
+          <!-- Rank labels (left side: 8,7,6,...,1) -->
+          <div class="rank-labels" :style="{ height: CELL_SIZE * 8 + 'px' }">
             <div
-              v-for="(row, r) in player.currentBoard.value"
-              :key="r"
-              class="replay-row"
-            >
-              <div
-                v-for="(cell, c) in row"
-                :key="c"
-                :class="['replay-cell', getCellClass(r, c)]"
-                :style="{ width: CELL_SIZE + 'px', height: CELL_SIZE + 'px' }"
-              >
-                <template v-if="cell">
-                  <ObstacleTile v-if="cell.obstacle" :durability="cell.obstacle.durability" :size="CELL_SIZE - 4" />
-                  <template v-else>
-                    <VegetableIcon :color="cell.color" :size="CELL_SIZE - 6" />
-                    <div v-if="cell.item" class="replay-item-overlay">
-                      <ItemIcon :item="cell.item" :size="CELL_SIZE - 10" />
-                    </div>
-                  </template>
-                </template>
-              </div>
+              v-for="(rank, idx) in RANKS" :key="rank"
+              :class="['coord-label', { 'coord-active': highlightRow === idx }]"
+              :style="{ height: CELL_SIZE + 'px' }"
+              @pointerenter="onRankHover(idx)"
+              @pointerleave="clearHighlight"
+              @click="onRankClick(idx)"
+            >{{ rank }}</div>
+          </div>
+          <div class="board-and-files">
+            <div class="replay-board" :style="{ width: CELL_SIZE * 8 + 'px', height: CELL_SIZE * 8 + 'px' }">
+              <template v-if="player.currentBoard.value">
+                <div
+                  v-for="(row, r) in player.currentBoard.value"
+                  :key="r"
+                  class="replay-row"
+                >
+                  <div
+                    v-for="(cell, c) in row"
+                    :key="c"
+                    :class="['replay-cell', getCellClass(r, c)]"
+                    :style="{ width: CELL_SIZE + 'px', height: CELL_SIZE + 'px' }"
+                  >
+                    <template v-if="cell">
+                      <ObstacleTile v-if="cell.obstacle" :durability="cell.obstacle.durability" :size="CELL_SIZE - 4" />
+                      <template v-else>
+                        <VegetableIcon :color="cell.color" :size="CELL_SIZE - 6" />
+                        <div v-if="cell.item" class="replay-item-overlay">
+                          <ItemIcon :item="cell.item" :size="CELL_SIZE - 10" />
+                        </div>
+                      </template>
+                    </template>
+                  </div>
+                </div>
+              </template>
             </div>
-          </template>
+            <!-- File labels (bottom: a,b,c,...,h) -->
+            <div class="file-labels" :style="{ width: CELL_SIZE * 8 + 'px' }">
+              <div
+                v-for="(file, idx) in FILES" :key="file"
+                :class="['coord-label', { 'coord-active': highlightCol === idx }]"
+                :style="{ width: CELL_SIZE + 'px' }"
+                @pointerenter="onFileHover(idx)"
+                @pointerleave="clearHighlight"
+                @click="onFileClick(idx)"
+              >{{ file }}</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -271,6 +317,43 @@ function getCellClass(row: number, col: number): string {
   display: flex;
   justify-content: center;
   margin-bottom: 8px;
+}
+.board-with-labels {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+.board-and-files {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.rank-labels {
+  display: flex;
+  flex-direction: column;
+}
+.file-labels {
+  display: flex;
+}
+.coord-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  user-select: none;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.coord-label:hover, .coord-active {
+  color: var(--brand);
+  background: rgba(46, 125, 50, 0.1);
+}
+.cell-coord-highlight {
+  background: rgba(46, 125, 50, 0.08);
 }
 .replay-board {
   display: flex;

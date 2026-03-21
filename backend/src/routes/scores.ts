@@ -6,6 +6,7 @@ import { generateId } from '../lib/id';
 import { isDateNearToday, todayJST } from '../lib/date';
 import { findOrCreateDailySeed } from '../lib/seed';
 import { evaluateAchievements } from '../lib/achievements';
+import { verifyReplay } from '../lib/replay-verify';
 
 const submitScoreSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -41,6 +42,24 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     return c.json({ scoreId: null, shareCode: seed.share_code, newAchievements: [], pastDate: true }, 200);
   }
 
+  // Replay verification: re-simulate the game and use verified score
+  let verifiedScore = data.score;
+  let verifiedMoveCount = data.moveCount;
+  let verifiedIsCleared = data.isCleared;
+  let verifiedMaxChain = data.maxChain;
+  let verifiedCascadePoints = data.cascadePoints;
+  if (data.replayLog.length > 0) {
+    const seedValue = Number(seed.seed_value);
+    const verified = verifyReplay(seedValue, data.mode, data.replayLog);
+    // Always use server-verified values (even if replay is invalid,
+    // the verified result reflects what the engine actually computed)
+    verifiedScore = verified.score;
+    verifiedMoveCount = verified.moveCount;
+    verifiedIsCleared = verified.isCleared;
+    verifiedMaxChain = verified.maxChain;
+    verifiedCascadePoints = verified.cascadePoints;
+  }
+
   // Check for existing score
   const existing = await c.env.DB.prepare(
     `SELECT id, score, move_count, is_cleared, max_chain, cascade_points, replay_log_key FROM play_scores
@@ -49,31 +68,28 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     id: string; score: number; move_count: number; is_cleared: number; max_chain: number; cascade_points: number; replay_log_key: string | null;
   }>();
 
-  // Determine if new score is better
+  // Determine if new score is better (using verified values)
   let isBetter = true;
   if (existing) {
     if (data.mode === 'sprint') {
-      isBetter = data.score > existing.score;
+      isBetter = verifiedScore > existing.score;
     } else if (data.mode === 'clear') {
-      // Clear: fewer moves is better; new clear beats non-clear; same moves → higher score
-      if (data.isCleared && !existing.is_cleared) {
+      if (verifiedIsCleared && !existing.is_cleared) {
         isBetter = true;
-      } else if (!data.isCleared && existing.is_cleared) {
+      } else if (!verifiedIsCleared && existing.is_cleared) {
         isBetter = false;
-      } else if (data.isCleared && existing.is_cleared) {
-        isBetter = data.moveCount < existing.move_count
-          || (data.moveCount === existing.move_count && data.score > existing.score);
+      } else if (verifiedIsCleared && existing.is_cleared) {
+        isBetter = verifiedMoveCount < existing.move_count
+          || (verifiedMoveCount === existing.move_count && verifiedScore > existing.score);
       } else {
-        isBetter = false; // both failed, keep existing
+        isBetter = false;
       }
     } else if (data.mode === 'cascade') {
-      // Cascade: higher cascade points is better; same points → higher score
-      isBetter = data.cascadePoints > (existing.cascade_points ?? 0)
-        || (data.cascadePoints === (existing.cascade_points ?? 0) && data.score > existing.score);
+      isBetter = verifiedCascadePoints > (existing.cascade_points ?? 0)
+        || (verifiedCascadePoints === (existing.cascade_points ?? 0) && verifiedScore > existing.score);
     } else {
-      // Survival: more moves is better; same moves → higher score
-      isBetter = data.moveCount > existing.move_count
-        || (data.moveCount === existing.move_count && data.score > existing.score);
+      isBetter = verifiedMoveCount > existing.move_count
+        || (verifiedMoveCount === existing.move_count && verifiedScore > existing.score);
     }
   }
 
@@ -89,8 +105,8 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(
         scoreId, userId, seed.id, data.mode,
-        data.moveLimit ?? null, data.moveCount, data.score,
-        data.isCleared ? 1 : 0, data.maxChain, data.cascadePoints, replayLogKey
+        data.moveLimit ?? null, verifiedMoveCount, verifiedScore,
+        verifiedIsCleared ? 1 : 0, verifiedMaxChain, verifiedCascadePoints, replayLogKey
       ).run(),
     ]);
   } else if (isBetter) {
@@ -102,8 +118,8 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
         `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, max_chain = ?, cascade_points = ?, replay_log_key = ?
          WHERE id = ?`
       ).bind(
-        data.moveLimit ?? null, data.moveCount, data.score,
-        data.isCleared ? 1 : 0, data.maxChain, data.cascadePoints, replayLogKey,
+        data.moveLimit ?? null, verifiedMoveCount, verifiedScore,
+        verifiedIsCleared ? 1 : 0, verifiedMaxChain, verifiedCascadePoints, replayLogKey,
         scoreId
       ).run(),
     ]);
@@ -118,12 +134,12 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
       c.env.KV.delete(`ranking:${seed.id}:${data.mode}`),
       evaluateAchievements(c.env.DB, userId, {
         mode: data.mode,
-        score: data.score,
-        moveCount: data.moveCount,
-        isCleared: data.isCleared,
+        score: verifiedScore,
+        moveCount: verifiedMoveCount,
+        isCleared: verifiedIsCleared,
         date: data.date,
-        maxChain: data.maxChain,
-        cascadePoints: data.cascadePoints,
+        maxChain: verifiedMaxChain,
+        cascadePoints: verifiedCascadePoints,
         generatedItemTypes: data.generatedItemTypes,
       }),
     ]);

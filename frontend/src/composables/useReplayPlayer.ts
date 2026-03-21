@@ -3,9 +3,9 @@ import {
   initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation,
   cloneGameState, cloneBoard,
   findMatches, getUniquePositions, applyGravity, fillEmptyCells,
-  damageObstacles,
+  processDamage, determineItemFromMatches, placeDeferredItems,
   type GameState, type GameMode, type Cell, type GameInitParams,
-  type Position, type Direction,
+  type Position, type Direction, type ItemType, type Color,
   BOARD_SIZE, NUM_COLORS,
 } from '@vegtab/engine';
 import type { ReplayAction } from '@/stores/puzzle';
@@ -31,10 +31,12 @@ function getAdjacentPos(pos: Position, dir: Direction): Position {
   }
 }
 
-/** Compute chain intermediate boards for a swap action */
+/** Compute chain intermediate boards for a swap action (mirrors engine processAction + processChains) */
 function computeSwapChains(state: GameState, pos: Position, dir: Direction): StepAnimData {
   const board = cloneBoard(state.board);
   const target = getAdjacentPos(pos, dir);
+  const nc = state.numColors ?? NUM_COLORS;
+  const passThrough = state.mode === 'clear';
 
   // Swap
   const tmp = board[pos.row][pos.col];
@@ -44,21 +46,59 @@ function computeSwapChains(state: GameState, pos: Position, dir: Direction): Ste
 
   const chains: ChainStep[] = [];
   let rng = [...state.rngState];
-  const nc = state.numColors ?? NUM_COLORS;
-  const passThrough = state.mode === 'clear';
 
+  // --- 1連鎖目 (ユーザースワイプ直後) ---
   let matches = findMatches(board);
-  while (matches.length > 0) {
-    const cleared = getUniquePositions(matches);
-    const matchedPositions = [...cleared];
+  if (matches.length === 0) return { boardAfterSwap, chains };
 
+  // アイテム生成 (1連鎖目は即時配置)
+  const itemGens1 = determineItemFromMatches(matches, [pos, target]);
+
+  const cleared1 = getUniquePositions(matches);
+  for (const p of cleared1) board[p.row][p.col] = null;
+
+  // アイテム即時配置
+  for (const ig of itemGens1) {
+    board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
+  }
+
+  // おじゃまダメージ (落下+補充含む)
+  rng = processDamage(board, cleared1, rng, state.mode, nc);
+
+  // 落下 → 補充
+  applyGravity(board, passThrough);
+  rng = fillEmptyCells(board, rng, nc);
+
+  chains.push({ matchedPositions: [...cleared1], boardAfterDrop: cloneBoard(board) });
+
+  // --- 2連鎖目以降 (processChains相当) ---
+  const deferredItems: { pos: Position; item: ItemType }[] = [];
+
+  matches = findMatches(board);
+  while (matches.length > 0) {
+    // アイテム生成 (遅延配置)
+    const itemGens = determineItemFromMatches(matches);
+    for (const ig of itemGens) deferredItems.push(ig);
+
+    const cleared = getUniquePositions(matches);
     for (const p of cleared) board[p.row][p.col] = null;
-    damageObstacles(board, cleared);
+
+    // おじゃまダメージ (落下+補充含む)
+    rng = processDamage(board, cleared, rng, state.mode, nc);
+
+    // 落下 → 補充
     applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng, nc);
 
-    chains.push({ matchedPositions, boardAfterDrop: cloneBoard(board) });
+    chains.push({ matchedPositions: [...cleared], boardAfterDrop: cloneBoard(board) });
     matches = findMatches(board);
+  }
+
+  // 遅延アイテムを配置
+  if (deferredItems.length > 0) {
+    placeDeferredItems(board, deferredItems);
+    // 最後のboardAfterDropを更新
+    chains[chains.length - 1].boardAfterDrop = cloneBoard(board);
   }
 
   return { boardAfterSwap, chains };
@@ -149,7 +189,7 @@ export function useReplayPlayer() {
         anims.push({ chains: [] });
       }
 
-      // Compute final state (authoritative)
+      // Compute final state (authoritative — engine handles all special cases)
       if (action.type === 'scope_synthesis') {
         state = processScopeSynthesis(state, action.pos1, action.pos2, action.targetCells);
       } else if (action.type === 'scope_swap') {
@@ -159,6 +199,15 @@ export function useReplayPlayer() {
       }
       states.push(state);
       chains.push(state.lastChainCount ?? 0);
+
+      // Sync animation final board with authoritative engine state.
+      // computeSwapChains only handles simple swaps; item activation,
+      // synthesis, etc. can produce different results. Overwrite the
+      // last chain's boardAfterDrop so the next step starts correctly.
+      const anim = anims[anims.length - 1];
+      if (anim.chains.length > 0) {
+        anim.chains[anim.chains.length - 1].boardAfterDrop = cloneBoard(state.board);
+      }
     }
 
     // Sprint auto-activation
