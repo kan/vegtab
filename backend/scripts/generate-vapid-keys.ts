@@ -22,13 +22,13 @@ async function main() {
   );
 
   const publicKeyRaw = await crypto.subtle.exportKey('raw', keyPair.publicKey);
-  const privateKeyPkcs8 = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+  const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
 
   console.log('=== VAPID Keys ===\n');
   console.log('VAPID_PUBLIC_KEY (add to wrangler.toml [vars]):');
   console.log(bufferToBase64url(publicKeyRaw));
   console.log('\nVAPID_PRIVATE_KEY (set via: wrangler secret put VAPID_PRIVATE_KEY --env production):');
-  console.log(bufferToBase64url(privateKeyPkcs8));
+  console.log(privateKeyJwk.d);
   console.log('\nAlso add to backend/.dev.vars for local development.');
 }
 

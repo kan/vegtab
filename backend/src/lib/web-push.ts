@@ -11,6 +11,7 @@ export type PushResult = {
   success: boolean;
   statusCode: number;
   gone?: boolean;
+  error?: string;
 };
 
 /**
@@ -44,7 +45,7 @@ export async function sendPushNotification(
       statusCode: res.status,
       gone: res.status === 404 || res.status === 410,
     };
-  } catch {
-    return { success: false, statusCode: 0 };
+  } catch (e) {
+    return { success: false, statusCode: 0, error: String(e) };
   }
 }
