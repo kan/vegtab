@@ -805,7 +805,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const cell1 = board[pos.row][pos.col];
     const cell2 = board[target.row][target.col];
     if (!cell1 || !cell2) return null;
-    if (cell1.obstacle || cell2.obstacle) return null;
     if (cell1.item || cell2.item) return null;
 
     board[pos.row][pos.col] = cell2;
@@ -904,7 +903,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const cell1 = state.board[pos.row][pos.col];
     const cell2 = state.board[target.row][target.col];
     if (!cell1 || !cell2) return null;
-    if (cell1.obstacle || cell2.obstacle) return null;
     if (cell1.item && cell2.item) return null; // synthesis -> instant
     if (!cell1.item && !cell2.item) return null;
 

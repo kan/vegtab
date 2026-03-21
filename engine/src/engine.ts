@@ -446,9 +446,6 @@ export function processAction(state: GameState, action: Action): GameState {
     const cell2 = getCell(board, targetPos);
     if (!cell1 || !cell2) return state;
 
-    // おじゃまタイルはスワイプ不可
-    if (cell1.obstacle || cell2.obstacle) return state;
-
     // アイテム合成チェック
     if (cell1.item && cell2.item) {
       const synthesis = getSynthesisEffect(cell1.item, cell2.item);
