@@ -558,11 +558,9 @@ export function processAction(state: GameState, action: Action): GameState {
       board[pos.row][pos.col] = null;
     }
 
-    // スコア計算（1連鎖目）— Clearモードでは通常スコアを加算しない
-    if (newState.mode !== 'clear') {
-      const stepScore = calculateStepScore(matches, 1);
-      newState.score += stepScore;
-    }
+    // スコア計算（1連鎖目）
+    const stepScore = calculateStepScore(matches, 1);
+    newState.score += stepScore;
 
     // アイテム配置
     for (const ig of itemGens) {
@@ -953,8 +951,8 @@ function processChains(
       board[pos.row][pos.col] = null;
     }
 
-    // スコア — Clearモードでは加算しない
-    const stepScore = mode !== 'clear' ? calculateStepScore(matches, chainIndex) : 0;
+    // スコア
+    const stepScore = calculateStepScore(matches, chainIndex);
     totalScore += stepScore;
 
     // アイテムは遅延配置（連鎖完了後にまとめて配置）

@@ -58,6 +58,7 @@ describe('Balance: Clear mode', () => {
     const cleared = results.filter(r => r.isCleared).length;
     const clearRate = cleared / results.length;
     logStats('Clear moveCount', results.map(r => r.moveCount));
+    logStats('Clear scores', results.map(r => r.finalScore));
     console.log(`[Clear] clearRate=${(clearRate * 100).toFixed(1)}% (${cleared}/${results.length})`);
     expect(clearRate).toBeGreaterThanOrEqual(0.1);
   });
