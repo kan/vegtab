@@ -32,6 +32,7 @@ vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://vegtab.app,https://
 routes = [
   { pattern = "vegtab.app/api/*", zone_name = "vegtab.app" },
   { pattern = "vegtab.app/s/*", zone_name = "vegtab.app" },
+  { pattern = "vegtab.app/download/*", zone_name = "vegtab.app" },
 ]
 
 [[env.production.d1_databases]]

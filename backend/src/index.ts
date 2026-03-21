@@ -33,6 +33,20 @@ app.route('/s', shareRoutes);
 // Health check
 app.get('/api/health', (c) => c.json({ status: 'ok' }));
 
+// APK download
+app.get('/download/:filename', async (c) => {
+  const filename = c.req.param('filename');
+  if (!filename.endsWith('.apk')) return c.text('Not found', 404);
+  const obj = await c.env.R2.get(`downloads/${filename}`);
+  if (!obj) return c.text('Not found', 404);
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': 'application/vnd.android.package-archive',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    },
+  });
+});
+
 // Protected routes (require JWT)
 app.use('/api/*', authMiddleware);
 app.route('/api/user', userRoutes);
