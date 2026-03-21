@@ -37,7 +37,7 @@ app.get('/api/health', (c) => c.json({ status: 'ok' }));
 app.get('/download/:filename', async (c) => {
   const filename = c.req.param('filename');
   if (!filename.endsWith('.apk')) return c.text('Not found', 404);
-  const obj = await c.env.R2.get(`downloads/${filename}`);
+  const obj = await c.env.DOWNLOADS.get(filename);
   if (!obj) return c.text('Not found', 404);
   return new Response(obj.body, {
     headers: {

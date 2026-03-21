@@ -7,7 +7,7 @@ export default defineWorkersConfig({
         wrangler: { configPath: './wrangler.toml' },
         miniflare: {
           kvNamespaces: ['KV'],
-          r2Buckets: ['R2'],
+          r2Buckets: ['R2', 'DOWNLOADS'],
           d1Databases: ['DB'],
           bindings: {
             JWT_SECRET: 'test-secret-key-for-vitest',

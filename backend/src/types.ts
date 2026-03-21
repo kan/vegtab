@@ -4,6 +4,7 @@ export type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
   R2: R2Bucket;
+  DOWNLOADS: R2Bucket;
   ENVIRONMENT: string;
   JWT_SECRET: string;
   FRONTEND_URL: string;

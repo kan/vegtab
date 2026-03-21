@@ -23,6 +23,10 @@ id = "f35acac0b7e144588ec0509e6b3fa4fa"
 binding = "R2"
 bucket_name = "tomado-replay-logs"
 
+[[r2_buckets]]
+binding = "DOWNLOADS"
+bucket_name = "vegtab-downloads"
+
 [triggers]
 crons = ["5 0 * * *"]
 
@@ -48,6 +52,10 @@ id = "f35acac0b7e144588ec0509e6b3fa4fa"
 [[env.production.r2_buckets]]
 binding = "R2"
 bucket_name = "tomado-replay-logs"
+
+[[env.production.r2_buckets]]
+binding = "DOWNLOADS"
+bucket_name = "vegtab-downloads"
 
 [env.production.triggers]
 crons = ["5 0 * * *"]
