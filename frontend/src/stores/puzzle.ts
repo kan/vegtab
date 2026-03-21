@@ -624,10 +624,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       itemEffects,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: resolveFinalState(
-        board, finalScore, finalRng, state.moveCount + 1,
-        state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
-      ),
+      finalState: processAction(state, { type: 'scope', pos: scopePos, targetCells }),
     };
   }
 
@@ -788,10 +785,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       effectScore, itemEffects, boardAfterClear,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: resolveFinalState(
-        board, finalScore, finalRng, state.moveCount + 1,
-        state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
-      ),
+      finalState: processScopeSynthesis(state, pos1, pos2, targetCells),
     };
   }
 
@@ -859,13 +853,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       placeDeferredItems(board, deferredItems);
     }
 
-    return {
-      boardAfterSwap, chains,
-      finalState: resolveFinalState(
-        board, totalScore, rng, state.moveCount + 1,
-        state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
-      ),
-    };
+    // Use engine's processAction for authoritative final state
+    const finalState = processAction(state, { type: 'swap', pos, dir });
+    if (finalState === state) return null; // engine rejected
+
+    return { boardAfterSwap, chains, finalState };
   }
 
   function computeItemTapPlan(pos: Position): ItemAnimPlan | null {
@@ -881,12 +873,19 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (targetColor === undefined) return null;
     }
 
-    return buildItemPlan(
+    const plan = buildItemPlan(
       board, state.rngState, state.score, state.moveCount,
       pos, cell.item, targetColor,
       state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
       false, false, nc.value,
     );
+
+    // Use engine for authoritative final state
+    const finalState = processAction(state, { type: 'tap', pos });
+    if (finalState === state) return null;
+    plan.finalState = finalState;
+
+    return plan;
   }
 
   function computeItemSwapPlan(pos: Position, dir: Direction): {
@@ -937,6 +936,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
       false, false, nc.value,
     );
+
+    // Use engine for authoritative final state
+    const finalState = processAction(state, { type: 'swap', pos, dir });
+    if (finalState === state) return null;
+    plan.finalState = finalState;
+
     return { boardAfterSwap, preChains, preScore, plan };
   }
 
@@ -1152,10 +1157,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       effectScore,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: resolveFinalState(
-        board, finalScore, finalRng, state.moveCount + 1,
-        state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
-      ),
+      finalState: processAction(state, { type: 'swap', pos, dir }),
     };
   }
 
@@ -1194,7 +1196,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         if (cell.item === 'flush') {
           targetColor = findFlushTargetColor(board, pos) ?? undefined;
         }
-        // moveCount - 1 because buildItemPlan adds 1 internally; we don't want to increment
         // suppressItemGen: 自動発動中は新アイテム生成を抑制
         const plan = buildItemPlan(
           board, state.rngState, state.score, state.moveCount - 1,
@@ -1204,6 +1205,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           true,  // suppressChains (#9)
           nc.value,
         );
+
+        // Use engine for authoritative final state
+        const finalState = processAction(state, { type: 'tap', pos });
+        if (finalState !== state) plan.finalState = finalState;
+
         return { pos, plan };
       }
     }
