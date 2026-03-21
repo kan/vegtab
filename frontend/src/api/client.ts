@@ -1,4 +1,5 @@
 import { enqueue, processQueue } from './offlineQueue';
+import { getItem, setItem, getItemSync, setItemSync } from '@/lib/storage';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787';
 
@@ -7,28 +8,36 @@ const REFRESH_KEY = 'vegtab_refresh_token';
 const DEVICE_KEY = 'vegtab_device_id';
 const USER_ID_KEY = 'vegtab_user_id';
 
-let accessToken: string | null = localStorage.getItem(TOKEN_KEY);
-let refreshToken: string | null = localStorage.getItem(REFRESH_KEY);
+// Sync init for Web; native loads async via initTokens()
+let accessToken: string | null = getItemSync(TOKEN_KEY);
+let refreshToken: string | null = getItemSync(REFRESH_KEY);
+
+/** Load tokens from secure storage (call on app startup for native) */
+export async function initTokens(): Promise<void> {
+  accessToken = await getItem(TOKEN_KEY);
+  refreshToken = await getItem(REFRESH_KEY);
+}
 
 export function getDeviceId(): string {
-  let id = localStorage.getItem(DEVICE_KEY);
+  let id = getItemSync(DEVICE_KEY);
   if (!id) {
     id = crypto.randomUUID();
-    localStorage.setItem(DEVICE_KEY, id);
+    setItemSync(DEVICE_KEY, id);
+    setItem(DEVICE_KEY, id); // also persist to secure storage
   }
   return id;
 }
 
 export function getUserId(): string | null {
-  return localStorage.getItem(USER_ID_KEY);
+  return getItemSync(USER_ID_KEY);
 }
 
 function saveTokens(access: string, refresh: string, userId?: string) {
   accessToken = access;
   refreshToken = refresh;
-  localStorage.setItem(TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
-  if (userId) localStorage.setItem(USER_ID_KEY, userId);
+  setItem(TOKEN_KEY, access);
+  setItem(REFRESH_KEY, refresh);
+  if (userId) setItem(USER_ID_KEY, userId);
 }
 
 export function isAuthenticated(): boolean {

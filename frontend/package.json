@@ -29,6 +29,7 @@
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0",
+    "@capacitor/preferences": "^8.0.1",
     "sharp-cli": "^5.2.0",
     "vue-i18n": "^11.3.0"
   }
