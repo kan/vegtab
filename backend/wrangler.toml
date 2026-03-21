@@ -28,7 +28,7 @@ crons = ["5 0 * * *"]
 
 # --- Production environment ---
 [env.production]
-vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://vegtab.app", VAPID_SUBJECT = "mailto:admin@vegtab.app", VAPID_PUBLIC_KEY = "BPBJ-17ClQf8zOPEDLwGHnrz3hHC8KTYBSQpMdCUnoTZ9KRKWyggM3Y_KBl2cJUD58evORaaaI2ahn9wGbUZCB4" }
+vars = { ENVIRONMENT = "production", FRONTEND_URL = "https://vegtab.app,https://localhost,capacitor://localhost", VAPID_SUBJECT = "mailto:admin@vegtab.app", VAPID_PUBLIC_KEY = "BPBJ-17ClQf8zOPEDLwGHnrz3hHC8KTYBSQpMdCUnoTZ9KRKWyggM3Y_KBl2cJUD58evORaaaI2ahn9wGbUZCB4" }
 routes = [
   { pattern = "vegtab.app/api/*", zone_name = "vegtab.app" },
   { pattern = "vegtab.app/s/*", zone_name = "vegtab.app" },
