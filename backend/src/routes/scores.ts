@@ -51,8 +51,7 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
   if (data.replayLog.length > 0) {
     const seedValue = Number(seed.seed_value);
     const verified = verifyReplay(seedValue, data.mode, data.replayLog);
-    // Always use server-verified values (even if replay is invalid,
-    // the verified result reflects what the engine actually computed)
+    // Always use server-verified values
     verifiedScore = verified.score;
     verifiedMoveCount = verified.moveCount;
     verifiedIsCleared = verified.isCleared;
