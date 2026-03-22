@@ -147,7 +147,7 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     // Achievement evaluation failure should not break score submission
   }
 
-  return c.json({ scoreId, shareCode: seed.share_code, newAchievements }, 201);
+  return c.json({ scoreId, shareCode: seed.share_code, newAchievements, verifiedScore, verifiedMoveCount }, 201);
 });
 
 // GET /api/scores/my - Get user's play history

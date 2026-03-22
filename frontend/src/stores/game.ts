@@ -211,12 +211,21 @@ export const useGameStore = defineStore('game', () => {
     const date = findDailyDate(record.seed);
     if (!date) return;
     try {
-      const res = await api<{ scoreId: string | null; shareCode: string; newAchievements: string[]; pastDate?: boolean }>('/api/scores', {
+      const res = await api<{ scoreId: string | null; shareCode: string; newAchievements: string[]; pastDate?: boolean; verifiedScore?: number; verifiedMoveCount?: number }>('/api/scores', {
         method: 'POST',
         body: JSON.stringify(buildScorePayload(record, date)),
         offlineQueue: true,
       });
       handleScoreResponse(res, record.seed);
+      // Update local record with server-verified score
+      if (res.verifiedScore !== undefined && res.verifiedScore !== record.score) {
+        const localRecord = playRecords.value.find(r => r.seed === record.seed && r.mode === record.mode);
+        if (localRecord) {
+          localRecord.score = res.verifiedScore;
+          if (res.verifiedMoveCount !== undefined) localRecord.moves = res.verifiedMoveCount;
+          saveRecords();
+        }
+      }
       if (res.pastDate) {
         showToast('info', 'toast.pastDateNoRanking');
         return;
