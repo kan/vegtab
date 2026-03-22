@@ -28,7 +28,7 @@ binding = "DOWNLOADS"
 bucket_name = "vegtab-downloads"
 
 [triggers]
-crons = ["5 0 * * *"]
+crons = ["5 15 * * *"]
 
 # --- Production environment ---
 [env.production]
@@ -58,4 +58,4 @@ binding = "DOWNLOADS"
 bucket_name = "vegtab-downloads"
 
 [env.production.triggers]
-crons = ["5 0 * * *"]
+crons = ["5 15 * * *"]
