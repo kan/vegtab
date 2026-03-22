@@ -1007,6 +1007,11 @@ function tileTransition(r: number, c: number) {
       </div>
     </div>
 
+    <div class="board-with-coords">
+      <div class="rank-labels" :style="{ height: boardSize + 'px' }">
+        <div v-for="r in 8" :key="r" class="coord-label" :style="{ height: cellSize + 'px' }">{{ 9 - r }}</div>
+      </div>
+      <div class="board-and-files">
     <div
       ref="boardEl"
       :class="['puzzle-board', { shaking }]"
@@ -1143,6 +1148,11 @@ function tileTransition(r: number, c: number) {
         </div>
       </template>
     </div>
+        <div class="file-labels" :style="{ width: boardSize + 'px' }">
+          <div v-for="f in ['a','b','c','d','e','f','g','h']" :key="f" class="coord-label" :style="{ width: cellSize + 'px' }">{{ f }}</div>
+        </div>
+      </div>
+    </div>
     <!-- Scope tap hint (outside board overflow) -->
     <div v-if="showScopeTapHint" class="scope-tap-hint">
       {{ scopeTapHintText }}
@@ -1159,13 +1169,39 @@ function tileTransition(r: number, c: number) {
   align-items: center;
   justify-content: center;
 }
+.board-with-coords {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0 auto;
+}
+.board-and-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rank-labels {
+  display: flex;
+  flex-direction: column;
+}
+.file-labels {
+  display: flex;
+}
+.coord-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  user-select: none;
+}
 .puzzle-board {
   touch-action: none;
   user-select: none;
   background: var(--board-bg);
   border-radius: 8px;
   overflow: hidden;
-  margin: 0 auto;
   position: relative;
 }
 .board-row { display: flex; }

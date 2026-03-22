@@ -260,6 +260,16 @@ function computeDropMoves(board: (Cell | null)[][], passThroughObstacles = false
   return { moves, newTileEntries };
 }
 
+/** Sync ItemAnimPlan's last animation board with engine's authoritative board */
+function syncPlanBoard(plan: ItemAnimPlan): void {
+  const authBoard = cloneBoard(plan.finalState.board);
+  if (plan.regularChains.length > 0) {
+    plan.regularChains[plan.regularChains.length - 1].boardAfterDrop = authBoard;
+  } else {
+    plan.boardAfterDrop = authBoard;
+  }
+}
+
 /** ゲーム終了判定 + ボーナス加算 + finalState構築の共通ヘルパー */
 function resolveFinalState(
   board: (Cell | null)[][],
@@ -403,20 +413,35 @@ function computeChainSteps(
   const chains: ChainAnimData[] = [];
   const deferredItems: { pos: Position; item: ItemType }[] = [];
   const passThrough = gameMode === 'clear';
+  const MAX_CHAIN_ITERATIONS = 20;
   let chainIndex = startChain;
+  let iterations = 0;
   let matches = findMatches(board);
 
   while (matches.length > 0) {
+    iterations++;
+    if (iterations > MAX_CHAIN_ITERATIONS) {
+      // 連鎖上限到達: 残りをスコアなしで安定化
+      while (true) {
+        const m = findMatches(board);
+        if (m.length === 0) break;
+        const c = getUniquePositions(m);
+        for (const p of c) board[p.row][p.col] = null;
+        damageObstacles(board, c);
+        applyGravity(board, passThrough);
+        rng = fillEmptyCells(board, rng, numColors);
+      }
+      break;
+    }
+
     const clearedPositions = getUniquePositions(matches);
     const itemGens = suppressItemGen ? [] : determineItemFromMatches(matches);
     const stepScore = calculateStepScore(matches, chainIndex);
     totalScore += stepScore;
 
     for (const p of clearedPositions) board[p.row][p.col] = null;
-    // アイテムは遅延配置（連鎖完了後にまとめて配置）
     for (const ig of itemGens) deferredItems.push(ig);
 
-    // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
     const destroyed = damageObstacles(board, clearedPositions);
 
     const { moves: dm, newTileEntries: nt } = computeDropMoves(board, passThrough);
@@ -610,10 +635,21 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng, nc.value);
-    const boardAfterDrop = cloneBoard(board);
+    let boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
       computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
+
+    const finalState = processAction(state, { type: 'scope', pos: scopePos, targetCells });
+    if (finalState === state) return null;
+
+    // Sync last animation board with engine to prevent visual jump
+    const authBoard = cloneBoard(finalState.board);
+    if (regularChains.length > 0) {
+      regularChains[regularChains.length - 1].boardAfterDrop = authBoard;
+    } else {
+      boardAfterDrop = authBoard;
+    }
 
     return {
       scopePos,
@@ -624,7 +660,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       itemEffects,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: processAction(state, { type: 'scope', pos: scopePos, targetCells }),
+      finalState,
     };
   }
 
@@ -775,17 +811,27 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng, nc.value);
-    const boardAfterDrop = cloneBoard(board);
+    let boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
       computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
+
+    const finalState = processScopeSynthesis(state, pos1, pos2, targetCells);
+
+    // Sync last animation board with engine to prevent visual jump
+    const authBoard = cloneBoard(finalState.board);
+    if (regularChains.length > 0) {
+      regularChains[regularChains.length - 1].boardAfterDrop = authBoard;
+    } else {
+      boardAfterDrop = authBoard;
+    }
 
     return {
       pos1, pos2, synthEffect: effect, adjacentTargets, targetCells, effectTargets,
       effectScore, itemEffects, boardAfterClear,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: processScopeSynthesis(state, pos1, pos2, targetCells),
+      finalState,
     };
   }
 
@@ -814,8 +860,22 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     let rng = state.rngState;
     let totalScore = state.score;
     let chainIndex = 1;
+    let chainIterations = 0;
 
     while (matches.length > 0) {
+      chainIterations++;
+      if (chainIterations > 20) {
+        while (true) {
+          const m = findMatches(board);
+          if (m.length === 0) break;
+          const c = getUniquePositions(m);
+          for (const p of c) board[p.row][p.col] = null;
+          damageObstacles(board, c);
+          applyGravity(board, passThrough);
+          rng = fillEmptyCells(board, rng, nc.value);
+        }
+        break;
+      }
       const clearedPositions = getUniquePositions(matches);
       const itemGens = determineItemFromMatches(matches, chainIndex === 1 ? [pos, target] : undefined);
       const stepScore = calculateStepScore(matches, chainIndex);
@@ -857,6 +917,11 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const finalState = processAction(state, { type: 'swap', pos, dir });
     if (finalState === state) return null; // engine rejected
 
+    // Sync last animation board with engine to prevent visual jump
+    if (chains.length > 0) {
+      chains[chains.length - 1].boardAfterDrop = cloneBoard(finalState.board);
+    }
+
     return { boardAfterSwap, chains, finalState };
   }
 
@@ -884,6 +949,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const finalState = processAction(state, { type: 'tap', pos });
     if (finalState === state) return null;
     plan.finalState = finalState;
+    // Sync last animation board with engine to prevent visual jump
+    syncPlanBoard(plan);
 
     return plan;
   }
@@ -941,6 +1008,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const finalState = processAction(state, { type: 'swap', pos, dir });
     if (finalState === state) return null;
     plan.finalState = finalState;
+    // Sync last animation board with engine to prevent visual jump
+    syncPlanBoard(plan);
 
     return { boardAfterSwap, preChains, preScore, plan };
   }
@@ -1145,10 +1214,22 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
     rng = fillEmptyCells(board, rng, nc.value);
-    const boardAfterDrop = cloneBoard(board);
+    let boardAfterDrop = cloneBoard(board);
 
     const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
       computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
+
+    const finalState = processAction(state, { type: 'swap', pos, dir });
+    if (finalState === state) return null;
+
+    // Use engine's authoritative board for the final animation frame
+    // to prevent visual jump when applyState is called
+    const authBoard = cloneBoard(finalState.board);
+    if (regularChains.length > 0) {
+      regularChains[regularChains.length - 1].boardAfterDrop = authBoard;
+    } else {
+      boardAfterDrop = authBoard;
+    }
 
     return {
       boardAfterSwap,
@@ -1157,7 +1238,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       effectScore,
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
-      finalState: processAction(state, { type: 'swap', pos, dir }),
+      finalState,
     };
   }
 

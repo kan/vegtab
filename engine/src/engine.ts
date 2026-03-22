@@ -938,9 +938,26 @@ function processChains(
   const deferredItems: { pos: Position; item: ItemType }[] = [];
   let chainIndex = startChain;
 
+  const MAX_CHAIN_ITERATIONS = 20;
+  let iterations = 0;
   while (true) {
     const matches = findMatches(board);
     if (matches.length === 0) break;
+
+    iterations++;
+    if (iterations > MAX_CHAIN_ITERATIONS) {
+      // 連鎖上限到達: 残りのマッチをスコアなしで安定化
+      while (true) {
+        const m = findMatches(board);
+        if (m.length === 0) break;
+        const c = getUniquePositions(m);
+        for (const p of c) board[p.row][p.col] = null;
+        rng = processDamage(board, c, rng, mode, numColors);
+        applyGravity(board, mode === 'clear');
+        rng = fillEmptyCells(board, rng, numColors);
+      }
+      break;
+    }
 
     // アイテム生成判定（盤面には置かず記録のみ）
     const itemGens = suppressItemGen ? [] : determineItemFromMatches(matches);
