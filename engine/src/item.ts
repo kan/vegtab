@@ -107,21 +107,6 @@ export const ITEM_PRIORITY: Record<ItemType, number> = {
   scope: 1,
 };
 
-/** 遅延アイテムを盤面に配置（同一セルは高優先を採用） */
-export function placeDeferredItems(board: (Cell | null)[][], items: { pos: Position; item: ItemType }[]): void {
-  const bestAt = new Map<string, { pos: Position; item: ItemType }>();
-  for (const entry of items) {
-    const key = `${entry.pos.row},${entry.pos.col}`;
-    const existing = bestAt.get(key);
-    if (!existing || ITEM_PRIORITY[entry.item] > ITEM_PRIORITY[existing.item]) {
-      bestAt.set(key, entry);
-    }
-  }
-  for (const entry of bestAt.values()) {
-    board[entry.pos.row][entry.pos.col] = { color: 0 as Color, item: entry.item };
-  }
-}
-
 /**
  * マッチを色+位置の連結でコンポーネントに分割する
  */

@@ -8,7 +8,7 @@ import {
   isValidPosition, getItemTargets, findFlushTargetColor,
   getSynthesisEffect, getSynthesisTargets,
   getFlushTargets, getVCutTargets, getHCutTargets, getBurstTargets,
-  getScopeAdjacentTargets, ITEM_PRIORITY, placeDeferredItems,
+  getScopeAdjacentTargets, ITEM_PRIORITY,
   countObstacles, damageObstacles, damageObstacleAt, getQuota,
   type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
@@ -411,7 +411,6 @@ function computeChainSteps(
   numColors: number = NUM_COLORS,
 ) {
   const chains: ChainAnimData[] = [];
-  const deferredItems: { pos: Position; item: ItemType }[] = [];
   const passThrough = gameMode === 'clear';
   const MAX_CHAIN_ITERATIONS = 20;
   let chainIndex = startChain;
@@ -440,7 +439,9 @@ function computeChainSteps(
     totalScore += stepScore;
 
     for (const p of clearedPositions) board[p.row][p.col] = null;
-    for (const ig of itemGens) deferredItems.push(ig);
+    for (const ig of itemGens) {
+      board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
+    }
 
     const destroyed = damageObstacles(board, clearedPositions);
 
@@ -456,11 +457,6 @@ function computeChainSteps(
     });
     chainIndex++;
     matches = findMatches(board);
-  }
-
-  // 連鎖完了後に遅延アイテムを配置
-  if (deferredItems.length > 0) {
-    placeDeferredItems(board, deferredItems);
   }
 
   return { chains, rng, totalScore };
@@ -855,7 +851,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     if (matches.length === 0) return null;
 
     const chains: ChainAnimData[] = [];
-    const deferredItems: { pos: Position; item: ItemType }[] = [];
     const passThrough = state.mode === 'clear';
     let rng = state.rngState;
     let totalScore = state.score;
@@ -883,13 +878,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
       for (const p of clearedPositions) board[p.row][p.col] = null;
       for (const ig of itemGens) {
-        if (chainIndex === 1) {
-          // 1連鎖目（ユーザースワイプ直後）のみ即時配置
-          board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
-        } else {
-          // 2連鎖目以降は遅延配置
-          deferredItems.push(ig);
-        }
+        board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
       }
 
       // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
@@ -906,11 +895,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       });
       chainIndex++;
       matches = findMatches(board);
-    }
-
-    // 連鎖完了後に遅延アイテムを配置
-    if (deferredItems.length > 0) {
-      placeDeferredItems(board, deferredItems);
     }
 
     // Use engine's processAction for authoritative final state

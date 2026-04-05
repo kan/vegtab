@@ -2,7 +2,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
-import { BOARD_SIZE, cloneBoard, getSynthesisEffect, processAutoActivation, type Position, type Direction, type Cell, type ItemType } from '@vegtab/engine';
+import { BOARD_SIZE, cloneBoard, getSynthesisEffect, processAutoActivation, type Position, type Direction, type Cell, type Color, type ItemType } from '@vegtab/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
@@ -967,6 +967,20 @@ async function animateChainStep(chain: ChainAnimData) {
   if (damagedKeys.length > 0) {
     await wait(scaled(100));
     for (const k of damagedKeys) obstacleDamagedCells.delete(k);
+  }
+
+  // Item spawn: show items at pre-gravity positions before drop
+  if (chain.itemGens.length > 0 && visualBoard.value) {
+    const spawnBoard = cloneBoard(visualBoard.value);
+    for (const p of chain.clearedPositions) {
+      spawnBoard[p.row][p.col] = null;
+    }
+    for (const ig of chain.itemGens) {
+      spawnBoard[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
+    }
+    visualBoard.value = spawnBoard;
+    await nextFrame();
+    await wait(scaled(250));
   }
 
   // Drop

@@ -3,7 +3,7 @@ import {
   initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation,
   cloneGameState, cloneBoard,
   findMatches, getUniquePositions, applyGravity, fillEmptyCells,
-  processDamage, determineItemFromMatches, placeDeferredItems,
+  processDamage, determineItemFromMatches,
   type GameState, type GameMode, type Cell, type GameInitParams,
   type Position, type Direction, type ItemType, type Color,
   BOARD_SIZE, NUM_COLORS,
@@ -72,16 +72,17 @@ function computeSwapChains(state: GameState, pos: Position, dir: Direction): Ste
   chains.push({ matchedPositions: [...cleared1], boardAfterDrop: cloneBoard(board) });
 
   // --- 2連鎖目以降 (processChains相当) ---
-  const deferredItems: { pos: Position; item: ItemType }[] = [];
-
   matches = findMatches(board);
   while (matches.length > 0) {
-    // アイテム生成 (遅延配置)
     const itemGens = determineItemFromMatches(matches);
-    for (const ig of itemGens) deferredItems.push(ig);
 
     const cleared = getUniquePositions(matches);
     for (const p of cleared) board[p.row][p.col] = null;
+
+    // アイテムを即座に配置（重力前）
+    for (const ig of itemGens) {
+      board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
+    }
 
     // おじゃまダメージ (落下+補充含む)
     rng = processDamage(board, cleared, rng, state.mode, nc);
@@ -92,13 +93,6 @@ function computeSwapChains(state: GameState, pos: Position, dir: Direction): Ste
 
     chains.push({ matchedPositions: [...cleared], boardAfterDrop: cloneBoard(board) });
     matches = findMatches(board);
-  }
-
-  // 遅延アイテムを配置
-  if (deferredItems.length > 0) {
-    placeDeferredItems(board, deferredItems);
-    // 最後のboardAfterDropを更新
-    chains[chains.length - 1].boardAfterDrop = cloneBoard(board);
   }
 
   return { boardAfterSwap, chains };

@@ -10,7 +10,7 @@ import {
 import { findMatches, getUniquePositions, hasMatches } from './match.js';
 import { applyGravity } from './gravity.js';
 import {
-  determineItem, determineItemFromMatches, ITEM_PRIORITY, placeDeferredItems,
+  determineItem, determineItemFromMatches, ITEM_PRIORITY,
   getItemTargets, getSynthesisEffect, getSynthesisTargets,
   findFlushTargetColor, getFlushTargets,
   getVCutTargets, getHCutTargets, getBurstTargets,
@@ -935,7 +935,6 @@ function processChains(
   let rng = rngState;
   let totalScore = 0;
   const steps: ChainStep[] = [];
-  const deferredItems: { pos: Position; item: ItemType }[] = [];
   let chainIndex = startChain;
 
   const MAX_CHAIN_ITERATIONS = 20;
@@ -959,7 +958,7 @@ function processChains(
       break;
     }
 
-    // アイテム生成判定（盤面には置かず記録のみ）
+    // アイテム生成判定
     const itemGens = suppressItemGen ? [] : determineItemFromMatches(matches);
 
     // 消去
@@ -972,10 +971,11 @@ function processChains(
     const stepScore = calculateStepScore(matches, chainIndex);
     totalScore += stepScore;
 
-    // アイテムは遅延配置（連鎖完了後にまとめて配置）
+    // アイテムを即座に配置（重力前）— findMatchesはitem付きセルをスキップするため
+    // 後続の連鎖マッチに影響せず、重力で正しい位置に落下する
     const generatedItems: { pos: Position; item: ItemType }[] = [];
     for (const ig of itemGens) {
-      deferredItems.push(ig);
+      board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
       generatedItems.push(ig);
     }
 
@@ -995,11 +995,6 @@ function processChains(
     // 落下 → 補充
     applyGravity(board, mode === 'clear');
     rng = fillEmptyCells(board, rng, numColors);
-  }
-
-  // 連鎖完了後に遅延アイテムを配置
-  if (deferredItems.length > 0) {
-    placeDeferredItems(board, deferredItems);
   }
 
   return { score: totalScore, rngState: rng, steps };
