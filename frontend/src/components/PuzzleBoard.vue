@@ -937,6 +937,7 @@ async function animateChainStep(chain: ChainAnimData) {
   clearingCells.clear();
 
   // Obstacle damage shake (surviving obstacles adjacent to cleared tiles)
+  // Also update durability on visualBoard so the number reflects the new value during shake
   const damagedKeys: string[] = [];
   if (visualBoard.value) {
     for (const cp of chain.clearedPositions) {
@@ -946,14 +947,17 @@ async function animateChainStep(chain: ChainAnimData) {
           const cell = visualBoard.value[nr]?.[nc];
           if (cell?.obstacle && !chain.destroyedObstacles.some(d => d.row === nr && d.col === nc)) {
             const k = pk(nr, nc);
-            if (!obstacleDamagedCells.has(k)) {
-              obstacleDamagedCells.add(k);
+            if (!damagedKeys.includes(k)) {
               damagedKeys.push(k);
+              obstacleDamagedCells.add(k);
+              // Update durability on visual board so the displayed number decrements
+              cell.obstacle.durability = Math.max(0, cell.obstacle.durability - 1);
             }
           }
         }
       }
     }
+    if (damagedKeys.length > 0) triggerRef(visualBoard);
   }
 
   // Obstacle destruction

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
-  initializeGame, processAction, processScopeSynthesis,
+  initializeGame, processAction, processScopeSynthesis, processDamage,
   cloneBoard, findItemPosition, findMatches, getUniquePositions, applyGravity, fillEmptyCells,
   calculateStepScore, peekNextColors,
   determineItemFromMatches, checkGameOverState,
@@ -426,7 +426,7 @@ function computeChainSteps(
         if (m.length === 0) break;
         const c = getUniquePositions(m);
         for (const p of c) board[p.row][p.col] = null;
-        damageObstacles(board, c);
+        rng = processDamage(board, c, rng, gameMode, numColors);
         applyGravity(board, passThrough);
         rng = fillEmptyCells(board, rng, numColors);
       }
@@ -443,7 +443,12 @@ function computeChainSteps(
       board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
     }
 
+    // おじゃまダメージ（destroyedをアニメ用に取得するためprocessDamageではなく手動展開）
     const destroyed = damageObstacles(board, clearedPositions);
+    if (destroyed.length > 0) {
+      applyGravity(board, passThrough);
+      rng = fillEmptyCells(board, rng, numColors);
+    }
 
     const { moves: dm, newTileEntries: nt } = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
@@ -865,7 +870,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
           if (m.length === 0) break;
           const c = getUniquePositions(m);
           for (const p of c) board[p.row][p.col] = null;
-          damageObstacles(board, c);
+          rng = processDamage(board, c, rng, state.mode, nc.value);
           applyGravity(board, passThrough);
           rng = fillEmptyCells(board, rng, nc.value);
         }
@@ -881,8 +886,12 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
       }
 
-      // おじゃまタイルへのダメージ（null化のみ、gravity/fillはcomputeDropMovesの後でまとめて行う）
+      // おじゃまダメージ（destroyedをアニメ用に取得するためprocessDamageではなく手動展開）
       const destroyed = damageObstacles(board, clearedPositions);
+      if (destroyed.length > 0) {
+        applyGravity(board, passThrough);
+        rng = fillEmptyCells(board, rng, nc.value);
+      }
 
       const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
       applyGravity(board, passThrough);

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { generateObstacles, damageObstacles, countObstacles, allObstaclesCleared } from '../src/obstacle.js';
+import { processDamage } from '../src/engine.js';
 import { createRng } from '../src/rng.js';
-import { createColumnRngStates } from '../src/board.js';
+import { createColumnRngStates, cloneBoard, fillEmptyCells } from '../src/board.js';
+import { applyGravity } from '../src/gravity.js';
 import { Cell, Color, BOARD_SIZE } from '../src/types.js';
 
 function makeEmptyBoard(): (Cell | null)[][] {
@@ -190,5 +192,136 @@ describe('allObstaclesCleared', () => {
     const board = makeEmptyBoard();
     board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
     expect(allObstaclesCleared(board)).toBe(false);
+  });
+});
+
+describe('processDamage', () => {
+  it('破壊なし時はRNG状態が変化しない', () => {
+    const board = makeEmptyBoard();
+    // おじゃまタイルはあるが、消去位置が隣接していないのでダメージなし
+    board[3][3] = { color: 0 as Color, obstacle: { durability: 2 } };
+    const rng = createColumnRngStates(createRng(42));
+    const rngBefore = [...rng];
+
+    const rngAfter = processDamage(board, [{ row: 0, col: 0 }], rng, 'clear');
+    expect(rngAfter).toEqual(rngBefore);
+    // おじゃまタイルは無傷
+    expect(board[3][3]?.obstacle?.durability).toBe(2);
+  });
+
+  it('空の消去位置リストではRNG状態が変化しない', () => {
+    const board = makeEmptyBoard();
+    const rng = createColumnRngStates(createRng(42));
+    const rngBefore = [...rng];
+
+    const rngAfter = processDamage(board, [], rng, 'sprint');
+    expect(rngAfter).toEqual(rngBefore);
+  });
+
+  it('おじゃま破壊時にgravity+fillが実行されRNG状態が変化する', () => {
+    const board = makeEmptyBoard();
+    // 耐久値1のおじゃまタイルを配置
+    board[5][2] = { color: 0 as Color, obstacle: { durability: 1 } };
+    // おじゃまの上にタイルを配置（gravity後に落下する）
+    board[4][2] = { color: 1 as Color };
+    // おじゃまの隣を消去位置にする
+    board[5][1] = null; // 消去済み扱い
+
+    const rng = createColumnRngStates(createRng(42));
+    const rngBefore = [...rng];
+
+    const rngAfter = processDamage(board, [{ row: 5, col: 1 }], rng, 'clear');
+
+    // おじゃまが破壊されてnullになっている
+    expect(board[5][2]).not.toBeNull();
+    expect(board[5][2]?.obstacle).toBeUndefined();
+    // おじゃま破壊でgravity+fillが走るのでRNGは変化する
+    expect(rngAfter).not.toEqual(rngBefore);
+  });
+
+  it('破壊後に空セルがfillEmptyCellsで補充される', () => {
+    const board = makeEmptyBoard();
+    board[5][2] = { color: 0 as Color, obstacle: { durability: 1 } };
+    // (5,1)を消去位置に指定するため、事前にnullにしておく
+    board[5][1] = null;
+
+    const rng = createColumnRngStates(createRng(42));
+    processDamage(board, [{ row: 5, col: 1 }], rng, 'clear');
+
+    // おじゃまが破壊された後、gravity+fillにより全セルが埋まっている
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        expect(board[r][c]).not.toBeNull();
+      }
+    }
+  });
+
+  it('processDamageとdamageObstacles+gravity+fillの手動実行は同じ結果になる', () => {
+    // フロントエンド修正後のフロー: damageObstacles → gravity → fill
+    // エンジンフロー: processDamage(内部でdamageObstacles → gravity → fill)
+    // 両者が同一の結果・RNG状態になることを検証
+
+    function makeTestBoard(): (Cell | null)[][] {
+      const b: (Cell | null)[][] = [];
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        b[r] = [];
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          b[r][c] = { color: ((r * 3 + c * 7 + 11) % 5) as Color };
+        }
+      }
+      // 耐久値1のおじゃまタイルを配置
+      b[5][2] = { color: 1 as Color, obstacle: { durability: 1 } };
+      b[6][4] = { color: 2 as Color, obstacle: { durability: 1 } };
+      return b;
+    }
+
+    const clearedPositions = [
+      { row: 5, col: 1 }, { row: 5, col: 3 }, // (5,2)の左右
+      { row: 6, col: 3 },                       // (6,4)の左
+    ];
+
+    // --- processDamage（エンジンフロー） ---
+    const boardEngine = makeTestBoard();
+    for (const pos of clearedPositions) boardEngine[pos.row][pos.col] = null;
+    const rngEngine = createColumnRngStates(createRng(42));
+    const rngAfterEngine = processDamage(boardEngine, clearedPositions, rngEngine, 'clear');
+
+    // --- 手動フロー（修正後のフロントエンドと同等） ---
+    const boardManual = makeTestBoard();
+    for (const pos of clearedPositions) boardManual[pos.row][pos.col] = null;
+    const rngManual = createColumnRngStates(createRng(42));
+    const destroyed = damageObstacles(boardManual, clearedPositions);
+    let rngAfterManual = rngManual;
+    if (destroyed.length > 0) {
+      applyGravity(boardManual, true); // passThrough = true for clear mode
+      rngAfterManual = fillEmptyCells(boardManual, rngAfterManual, 5);
+    }
+
+    // 盤面が一致
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        expect(boardEngine[r][c]?.color).toBe(boardManual[r][c]?.color);
+        expect(boardEngine[r][c]?.obstacle?.durability).toBe(boardManual[r][c]?.obstacle?.durability);
+        expect(boardEngine[r][c]?.item).toBe(boardManual[r][c]?.item);
+      }
+    }
+
+    // RNG状態が一致
+    expect(rngAfterEngine).toEqual(rngAfterManual);
+  });
+
+  it('耐久値減少のみ（破壊なし）の場合はgravity+fillが実行されない', () => {
+    const board = makeEmptyBoard();
+    board[3][3] = { color: 0 as Color, obstacle: { durability: 2 } };
+    const boardBefore = cloneBoard(board);
+    const rng = createColumnRngStates(createRng(42));
+    const rngBefore = [...rng];
+
+    const rngAfter = processDamage(board, [{ row: 3, col: 2 }], rng, 'clear');
+
+    // 耐久値は減少
+    expect(board[3][3]?.obstacle?.durability).toBe(1);
+    // 破壊されていないのでRNGは変化しない
+    expect(rngAfter).toEqual(rngBefore);
   });
 });
