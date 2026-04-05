@@ -94,6 +94,7 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
 
   // Only write replay log to R2 if this score will be stored
   let scoreId: string;
+  let dbModified = false;
   if (!existing) {
     const replayLogKey = `replays/${userId}/${seed.id}/${generateId()}.json`;
     scoreId = generateId();
@@ -108,6 +109,7 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
         verifiedIsCleared ? 1 : 0, verifiedMaxChain, verifiedCascadePoints, replayLogKey
       ).run(),
     ]);
+    dbModified = true;
   } else if (isBetter) {
     const replayLogKey = `replays/${userId}/${seed.id}/${generateId()}.json`;
     scoreId = existing.id;
@@ -122,27 +124,29 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
         scoreId
       ).run(),
     ]);
+    dbModified = true;
   } else {
     scoreId = existing.id;
   }
 
-  // Invalidate ranking cache + evaluate achievements in parallel
+  // Invalidate ranking cache only when DB was modified (ensures DB write is committed first)
+  if (dbModified) {
+    await c.env.KV.delete(`ranking:${seed.id}:${data.mode}`);
+  }
+
+  // Evaluate achievements separately so failure doesn't affect cache invalidation
   let newAchievements: string[] = [];
   try {
-    const [, achievements] = await Promise.all([
-      c.env.KV.delete(`ranking:${seed.id}:${data.mode}`),
-      evaluateAchievements(c.env.DB, userId, {
-        mode: data.mode,
-        score: verifiedScore,
-        moveCount: verifiedMoveCount,
-        isCleared: verifiedIsCleared,
-        date: data.date,
-        maxChain: verifiedMaxChain,
-        cascadePoints: verifiedCascadePoints,
-        generatedItemTypes: data.generatedItemTypes,
-      }),
-    ]);
-    newAchievements = achievements;
+    newAchievements = await evaluateAchievements(c.env.DB, userId, {
+      mode: data.mode,
+      score: verifiedScore,
+      moveCount: verifiedMoveCount,
+      isCleared: verifiedIsCleared,
+      date: data.date,
+      maxChain: verifiedMaxChain,
+      cascadePoints: verifiedCascadePoints,
+      generatedItemTypes: data.generatedItemTypes,
+    });
   } catch {
     // Achievement evaluation failure should not break score submission
   }
