@@ -28,7 +28,7 @@ const DEFAULT_CASCADE_MOVE_LIMIT = 15;
 
 /** Clear/Survivalモードではおじゃまタイルを固定し、非おじゃまタイルが
  *  すり抜けて落下する（passThroughObstacles=true）。 */
-function isPassThroughMode(mode: GameMode): boolean {
+export function isPassThroughMode(mode: GameMode): boolean {
   return mode === 'clear' || mode === 'survival';
 }
 
