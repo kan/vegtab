@@ -8,6 +8,8 @@ export * from './score.js';
 export * from './gameOver.js';
 export * from './obstacle.js';
 export * from './survival.js';
+export * from './traceCollector.js';
+export * from './dropMoves.js';
 export * from './trace.js';
 export { initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation, cloneGameState, processDamage, applyWave, isPassThroughMode } from './engine.js';
 export { generateDailySeed } from './seed.js';

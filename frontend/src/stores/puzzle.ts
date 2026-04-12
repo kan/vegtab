@@ -217,14 +217,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       if (chain.chainIndex > maxChain.value) {
         maxChain.value = chain.chainIndex;
       }
-      // Keep gameState.maxChainIndex in sync for cascade display
-      if (gameState.value?.maxChainIndex !== undefined && chain.chainIndex > gameState.value.maxChainIndex) {
-        gameState.value.maxChainIndex = chain.chainIndex;
-      }
-      // Accumulate cascade points: chainIndex for chainIndex >= 2
-      if (gameState.value?.cascadePoints !== undefined && chain.chainIndex >= 2) {
-        gameState.value.cascadePoints += chain.chainIndex;
-      }
       for (const ig of chain.itemGens) {
         generatedItemTypes.value.add(ig.item);
       }
@@ -241,26 +233,6 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   function applyState(state: GameState) {
     _displayScore.value = null;
-    // Preserve numColors / maxChainIndex / cascadePoints from previous state
-    // so cascade display works.
-    const prev = gameState.value;
-    if (prev) {
-      const needsPatch = (state.numColors === undefined && prev.numColors !== undefined)
-        || (state.maxChainIndex === undefined && prev.maxChainIndex !== undefined)
-        || (state.cascadePoints === undefined && prev.cascadePoints !== undefined);
-      if (needsPatch) {
-        state = { ...state };
-        if (state.numColors === undefined && prev.numColors !== undefined) {
-          state.numColors = prev.numColors;
-        }
-        if (state.maxChainIndex === undefined && prev.maxChainIndex !== undefined) {
-          state.maxChainIndex = prev.maxChainIndex;
-        }
-        if (state.cascadePoints === undefined && prev.cascadePoints !== undefined) {
-          state.cascadePoints = prev.cascadePoints;
-        }
-      }
-    }
     gameState.value = state;
   }
 
