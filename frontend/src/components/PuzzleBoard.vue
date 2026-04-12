@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
+import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan, type WaveAnimPlan, type WaveAnimStep } from '@/stores/puzzle';
 import { BOARD_SIZE, cloneBoard, getSynthesisEffect, processAutoActivation, type Position, type Direction, type Cell, type Color, type ItemType } from '@vegtab/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
@@ -83,6 +83,13 @@ const dropTransitioning = ref(false);
 
 // --- Screen shake ---
 const shaking = ref(false);
+
+// --- Survival wave banner + cell states ---
+const waveBanner = ref<{ waveNumber: number } | null>(null);
+/** Cells newly placed as obstacles during wave animation (for pop-in effect) */
+const waveObstacleAppearing = reactive<Set<string>>(new Set());
+/** Cells whose obstacle durability is being bumped (+1) during wave animation */
+const waveBumpCells = reactive<Set<string>>(new Set());
 
 // --- Scope tap hint ---
 const showScopeTapHint = ref(false);
@@ -221,6 +228,7 @@ async function handleTap(pos: Position) {
 
   await animateItemEffects(plan);
   await animateDropAndChains(plan);
+  await animateWaveIfPresent(plan.waveAnim, plan.finalState.score);
 
   store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
@@ -338,6 +346,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   // Drop + regular chains
   await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
   await animateChainsWithScore(plan.regularChains, plan.finalState.score);
+  await animateWaveIfPresent(plan.waveAnim, plan.finalState.score);
 
   store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
@@ -421,6 +430,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   // Drop + regular chains
   await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
   await animateChainsWithScore(plan.regularChains, plan.finalState.score);
+  await animateWaveIfPresent(plan.waveAnim, plan.finalState.score);
 
   store.recordPlanStats(plan.regularChains);
   store.applyState(plan.finalState);
@@ -451,6 +461,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = swapPlan.boardAfterSwap;
     await animateChainsWithScore(swapPlan.chains, swapPlan.finalState.score);
+    await animateWaveIfPresent(swapPlan.waveAnim, swapPlan.finalState.score);
     store.recordPlanStats(swapPlan.chains);
     store.applyState(swapPlan.finalState);
     await autoActivateItems();
@@ -514,6 +525,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     visualBoard.value = itemSwap.plan.boardBeforeActivation;
     await animateItemEffects(itemSwap.plan);
     await animateDropAndChains(itemSwap.plan);
+    await animateWaveIfPresent(itemSwap.plan.waveAnim, itemSwap.plan.finalState.score);
     store.recordPlanStats([...itemSwap.preChains, ...itemSwap.plan.regularChains]);
     store.applyState(itemSwap.plan.finalState);
     await autoActivateItems();
@@ -557,6 +569,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     visualBoard.value = synthPlan.boardBeforeActivation;
     await animateSynthesisEffects(synthPlan);
     await animateSynthesisDropAndChains(synthPlan);
+    await animateWaveIfPresent(synthPlan.waveAnim, synthPlan.finalState.score);
     store.recordPlanStats(synthPlan.regularChains);
     store.applyState(synthPlan.finalState);
     await autoActivateItems();
@@ -911,6 +924,104 @@ async function animateDropAndChains(plan: ItemAnimPlan) {
   await animateChainsWithScore(plan.regularChains, plan.finalState.score);
 }
 
+// --- Survival wave animation ---
+
+/** ウェーブステップ1つ分のアイテム発動アニメ */
+async function animateWaveItemStep(step: WaveAnimStep) {
+  if (step.kind !== 'item_activate' || !step.effects) return;
+
+  // 各アイテム効果を順次発動（animateItemEffects と同じ流れ）
+  for (const effect of step.effects) {
+    playSE('item_use'); vibrate(20);
+    vbRemove(effect.itemPos);
+    await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
+    for (const t of effect.targets) vbRemove(t);
+    itemClearingCells.clear();
+    cellItemOverlay.clear();
+  }
+
+  // 発動後の落下・補充
+  if (step.dropMoves && step.newTileEntries && step.chainsAfter !== undefined) {
+    // 連鎖中のdropMoves前に入れ替えられた最後の盤面を合成: 連鎖後の最初の盤面を使う
+    // もし連鎖があればchain last の boardAfterDrop、なければ step の中間盤面を作るのが必要
+    // 簡易版: step.boardAfter から逆算せず、連鎖があればそれを順に再生
+    if (step.chainsAfter.length === 0) {
+      // 連鎖なし: dropアニメは省略し、後続の animateWaveObstaclePlace で
+      // step.boardAfter をまとめて反映する（アイテム発動 → おじゃまポップの流れ）
+    } else {
+      // 連鎖がある場合は既存 animateChainStep を使う
+      for (const chain of step.chainsAfter) {
+        await animateChainStep(chain);
+      }
+    }
+  }
+}
+
+/** ウェーブステップ1つの obstacle 出現アニメ */
+async function animateWaveObstaclePlace(pos: Position, boardAfter: (Cell | null)[][]) {
+  // visualBoardに新しいboardAfterを反映
+  visualBoard.value = cloneBoard(boardAfter);
+  const k = pk(pos.row, pos.col);
+  waveObstacleAppearing.add(k);
+  playSE('match'); vibrate(15);
+  await wait(scaled(220));
+  waveObstacleAppearing.delete(k);
+}
+
+/** ウェーブステップ1つの durability bump アニメ */
+async function animateWaveBump(pos: Position, boardAfter: (Cell | null)[][]) {
+  visualBoard.value = cloneBoard(boardAfter);
+  const k = pk(pos.row, pos.col);
+  waveBumpCells.add(k);
+  playSE('chain'); vibrate(25);
+  await wait(scaled(300));
+  waveBumpCells.delete(k);
+}
+
+async function animateWave(plan: WaveAnimPlan, finalScore: number) {
+  // 初期スコア: ウェーブ直前のスコア（= finalScore - plan.totalScore）
+  const preWaveScore = finalScore - plan.totalScore;
+  let running = preWaveScore;
+  store.setDisplayScore(running);
+
+  // バナー表示
+  waveBanner.value = { waveNumber: plan.waveNumber };
+  playSE('chain'); vibrate(40);
+  shaking.value = true;
+  setTimeout(() => { shaking.value = false; }, scaled(400));
+  await wait(scaled(500));
+
+  // 各ステップを順次再生
+  for (const step of plan.steps) {
+    if (step.kind === 'bump') {
+      await animateWaveBump(step.pos, step.boardAfter);
+    } else if (step.kind === 'item_activate') {
+      await animateWaveItemStep(step);
+      // アイテム発動でスコアを逐次加算
+      let stepScore = 0;
+      for (const e of step.effects ?? []) stepScore += calcItemEffectScore(e);
+      for (const ch of step.chainsAfter ?? []) stepScore += ch.score;
+      running += stepScore;
+      store.setDisplayScore(running);
+      // アイテム発動後にここで obstacle を設置（ポップ）
+      await animateWaveObstaclePlace(step.pos, step.boardAfter);
+    } else {
+      // place: 普通のタイルを obstacle で上書き
+      await animateWaveObstaclePlace(step.pos, step.boardAfter);
+    }
+  }
+
+  // 最終的にスコアを揃える
+  store.setDisplayScore(finalScore);
+  waveBanner.value = null;
+  visualBoard.value = cloneBoard(plan.finalBoard);
+}
+
+async function animateWaveIfPresent(waveAnim: WaveAnimPlan | undefined, finalScore: number) {
+  if (!waveAnim) return;
+  await animateWave(waveAnim, finalScore);
+}
+
 async function animateChainStep(chain: ChainAnimData) {
   const cs = cellSize.value;
 
@@ -1058,7 +1169,16 @@ function tileTransition(r: number, c: number) {
                 }"
               >
                 <!-- Obstacle tile -->
-                <div v-if="activeBoard[row - 1][col - 1]!.obstacle" class="tile obstacle-cell" :class="{ 'is-obstacle-clearing': obstacleClearingCells.has(pk(row - 1, col - 1)), 'is-obstacle-damaged': obstacleDamagedCells.has(pk(row - 1, col - 1)) }">
+                <div
+                  v-if="activeBoard[row - 1][col - 1]!.obstacle"
+                  class="tile obstacle-cell"
+                  :class="{
+                    'is-obstacle-clearing': obstacleClearingCells.has(pk(row - 1, col - 1)),
+                    'is-obstacle-damaged': obstacleDamagedCells.has(pk(row - 1, col - 1)),
+                    'is-wave-appearing': waveObstacleAppearing.has(pk(row - 1, col - 1)),
+                    'is-wave-bumping': waveBumpCells.has(pk(row - 1, col - 1)),
+                  }"
+                >
                   <ObstacleTile
                     :durability="activeBoard[row - 1][col - 1]!.obstacle!.durability"
                     :size="Math.max(0, cellSize - 5)"
@@ -1102,6 +1222,14 @@ function tileTransition(r: number, c: number) {
                 :size="Math.round(cellSize * 0.5)"
               />
             </div>
+
+            <!-- Survival wave preview marker -->
+            <div
+              v-if="store.wavePreviewKeySet.has(pk(row - 1, col - 1))"
+              class="wave-preview-marker"
+              :class="{ 'wave-preview-urgent': (store.movesUntilWave ?? 99) <= 1 }"
+              :style="{ width: (cellSize - 6) + 'px', height: (cellSize - 6) + 'px' }"
+            />
           </div>
         </div>
       </template>
@@ -1137,6 +1265,11 @@ function tileTransition(r: number, c: number) {
       >
         <span class="chain-text">{{ cl.chainText }}</span>
         <span class="chain-cp-text">{{ cl.cpText }}</span>
+      </div>
+
+      <!-- Survival wave banner -->
+      <div v-if="waveBanner" class="wave-banner">
+        WAVE {{ waveBanner.waveNumber }}
       </div>
 
       <!-- Scope selection overlay -->
@@ -1258,6 +1391,12 @@ function tileTransition(r: number, c: number) {
 .obstacle-cell.is-obstacle-clearing {
   animation: obstacle-destroy calc(0.35s / var(--anim-duration-factor, 1)) ease-out forwards;
 }
+.obstacle-cell.is-wave-appearing {
+  animation: wave-obstacle-pop calc(0.22s / var(--anim-duration-factor, 1)) ease-out both;
+}
+.obstacle-cell.is-wave-bumping {
+  animation: wave-obstacle-bump calc(0.3s / var(--anim-duration-factor, 1)) ease-out both;
+}
 @keyframes obstacle-shake {
   0%, 100% { transform: translate(0, 0); }
   15% { transform: translate(-3px, 0); }
@@ -1271,6 +1410,17 @@ function tileTransition(r: number, c: number) {
   30%  { transform: scale(1.1) rotate(5deg); opacity: 0.8; }
   60%  { transform: scale(0.8) rotate(-3deg); opacity: 0.5; }
   100% { transform: scale(0) rotate(10deg); opacity: 0; }
+}
+@keyframes wave-obstacle-pop {
+  0%   { transform: scale(0) rotate(-30deg); opacity: 0; filter: brightness(1.8) drop-shadow(0 0 8px var(--danger, #f44336)); }
+  60%  { transform: scale(1.25) rotate(4deg); opacity: 1; filter: brightness(1.4); }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; filter: brightness(1); }
+}
+@keyframes wave-obstacle-bump {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  25%      { transform: scale(1.2); filter: brightness(1.6) drop-shadow(0 0 8px var(--danger, #f44336)); }
+  50%      { transform: scale(0.95); filter: brightness(1.3); }
+  75%      { transform: scale(1.1); filter: brightness(1.2); }
 }
 
 /* Item cell */
@@ -1362,6 +1512,37 @@ function tileTransition(r: number, c: number) {
   0%   { transform: scale(0); opacity: 0; }
   70%  { transform: scale(1.2); opacity: 0.9; }
   100% { transform: scale(1); opacity: 0.8; }
+}
+/* Survival wave invasion preview marker — warns the player where obstacles will appear */
+.wave-preview-marker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 2px dashed var(--warning, #ff9800);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 12;
+  box-sizing: border-box;
+  animation: wave-preview-pulse 1.6s ease-in-out infinite;
+}
+.wave-preview-marker::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 6px;
+  background: rgba(255, 152, 0, 0.12);
+}
+.wave-preview-urgent {
+  border-color: var(--danger, #f44336);
+  animation-duration: 0.7s;
+}
+.wave-preview-urgent::after {
+  background: rgba(244, 67, 54, 0.18);
+}
+@keyframes wave-preview-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 /* Floating score */
 .floating-score {
@@ -1494,6 +1675,32 @@ function tileTransition(r: number, c: number) {
   15%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   60%  { opacity: 1; transform: translate(-50%, -50%) translateY(-12px); }
   100% { opacity: 0; transform: translate(-50%, -50%) translateY(-36px) scale(0.8); }
+}
+
+/* Survival wave banner */
+.wave-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 44px;
+  font-weight: 900;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(244, 67, 54, 0.95), rgba(255, 152, 0, 0.95));
+  padding: 12px 28px;
+  border-radius: 10px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 20px rgba(244, 67, 54, 0.5), 0 0 40px rgba(255, 152, 0, 0.3);
+  z-index: 40;
+  pointer-events: none;
+  animation: wave-banner-in calc(0.5s / var(--anim-duration-factor, 1)) ease-out both;
+}
+@keyframes wave-banner-in {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  50%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 /* Screen shake */

@@ -4,6 +4,7 @@ import {
 import { initializeGame, processAction, processAutoActivation } from './engine.js';
 import { getScopeAdjacentTargets } from './item.js';
 import { countObstacles } from './obstacle.js';
+import { currentWaveNumber } from './survival.js';
 
 export type GameMetrics = {
   seed: number;
@@ -12,7 +13,8 @@ export type GameMetrics = {
   moveCount: number;
   isCleared?: boolean;
   remainingObstacles?: number;
-  segmentsSurvived?: number;
+  /** Survival: 生存できたウェーブ数（currentWaveNumber(moveCount)と同義） */
+  wavesSurvived?: number;
   maxChainIndex?: number;
   cascadePoints?: number;
 };
@@ -91,8 +93,9 @@ export function playGame(seed: number, mode: GameMode, params?: GameInitParams):
     finalScore: state.score,
     moveCount: state.moveCount,
     isCleared: state.isCleared,
-    remainingObstacles: mode === 'clear' ? countObstacles(state.board) : undefined,
-    segmentsSurvived: mode === 'survival' ? Math.floor(state.moveCount / 5) : undefined,
+    remainingObstacles: (mode === 'clear' || mode === 'survival')
+      ? countObstacles(state.board) : undefined,
+    wavesSurvived: mode === 'survival' ? currentWaveNumber(state.moveCount) : undefined,
     maxChainIndex: state.maxChainIndex,
     cascadePoints: state.cascadePoints,
   };

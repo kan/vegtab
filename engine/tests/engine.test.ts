@@ -3,7 +3,7 @@ import { initializeGame, processAction, processScopeSynthesis, cloneGameState } 
 import { hasMatches, findMatches } from '../src/match.js';
 import { isGameOver, hasValidSwap, hasActivatableItems, checkGameOverState } from '../src/gameOver.js';
 import { countObstacles, allObstaclesCleared } from '../src/obstacle.js';
-import { DEFAULT_QUOTA_TABLE } from '../src/survival.js';
+import { SURVIVAL_WAVE_INTERVAL, SURVIVAL_MAX_OBSTACLE_DURABILITY } from '../src/survival.js';
 import { generateDailySeed } from '../src/seed.js';
 import { BOARD_SIZE, Cell, Color, GameState } from '../src/types.js';
 
@@ -253,9 +253,8 @@ describe('Sprint Mode', () => {
     }
   });
 
-  it('おじゃまタイルもquotaTableも持たない', () => {
+  it('Sprintモードではおじゃまタイルなし', () => {
     const state = initializeGame(42, 'sprint');
-    expect(state.quotaTable).toBeUndefined();
     const obstacleCount = countObstacles(state.board);
     expect(obstacleCount).toBe(0);
   });
@@ -348,17 +347,10 @@ describe('Clear Mode', () => {
 });
 
 describe('Survival Mode', () => {
-  it('初期化時にquotaTableが設定される', () => {
+  it('初期化時にseed値が保存される', () => {
     const state = initializeGame(42, 'survival');
     expect(state.mode).toBe('survival');
-    expect(state.quotaTable).toBeDefined();
-    expect(state.quotaTable!.length).toBe(DEFAULT_QUOTA_TABLE.length);
-  });
-
-  it('カスタムquotaTableが設定できる', () => {
-    const customTable = [100, 200, 300];
-    const state = initializeGame(42, 'survival', { quotaTable: customTable });
-    expect(state.quotaTable).toEqual(customTable);
+    expect(state.seed).toBe(42);
   });
 
   it('moveLimitは設定されない', () => {
@@ -366,36 +358,56 @@ describe('Survival Mode', () => {
     expect(state.moveLimit).toBeUndefined();
   });
 
-  it('おじゃまタイルは生成されない', () => {
+  it('初期盤面にはおじゃまタイルが配置されない', () => {
     const state = initializeGame(42, 'survival');
     expect(countObstacles(state.board)).toBe(0);
   });
 
-  it('チェックポイントでノルマ未達時にゲームオーバーになる', () => {
+  it('耐久値4のおじゃまタイルが存在するとゲームオーバー判定される', () => {
     const state = initializeGame(42, 'survival');
-    state.moveCount = 5; // チェックポイント
-    state.score = 0; // ノルマ(300)未達
+    // 手動で耐久値4のおじゃまタイルを配置
+    state.board[0][0] = {
+      color: 0 as Color,
+      obstacle: { durability: SURVIVAL_MAX_OBSTACLE_DURABILITY },
+    };
     const result = checkGameOverState(state);
     expect(result.gameOver).toBe(true);
   });
 
-  it('チェックポイントでノルマ達成時はゲームオーバーにならない', () => {
+  it('耐久値4未満のおじゃまタイルのみではゲームオーバーにならない（詰みでなければ）', () => {
     const state = initializeGame(42, 'survival');
-    state.moveCount = 5;
-    state.score = 300; // ノルマ達成
-    const result = checkGameOverState(state);
-    expect(result.gameOver).toBe(false);
-  });
-
-  it('チェックポイント以外ではノルマ判定しない', () => {
-    const state = initializeGame(42, 'survival');
-    state.moveCount = 3; // 5の倍数ではない
-    state.score = 0;
+    // 耐久値3のおじゃまを配置
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 3 } };
     const result = checkGameOverState(state);
     // 詰みでなければゲームオーバーではない
     if (hasValidSwap(state.board) || hasActivatableItems(state.board)) {
       expect(result.gameOver).toBe(false);
     }
+  });
+
+  it('おじゃまタイルが存在しない場合、詰みでなければゲームオーバーにならない', () => {
+    const state = initializeGame(42, 'survival');
+    state.moveCount = 3;
+    state.score = 0;
+    const result = checkGameOverState(state);
+    // 初期盤面はおじゃまなし・詰みでもないのでゲームオーバーにならない
+    if (hasValidSwap(state.board) || hasActivatableItems(state.board)) {
+      expect(result.gameOver).toBe(false);
+    }
+  });
+
+  it('cloneGameStateでseedが正しくコピーされる', () => {
+    const state = initializeGame(42, 'survival');
+    const cloned = cloneGameState(state);
+    expect(cloned.seed).toBe(42);
+    expect(cloned.seed).toBe(state.seed);
+  });
+
+  it('cloneGameStateで旧フィールド(quotaTable, segmentStartScore)が含まれない', () => {
+    const state = initializeGame(42, 'survival');
+    const cloned = cloneGameState(state);
+    expect((cloned as any).quotaTable).toBeUndefined();
+    expect((cloned as any).segmentStartScore).toBeUndefined();
   });
 });
 
@@ -407,7 +419,7 @@ describe('Mode Determinism', () => {
       expect(s1.mode).toBe(s2.mode);
       expect(s1.rngState).toEqual(s2.rngState);
       expect(s1.moveLimit).toBe(s2.moveLimit);
-      expect(s1.quotaTable).toEqual(s2.quotaTable);
+      expect(s1.seed).toBe(s2.seed);
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           expect(s1.board[r][c]?.color).toBe(s2.board[r][c]?.color);
@@ -426,9 +438,11 @@ describe('Mode Determinism', () => {
     expect(countObstacles(clear.board)).toBeGreaterThan(0);
     expect(countObstacles(sprint.board)).toBe(0);
 
-    // Survival は quotaTable がある
-    expect(survival.quotaTable).toBeDefined();
-    expect(sprint.quotaTable).toBeUndefined();
+    // Survival は初期盤面におじゃまなし（Sprintと同じ）
+    expect(countObstacles(survival.board)).toBe(0);
+    // Sprint には moveLimit があり Survival にはない
+    expect(sprint.moveLimit).toBeDefined();
+    expect(survival.moveLimit).toBeUndefined();
   });
 });
 
@@ -585,7 +599,7 @@ describe('Item Immediate Placement - All Modes', () => {
       const action = findValidSwap(state);
       if (!action) continue;
       state = processAction(state, action);
-      if (state.isGameOver) continue; // ノルマ未達でゲームオーバーの場合はスキップ
+      if (state.isGameOver) continue; // ウェーブ侵食によるゲームオーバーの場合はスキップ
       assertBoardIntegrity(state, `survival seed=${seed}`);
     }
   });

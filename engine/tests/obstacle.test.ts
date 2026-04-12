@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateObstacles, damageObstacles, countObstacles, allObstaclesCleared } from '../src/obstacle.js';
+import { generateObstacles, damageObstacles, countObstacles, allObstaclesCleared, hasObstacleWithMinDurability } from '../src/obstacle.js';
 import { processDamage } from '../src/engine.js';
 import { createRng } from '../src/rng.js';
 import { createColumnRngStates, cloneBoard, fillEmptyCells } from '../src/board.js';
@@ -192,6 +192,45 @@ describe('allObstaclesCleared', () => {
     const board = makeEmptyBoard();
     board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
     expect(allObstaclesCleared(board)).toBe(false);
+  });
+});
+
+describe('hasObstacleWithMinDurability', () => {
+  it('指定耐久値以上のおじゃまタイルがあればtrueを返す', () => {
+    const board = makeEmptyBoard();
+    board[2][3] = { color: 0 as Color, obstacle: { durability: 3 } };
+    expect(hasObstacleWithMinDurability(board, 3)).toBe(true);
+    expect(hasObstacleWithMinDurability(board, 2)).toBe(true);
+    expect(hasObstacleWithMinDurability(board, 1)).toBe(true);
+  });
+
+  it('指定耐久値未満のおじゃまタイルしかなければfalseを返す', () => {
+    const board = makeEmptyBoard();
+    board[2][3] = { color: 0 as Color, obstacle: { durability: 2 } };
+    expect(hasObstacleWithMinDurability(board, 3)).toBe(false);
+    expect(hasObstacleWithMinDurability(board, 4)).toBe(false);
+  });
+
+  it('おじゃまタイルがなければfalseを返す', () => {
+    const board = makeEmptyBoard();
+    expect(hasObstacleWithMinDurability(board, 1)).toBe(false);
+  });
+
+  it('耐久値4のおじゃまタイルでSURVIVAL_MAX_OBSTACLE_DURABILITY=4をチェック', () => {
+    const board = makeEmptyBoard();
+    board[0][0] = { color: 0 as Color, obstacle: { durability: 4 } };
+    expect(hasObstacleWithMinDurability(board, 4)).toBe(true);
+    board[0][0] = { color: 0 as Color, obstacle: { durability: 3 } };
+    expect(hasObstacleWithMinDurability(board, 4)).toBe(false);
+  });
+
+  it('複数おじゃまタイルがある場合、最大耐久値で判定される', () => {
+    const board = makeEmptyBoard();
+    board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+    board[1][1] = { color: 0 as Color, obstacle: { durability: 2 } };
+    board[2][2] = { color: 0 as Color, obstacle: { durability: 3 } };
+    expect(hasObstacleWithMinDurability(board, 3)).toBe(true);
+    expect(hasObstacleWithMinDurability(board, 4)).toBe(false);
   });
 });
 

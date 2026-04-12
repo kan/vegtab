@@ -86,6 +86,20 @@ export function allObstaclesCleared(board: (Cell | null)[][]): boolean {
   return true;
 }
 
+/** 耐久値が指定値以上のおじゃまタイルが盤上に存在するか */
+export function hasObstacleWithMinDurability(
+  board: (Cell | null)[][],
+  minDurability: number,
+): boolean {
+  for (let row = 0; row < BOARD_SIZE; row++) {
+    for (let col = 0; col < BOARD_SIZE; col++) {
+      const cell = board[row][col];
+      if (cell?.obstacle && cell.obstacle.durability >= minDurability) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * 指定位置のおじゃまタイルに1ダメージを与える。
  * 耐久値が0になったらセルをnullにする。

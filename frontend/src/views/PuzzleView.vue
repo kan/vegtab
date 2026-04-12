@@ -10,7 +10,7 @@ import { speakerLoudIcon, speakerMutedIcon, musicNoteIcon, speedIcon } from '@/a
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import RankingModal from '@/components/RankingModal.vue';
 import ModeSelector from '@/components/ModeSelector.vue';
-import SurvivalGauge from '@/components/SurvivalGauge.vue';
+import SurvivalWaveInfo from '@/components/SurvivalWaveInfo.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
 import SettingsModal from '@/components/SettingsModal.vue';
 import { shareIcon as shareIconUrl, trophyIcon } from '@/assets/icons';
@@ -346,7 +346,11 @@ const gameOverScore = computed(() => {
               <div class="score-label">{{ t('mode.cascadePoints') }}: {{ store.cascadePoints }}</div>
               <div class="move-label">{{ t('puzzle.score', { score: store.score }) }}</div>
             </template>
-            <template v-else-if="selectedMode !== 'survival'">
+            <template v-else-if="selectedMode === 'survival'">
+              <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
+              <div class="move-label">{{ t('mode.obstacles', { count: store.obstacleCount }) }}</div>
+            </template>
+            <template v-else>
               <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
               <div v-if="myBest > 0" class="best-label">{{ t('puzzle.best', { score: myBest.toLocaleString() }) }}</div>
             </template>
@@ -363,12 +367,19 @@ const gameOverScore = computed(() => {
             {{ t('puzzle.moveCount', { count: store.moveCount }) }}
           </div>
         </div>
-        <!-- Survival gauge -->
-        <div v-if="selectedMode === 'survival' && store.quotaTarget !== undefined && store.movesUntilCheck !== undefined" class="header-row">
-          <SurvivalGauge
-            :current-score="store.segmentScore"
-            :quota="store.quotaTarget"
-            :moves-until-check="store.movesUntilCheck"
+        <!-- Survival wave info -->
+        <div
+          v-if="selectedMode === 'survival'
+                && store.waveNumber !== undefined
+                && store.movesUntilWave !== undefined
+                && store.nextWaveObstacleCount !== undefined"
+          class="header-row"
+        >
+          <SurvivalWaveInfo
+            :current-wave="store.waveNumber"
+            :moves-until-wave="store.movesUntilWave"
+            :next-obstacle-count="store.nextWaveObstacleCount"
+            :is-preview-active="store.wavePreviewNumber !== null"
           />
         </div>
       </header>
@@ -386,7 +397,7 @@ const gameOverScore = computed(() => {
         <div class="game-over-card">
           <h2>{{ gameOverTitle }}</h2>
           <p class="final-score">{{ gameOverScore }}</p>
-          <p v-if="selectedMode === 'clear' || selectedMode === 'cascade'" class="clear-score-info">{{ t('puzzle.pts', { score: store.score }) }}</p>
+          <p v-if="selectedMode === 'clear' || selectedMode === 'cascade' || selectedMode === 'survival'" class="clear-score-info">{{ t('puzzle.pts', { score: store.score }) }}</p>
           <p v-if="selectedMode === 'sprint'" class="move-info">{{ t('puzzle.moveCount', { count: store.moveCount }) }}</p>
           <div class="game-over-actions actions-col">
             <button class="btn" @click="restart"><span class="btn-icon">&#x21BB;</span> {{ t('common.retry') }}</button>

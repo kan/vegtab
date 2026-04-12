@@ -60,7 +60,6 @@ export type SynthesisEffect =
 export type GameInitParams = {
   moveLimit?: number;        // Sprint/Cascade: default 15
   obstacleCount?: number;    // Clear: default seed-dependent 10-20
-  quotaTable?: number[];     // Survival: default generated
   numColors?: number;        // Cascade: default 4
 };
 
@@ -73,10 +72,10 @@ export type GameState = {
   moveCount: number;
   isGameOver: boolean;
   mode: GameMode;
+  /** ベースシード値（Survivalのウェーブ侵食位置算出などに利用） */
+  seed?: number;
   moveLimit?: number;        // Sprint only
   isCleared?: boolean;       // Clear: true when all obstacles removed
-  quotaTable?: number[];     // Survival: per-segment score quotas
-  segmentStartScore?: number; // Survival: score at start of current segment
   numColors?: number;        // Cascade: number of colors (default NUM_COLORS)
   maxChainIndex?: number;    // Cascade: max chain achieved so far
   cascadePoints?: number;    // Cascade: cumulative chain points (sum of chainIndex for chainIndex >= 2)

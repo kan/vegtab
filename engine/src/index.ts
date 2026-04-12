@@ -8,7 +8,7 @@ export * from './score.js';
 export * from './gameOver.js';
 export * from './obstacle.js';
 export * from './survival.js';
-export { initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation, cloneGameState, processDamage } from './engine.js';
+export { initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation, cloneGameState, processDamage, applyWave } from './engine.js';
 export { generateDailySeed } from './seed.js';
 export { playGame } from './autoPlayer.js';
 export type { GameMetrics } from './autoPlayer.js';

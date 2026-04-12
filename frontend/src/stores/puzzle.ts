@@ -9,12 +9,21 @@ import {
   getSynthesisEffect, getSynthesisTargets,
   getFlushTargets, getVCutTargets, getHCutTargets, getBurstTargets,
   getScopeAdjacentTargets, ITEM_PRIORITY,
-  countObstacles, damageObstacles, damageObstacleAt, getQuota,
+  countObstacles, damageObstacles, damageObstacleAt,
+  currentWaveNumber, movesUntilNextWave, waveObstacleCount,
+  previewWaveNumber, previewWavePositions, computeWavePositions,
+  SURVIVAL_WAVE_INTERVAL, SURVIVAL_MAX_OBSTACLE_DURABILITY,
   type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType, type Match, type SynthesisEffect,
   type Action,
   BOARD_SIZE, NUM_COLORS,
 } from '@vegtab/engine';
+
+/** Clear/Survivalモードではおじゃまタイルを固定し、非おじゃまが
+ *  すり抜けて落下する（passThroughObstacles=true）。 */
+function isPassThroughMode(mode: GameMode): boolean {
+  return mode === 'clear' || mode === 'survival';
+}
 
 /** Replay action — extends engine Action with scope synthesis and scope swap */
 export type ReplayAction = Action
@@ -40,6 +49,8 @@ export interface SwapAnimPlan {
   boardAfterSwap: (Cell | null)[][];
   chains: ChainAnimData[];
   finalState: GameState;
+  /** Survivalモード: この操作でウェーブが発生する場合のアニメーションプラン */
+  waveAnim?: WaveAnimPlan;
 }
 
 export interface ItemEffectStep {
@@ -98,6 +109,34 @@ export interface ItemAnimPlan {
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
+  /** Survivalモード: この操作でウェーブが発生する場合のアニメーションプラン */
+  waveAnim?: WaveAnimPlan;
+}
+
+/** Survivalモードのウェーブ侵食1ステップ分のアニメーションデータ */
+export interface WaveAnimStep {
+  pos: Position;
+  kind: 'place' | 'bump' | 'item_activate';
+  /** item_activate の場合: 発動したアイテム効果列 */
+  effects?: ItemEffectStep[];
+  /** item_activate の場合: アイテム効果後の落下 */
+  dropMoves?: { col: number; fromRow: number; toRow: number }[];
+  newTileEntries?: { row: number; col: number; segNulls: number }[];
+  /** item_activate の場合: アイテム効果後の連鎖 */
+  chainsAfter?: ChainAnimData[];
+  /** bump の場合: 上昇後の耐久値 */
+  newDurability?: number;
+  /** 本ステップ完了後の盤面 */
+  boardAfter: (Cell | null)[][];
+}
+
+export interface WaveAnimPlan {
+  waveNumber: number;
+  obstacleCount: number;
+  steps: WaveAnimStep[];
+  totalScore: number;
+  /** 全ステップ完了後の盤面（engineの finalState.board と一致） */
+  finalBoard: (Cell | null)[][];
 }
 
 export interface SynthesisEffectStep {
@@ -120,6 +159,8 @@ export interface SynthesisAnimPlan {
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
+  /** Survivalモード: この操作でウェーブが発生する場合のアニメーションプラン */
+  waveAnim?: WaveAnimPlan;
 }
 
 export interface ScopeAnimPlan {
@@ -134,6 +175,8 @@ export interface ScopeAnimPlan {
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
+  /** Survivalモード: この操作でウェーブが発生する場合のアニメーションプラン */
+  waveAnim?: WaveAnimPlan;
 }
 
 export interface ScopeSynthesisAnimPlan {
@@ -153,6 +196,8 @@ export interface ScopeSynthesisAnimPlan {
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
+  /** Survivalモード: この操作でウェーブが発生する場合のアニメーションプラン */
+  waveAnim?: WaveAnimPlan;
 }
 
 // --- Helpers ---
@@ -260,9 +305,15 @@ function computeDropMoves(board: (Cell | null)[][], passThroughObstacles = false
   return { moves, newTileEntries };
 }
 
-/** Sync ItemAnimPlan's last animation board with engine's authoritative board */
+/** Sync ItemAnimPlan's last animation board with engine's authoritative board。
+ *  waveAnim がある場合は、waveAnim.finalBoard を engine の最終盤面で上書きする
+ *  （チェーンの最終 boardAfterDrop は「ウェーブ直前の盤面」のまま保持）。 */
 function syncPlanBoard(plan: ItemAnimPlan): void {
   const authBoard = cloneBoard(plan.finalState.board);
+  if (plan.waveAnim) {
+    plan.waveAnim.finalBoard = authBoard;
+    return;
+  }
   if (plan.regularChains.length > 0) {
     plan.regularChains[plan.regularChains.length - 1].boardAfterDrop = authBoard;
   } else {
@@ -270,7 +321,10 @@ function syncPlanBoard(plan: ItemAnimPlan): void {
   }
 }
 
-/** ゲーム終了判定 + ボーナス加算 + finalState構築の共通ヘルパー */
+/** ゲーム終了判定 + finalState構築の共通ヘルパー
+ *
+ * Note: Survivalモードのウェーブ侵食はここでは適用しない。最終的な盤面・スコアは
+ * 呼び出し側で engine の processAction が返す finalState で上書きされる。 */
 function resolveFinalState(
   board: (Cell | null)[][],
   score: number,
@@ -278,12 +332,11 @@ function resolveFinalState(
   moveCount: number,
   mode: GameMode,
   moveLimit: number | undefined,
-  quotaTable: number[] | undefined,
-  segmentStartScore: number | undefined,
+  seed: number | undefined,
 ): GameState {
   const tempState: GameState = {
     board, score, rngState, moveCount,
-    isGameOver: false, mode, moveLimit, quotaTable, segmentStartScore,
+    isGameOver: false, mode, moveLimit, seed,
   };
   const goResult = checkGameOverState(tempState);
   return {
@@ -295,8 +348,7 @@ function resolveFinalState(
     isCleared: goResult.isCleared,
     mode,
     moveLimit,
-    quotaTable,
-    segmentStartScore: goResult.newSegmentStartScore ?? segmentStartScore,
+    seed,
   };
 }
 
@@ -360,8 +412,7 @@ function buildItemPlan(
   targetColor: number | undefined,
   gameMode: GameMode,
   gameMoveLimit?: number,
-  quotaTable?: number[],
-  segmentStartScore?: number,
+  seed?: number,
   suppressItemGen = false,
   suppressChains = false,
   numColors: number = NUM_COLORS,
@@ -373,7 +424,7 @@ function buildItemPlan(
   for (const e of effects) scoreFromItems += calcItemEffectScore(e);
 
   // おじゃまダメージはcomputeItemEffects内で直接処理済み
-  const passThrough = gameMode === 'clear';
+  const passThrough = isPassThroughMode(gameMode);
 
   const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
   applyGravity(board, passThrough);
@@ -393,15 +444,22 @@ function buildItemPlan(
     rng = result.rng;
   }
 
+  // Survivalウェーブが発生する場合はアニメプランを追加
+  const newMoveCount = moveCount + 1;
+  const waveResult = maybeAppendWavePlan(board, newMoveCount, gameMode, seed, rng, numColors);
+  totalScore += waveResult.scoreDelta;
+  rng = waveResult.rng;
+
   return {
     boardBeforeActivation: boardBefore,
     effects,
     dropMoves, newTileEntries, boardAfterDrop,
     regularChains,
     finalState: resolveFinalState(
-      board, totalScore, rng, moveCount + 1,
-      gameMode, gameMoveLimit, quotaTable, segmentStartScore,
+      board, totalScore, rng, newMoveCount,
+      gameMode, gameMoveLimit, seed,
     ),
+    waveAnim: waveResult.waveAnim,
   };
 }
 
@@ -411,7 +469,7 @@ function computeChainSteps(
   numColors: number = NUM_COLORS,
 ) {
   const chains: ChainAnimData[] = [];
-  const passThrough = gameMode === 'clear';
+  const passThrough = isPassThroughMode(gameMode);
   const MAX_CHAIN_ITERATIONS = 20;
   let chainIndex = startChain;
   let iterations = 0;
@@ -467,6 +525,171 @@ function computeChainSteps(
   return { chains, rng, totalScore };
 }
 
+/** Survivalウェーブ侵食のアニメプランを構築。
+ *
+ * boardAfterChains を入力として、engine の applyWave と同じロジックを
+ * frontend 側で再現しつつ、各ステップの中間情報（アイテム効果、落下、連鎖）
+ * を記録する。engine の applyWave と決定性は一致する（同じseed×waveNumber
+ * → 同じ位置・挙動）。
+ *
+ * **重要**: engine/src/engine.ts の applyWave を変更した場合は、本関数も
+ * 追従して更新すること。最終盤面は syncPlanBoard で engine 側と同期される
+ * ため致命的な乖離にはならないが、中間アニメーションが不正になる。
+ *
+ * 入力の board は変更される。呼び出し側で必要なら事前にクローンすること。 */
+function computeWavePlanForAnim(
+  board: (Cell | null)[][],
+  seed: number,
+  waveNumber: number,
+  rngState: number[],
+  numColors: number,
+): { plan: WaveAnimPlan; rng: number[] } {
+  const positions = computeWavePositions(seed, waveNumber);
+  const steps: WaveAnimStep[] = [];
+  let rng = rngState;
+  let totalScore = 0;
+
+  for (const pos of positions) {
+    const cell = board[pos.row]?.[pos.col];
+
+    // Case 3: 既存おじゃま → 耐久値 +1
+    if (cell?.obstacle) {
+      cell.obstacle.durability += 1;
+      steps.push({
+        pos,
+        kind: 'bump',
+        newDurability: cell.obstacle.durability,
+        boardAfter: cloneBoard(board),
+      });
+      continue;
+    }
+
+    // Case 2: アイテム → 強制発動
+    if (cell?.item) {
+      const item = cell.item;
+      const effectsAccum: ItemEffectStep[] = [];
+
+      // applyWave と同じロジックを再現
+      if (item === 'scope') {
+        // スプーン強制発動: 周囲4マスのみ消去
+        board[pos.row][pos.col] = null;
+        // ダミーの scope 効果ステップを作る（アニメのため targets を記録）
+        const adjTargets = getScopeAdjacentTargets(board, pos);
+        const cleared: Position[] = [];
+        const detonations: { pos: Position; item: ItemType }[] = [];
+        for (const t of adjTargets) {
+          const adj = board[t.row]?.[t.col];
+          if (!adj) continue;
+          if (adj.obstacle) {
+            if (damageObstacleAt(board, t)) cleared.push(t);
+            continue;
+          }
+          if (adj.item) {
+            // 誘爆 — computeItemEffects で展開
+            const detEffects = computeItemEffects(board, t, adj.item,
+              adj.item === 'flush' ? (findFlushTargetColor(board, t) ?? undefined) : undefined);
+            detonations.push({ pos: t, item: adj.item });
+            effectsAccum.push(...detEffects);
+          } else {
+            board[t.row][t.col] = null;
+            cleared.push(t);
+          }
+        }
+        // scope 自身の効果を先頭に挿入
+        effectsAccum.unshift({
+          itemType: 'scope', itemPos: pos,
+          targets: cleared, detonations, depth: 0,
+        });
+      } else if (item === 'flush') {
+        const targetColor = findFlushTargetColor(board, pos) ?? undefined;
+        if (targetColor === undefined) {
+          board[pos.row][pos.col] = null;
+        } else {
+          effectsAccum.push(...computeItemEffects(board, pos, item, targetColor));
+        }
+      } else {
+        effectsAccum.push(...computeItemEffects(board, pos, item, undefined));
+      }
+
+      // スコア加算
+      for (const e of effectsAccum) totalScore += calcItemEffectScore(e);
+
+      // 落下 → 補充 → 連鎖
+      const { moves: dropMoves, newTileEntries } = computeDropMoves(board, true);
+      applyGravity(board, true);
+      rng = fillEmptyCells(board, rng, numColors);
+      const chainResult = computeChainSteps(board, rng, 0, 2, 'survival', false, numColors);
+      const chainsAfter = chainResult.chains;
+      totalScore += chainResult.totalScore;
+      rng = chainResult.rng;
+
+      // 最後に位置へおじゃま設置（上書き）
+      const finalColor: Color = ((board[pos.row]?.[pos.col]?.color ?? 0) as Color);
+      board[pos.row][pos.col] = { color: finalColor, obstacle: { durability: 1 } };
+
+      steps.push({
+        pos,
+        kind: 'item_activate',
+        effects: effectsAccum,
+        dropMoves,
+        newTileEntries,
+        chainsAfter,
+        boardAfter: cloneBoard(board),
+      });
+      continue;
+    }
+
+    // Case 1: 通常タイル or null → 耐久値1のおじゃま設置
+    const color: Color = ((cell?.color ?? 0) as Color);
+    board[pos.row][pos.col] = { color, obstacle: { durability: 1 } };
+    steps.push({
+      pos,
+      kind: 'place',
+      boardAfter: cloneBoard(board),
+    });
+  }
+
+  return {
+    plan: {
+      waveNumber,
+      obstacleCount: positions.length,
+      steps,
+      totalScore,
+      finalBoard: cloneBoard(board),
+    },
+    rng,
+  };
+}
+
+/** 指定の操作後に Survival のウェーブ発生するか判定 */
+function shouldTriggerWaveAfter(
+  gameMode: GameMode,
+  seed: number | undefined,
+  newMoveCount: number,
+): boolean {
+  return gameMode === 'survival'
+      && seed !== undefined
+      && newMoveCount > 0
+      && newMoveCount % SURVIVAL_WAVE_INTERVAL === 0;
+}
+
+/** 指定の操作が Survivalウェーブ発生条件を満たすなら computeWavePlanForAnim を呼ぶ共通ヘルパー */
+function maybeAppendWavePlan(
+  board: (Cell | null)[][],
+  newMoveCount: number,
+  gameMode: GameMode,
+  seed: number | undefined,
+  rngState: number[],
+  numColors: number,
+): { waveAnim?: WaveAnimPlan; rng: number[]; scoreDelta: number } {
+  if (!shouldTriggerWaveAfter(gameMode, seed, newMoveCount)) {
+    return { rng: rngState, scoreDelta: 0 };
+  }
+  const waveNumber = newMoveCount / SURVIVAL_WAVE_INTERVAL;
+  const { plan, rng } = computeWavePlanForAnim(board, seed!, waveNumber, rngState, numColors);
+  return { waveAnim: plan, rng, scoreDelta: plan.totalScore };
+}
+
 // --- Store ---
 
 export const usePuzzleStore = defineStore('puzzle', () => {
@@ -507,25 +730,47 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     return peekNextColors(gameState.value.rngState, 4, gameState.value.numColors ?? NUM_COLORS);
   });
   const nc = computed(() => gameState.value?.numColors ?? NUM_COLORS);
-  const quotaTable = computed(() => gameState.value?.quotaTable);
-  const quotaTarget = computed(() => {
-    if (!gameState.value?.quotaTable) return undefined;
-    const mc = gameState.value.moveCount;
-    const nextCheckpoint = Math.ceil((mc + 1) / 5) * 5;
-    const idx = (nextCheckpoint / 5) - 1;
-    if (idx < 0) return getQuota(gameState.value.quotaTable, 0);
-    return getQuota(gameState.value.quotaTable, idx);
+
+  // --- Survival wave state ---
+  /** 現在までに発生済みのウェーブ番号（未発生なら0） */
+  const waveNumber = computed(() => {
+    if (!gameState.value || gameState.value.mode !== 'survival') return undefined;
+    return currentWaveNumber(gameState.value.moveCount);
   });
-  const movesUntilCheck = computed(() => {
-    if (!gameState.value?.quotaTable) return undefined;
-    const mc = gameState.value.moveCount;
-    return 5 - (mc % 5);
+  /** 次のウェーブまでの残りターン数 */
+  const movesUntilWave = computed(() => {
+    if (!gameState.value || gameState.value.mode !== 'survival') return undefined;
+    return movesUntilNextWave(gameState.value.moveCount);
   });
-  /** 現区間で稼いだスコア（displayScore反映） */
-  const segmentScore = computed(() => {
-    if (!gameState.value) return 0;
-    const currentScore = _displayScore.value ?? gameState.value.score;
-    return currentScore - (gameState.value.segmentStartScore ?? 0);
+  /** 次に発生するウェーブの番号（予告中かに関わらず常に有効） */
+  const nextWaveNumber = computed(() => {
+    if (!gameState.value || gameState.value.mode !== 'survival') return undefined;
+    return currentWaveNumber(gameState.value.moveCount) + 1;
+  });
+  /** 次のウェーブで侵食される個数 */
+  const nextWaveObstacleCount = computed(() => {
+    if (nextWaveNumber.value === undefined) return undefined;
+    return waveObstacleCount(nextWaveNumber.value);
+  });
+  /** 予告中（SURVIVAL_WAVE_PREVIEW_LEAD 以内）のウェーブ番号。予告中でなければ null */
+  const wavePreviewNumber = computed(() => {
+    if (!gameState.value || gameState.value.mode !== 'survival') return null;
+    return previewWaveNumber(gameState.value.moveCount);
+  });
+  /** 予告中のウェーブ侵食位置リスト（予告中でなければ空配列）
+   * PuzzleBoardで各セルに preview フラグを立てる判定に使う。 */
+  const wavePreviewPositions = computed<Position[]>(() => {
+    if (!gameState.value || gameState.value.mode !== 'survival') return [];
+    const seed = gameState.value.seed;
+    if (seed === undefined) return [];
+    const positions = previewWavePositions(seed, gameState.value.moveCount);
+    return positions ?? [];
+  });
+  /** 予告位置を row,col キーの Set で取得（O(1) 判定用） */
+  const wavePreviewKeySet = computed<Set<string>>(() => {
+    const s = new Set<string>();
+    for (const p of wavePreviewPositions.value) s.add(`${p.row},${p.col}`);
+    return s;
   });
 
   function startGame(newSeed?: number, gameMode?: GameMode) {
@@ -628,7 +873,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
 
     // おじゃまダメージはアイテム効果内で直接処理済み
-    const passThrough = state.mode === 'clear';
+    const passThrough = isPassThroughMode(state.mode);
     const effectScore = totalScore - state.score;
 
     const boardAfterClear = cloneBoard(board);
@@ -638,15 +883,22 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     rng = fillEmptyCells(board, rng, nc.value);
     let boardAfterDrop = cloneBoard(board);
 
-    const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
+    const { chains: regularChains, rng: rngAfterChains } =
       computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
+    rng = rngAfterChains;
+
+    // Survivalウェーブが発生する場合はアニメプランを追加
+    const newMoveCount = state.moveCount + 1;
+    const waveResult = maybeAppendWavePlan(board, newMoveCount, state.mode, state.seed, rng, nc.value);
 
     const finalState = processAction(state, { type: 'scope', pos: scopePos, targetCells });
     if (finalState === state) return null;
 
     // Sync last animation board with engine to prevent visual jump
     const authBoard = cloneBoard(finalState.board);
-    if (regularChains.length > 0) {
+    if (waveResult.waveAnim) {
+      waveResult.waveAnim.finalBoard = authBoard;
+    } else if (regularChains.length > 0) {
       regularChains[regularChains.length - 1].boardAfterDrop = authBoard;
     } else {
       boardAfterDrop = authBoard;
@@ -662,6 +914,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
       finalState,
+      waveAnim: waveResult.waveAnim,
     };
   }
 
@@ -804,7 +1057,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
 
     // おじゃまダメージはアイテム効果内で直接処理済み
-    const passThrough = state.mode === 'clear';
+    const passThrough = isPassThroughMode(state.mode);
     const effectScore = totalScore - state.score;
 
     const boardAfterClear = cloneBoard(board);
@@ -814,14 +1067,21 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     rng = fillEmptyCells(board, rng, nc.value);
     let boardAfterDrop = cloneBoard(board);
 
-    const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
+    const { chains: regularChains, rng: rngAfterChains } =
       computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
+    rng = rngAfterChains;
+
+    // Survivalウェーブが発生する場合はアニメプランを追加
+    const newMoveCount = state.moveCount + 1;
+    const waveResult = maybeAppendWavePlan(board, newMoveCount, state.mode, state.seed, rng, nc.value);
 
     const finalState = processScopeSynthesis(state, pos1, pos2, targetCells);
 
     // Sync last animation board with engine to prevent visual jump
     const authBoard = cloneBoard(finalState.board);
-    if (regularChains.length > 0) {
+    if (waveResult.waveAnim) {
+      waveResult.waveAnim.finalBoard = authBoard;
+    } else if (regularChains.length > 0) {
       regularChains[regularChains.length - 1].boardAfterDrop = authBoard;
     } else {
       boardAfterDrop = authBoard;
@@ -833,6 +1093,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
       finalState,
+      waveAnim: waveResult.waveAnim,
     };
   }
 
@@ -856,7 +1117,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     if (matches.length === 0) return null;
 
     const chains: ChainAnimData[] = [];
-    const passThrough = state.mode === 'clear';
+    const passThrough = isPassThroughMode(state.mode);
     let rng = state.rngState;
     let totalScore = state.score;
     let chainIndex = 1;
@@ -906,16 +1167,23 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       matches = findMatches(board);
     }
 
+    // Survivalウェーブが発生する場合はアニメプランを追加（この時点の board は pre-wave）
+    const newMoveCount = state.moveCount + 1;
+    const waveResult = maybeAppendWavePlan(board, newMoveCount, state.mode, state.seed, rng, nc.value);
+
     // Use engine's processAction for authoritative final state
     const finalState = processAction(state, { type: 'swap', pos, dir });
     if (finalState === state) return null; // engine rejected
 
     // Sync last animation board with engine to prevent visual jump
-    if (chains.length > 0) {
+    // (ウェーブアニメがある場合は pre-wave 盤面のまま保持し、waveAnim.finalBoard に最終盤面を入れる)
+    if (waveResult.waveAnim) {
+      waveResult.waveAnim.finalBoard = cloneBoard(finalState.board);
+    } else if (chains.length > 0) {
       chains[chains.length - 1].boardAfterDrop = cloneBoard(finalState.board);
     }
 
-    return { boardAfterSwap, chains, finalState };
+    return { boardAfterSwap, chains, finalState, waveAnim: waveResult.waveAnim };
   }
 
   function computeItemTapPlan(pos: Position): ItemAnimPlan | null {
@@ -934,7 +1202,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const plan = buildItemPlan(
       board, state.rngState, state.score, state.moveCount,
       pos, cell.item, targetColor,
-      state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+      state.mode, state.moveLimit, state.seed,
       false, false, nc.value,
     );
 
@@ -993,7 +1261,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     const plan = buildItemPlan(
       board, preRng, preScore, state.moveCount,
       newItemPos, itemCell.item!, targetColor,
-      state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+      state.mode, state.moveLimit, state.seed,
       false, false, nc.value,
     );
 
@@ -1201,7 +1469,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     }
 
     // おじゃまダメージはアイテム効果内で直接処理済み
-    const passThrough = state.mode === 'clear';
+    const passThrough = isPassThroughMode(state.mode);
     const effectScore = totalScore - state.score;
 
     const { moves: dropMoves, newTileEntries } = computeDropMoves(board, passThrough);
@@ -1209,8 +1477,13 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     rng = fillEmptyCells(board, rng, nc.value);
     let boardAfterDrop = cloneBoard(board);
 
-    const { chains: regularChains, rng: finalRng, totalScore: finalScore } =
+    const { chains: regularChains, rng: rngAfterChains } =
       computeChainSteps(board, rng, totalScore, 2, state.mode, false, nc.value);
+    rng = rngAfterChains;
+
+    // Survivalウェーブが発生する場合はアニメプランを追加（pre-wave 盤面を入力）
+    const newMoveCount = state.moveCount + 1;
+    const waveResult = maybeAppendWavePlan(board, newMoveCount, state.mode, state.seed, rng, nc.value);
 
     const finalState = processAction(state, { type: 'swap', pos, dir });
     if (finalState === state) return null;
@@ -1218,7 +1491,9 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     // Use engine's authoritative board for the final animation frame
     // to prevent visual jump when applyState is called
     const authBoard = cloneBoard(finalState.board);
-    if (regularChains.length > 0) {
+    if (waveResult.waveAnim) {
+      waveResult.waveAnim.finalBoard = authBoard;
+    } else if (regularChains.length > 0) {
       regularChains[regularChains.length - 1].boardAfterDrop = authBoard;
     } else {
       boardAfterDrop = authBoard;
@@ -1232,6 +1507,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
       dropMoves, newTileEntries, boardAfterDrop,
       regularChains,
       finalState,
+      waveAnim: waveResult.waveAnim,
     };
   }
 
@@ -1274,7 +1550,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
         const plan = buildItemPlan(
           board, state.rngState, state.score, state.moveCount - 1,
           pos, cell.item, targetColor,
-          state.mode, state.moveLimit, state.quotaTable, state.segmentStartScore,
+          state.mode, state.moveLimit, state.seed,
           true,  // suppressItemGen
           true,  // suppressChains (#9)
           nc.value,
@@ -1329,7 +1605,9 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     gameState, seed, replayLog,
     board, score, moveCount, autoActivating, isGameOver, isCleared,
     mode, moveLimit, remainingMoves, maxChainIndex, cascadePoints, nextTilePreview,
-    obstacleCount, quotaTable, quotaTarget, movesUntilCheck, segmentScore,
+    obstacleCount,
+    waveNumber, movesUntilWave, nextWaveNumber, nextWaveObstacleCount,
+    wavePreviewNumber, wavePreviewPositions, wavePreviewKeySet,
     startGame, restoreState, recordAction, swap, tap,
     activateScope, applyScopeSynthesis,
     computeScopePlan, computeScopeSwapPreChains, computeScopeSynthesisPlan,

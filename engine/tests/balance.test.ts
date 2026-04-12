@@ -71,12 +71,20 @@ describe('Balance: Survival mode', () => {
     results = SEEDS.map(seed => playGame(seed, 'survival'));
   });
 
-  it('平均生存セグメント数が妥当な範囲にある', () => {
-    const segments = results.map(r => r.segmentsSurvived!);
-    logStats('Survival segments', segments);
-    const { avg } = stats(segments);
+  it('平均生存ウェーブ数が妥当な範囲にある', () => {
+    const waves = results.map(r => r.wavesSurvived!);
+    logStats('Survival waves', waves);
+    const { avg } = stats(waves);
     expect(avg).toBeGreaterThanOrEqual(1);
     expect(avg).toBeLessThanOrEqual(50);
+  });
+
+  it('平均到達手数が妥当な範囲にある', () => {
+    const moves = results.map(r => r.moveCount);
+    logStats('Survival moveCount', moves);
+    const { avg } = stats(moves);
+    // 新仕様: 最低でも数ターンは耐えられるバランスを期待
+    expect(avg).toBeGreaterThanOrEqual(5);
   });
 });
 

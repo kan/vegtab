@@ -1,8 +1,8 @@
 import { Cell, Direction, GameMode, GameState, Position, BOARD_SIZE } from './types.js';
 import { findMatches } from './match.js';
 import { cloneBoard } from './board.js';
-import { allObstaclesCleared } from './obstacle.js';
-import { checkSurvivalQuota } from './survival.js';
+import { allObstaclesCleared, hasObstacleWithMinDurability } from './obstacle.js';
+import { SURVIVAL_MAX_OBSTACLE_DURABILITY } from './survival.js';
 
 /** 有効なスワイプが存在するかチェック */
 export function hasValidSwap(board: (Cell | null)[][]): boolean {
@@ -53,14 +53,12 @@ function isStuck(board: (Cell | null)[][]): boolean {
   return !hasValidSwap(board) && !hasActivatableItems(board);
 }
 
-/** ゲーム終了判定（3モード対応）
- * 戻り値の newSegmentStartScore が返された場合、呼び出し元で state.segmentStartScore を更新すること */
+/** ゲーム終了判定（4モード対応） */
 export function checkGameOverState(state: GameState): {
   gameOver: boolean;
   isCleared?: boolean;
-  newSegmentStartScore?: number;
 } {
-  const { board, mode, moveCount, moveLimit, score, quotaTable } = state;
+  const { board, mode, moveCount, moveLimit } = state;
 
   switch (mode) {
     case 'sprint':
@@ -75,15 +73,11 @@ export function checkGameOverState(state: GameState): {
       return { gameOver: false };
     }
     case 'survival': {
-      if (quotaTable) {
-        const segmentScore = score - (state.segmentStartScore ?? 0);
-        const check = checkSurvivalQuota(moveCount, segmentScore, quotaTable);
-        if (check.isCheckpoint) {
-          if (!check.quotaMet) return { gameOver: true };
-          // ノルマ達成: 呼び出し元で segmentStartScore を更新
-          return { gameOver: false, newSegmentStartScore: score };
-        }
+      // (a) 耐久値が SURVIVAL_MAX_OBSTACLE_DURABILITY に到達したおじゃまタイルが存在する → 即死
+      if (hasObstacleWithMinDurability(board, SURVIVAL_MAX_OBSTACLE_DURABILITY)) {
+        return { gameOver: true };
       }
+      // (b) 詰み（有効なスワイプなし かつ 起動可能なアイテムなし）
       if (isStuck(board)) return { gameOver: true };
       return { gameOver: false };
     }
@@ -96,17 +90,14 @@ export function isGameOver(
   mode: GameMode = 'sprint',
   moveCount: number = 0,
   moveLimit?: number,
-  score?: number,
-  quotaTable?: number[],
 ): boolean {
   return checkGameOverState({
     board,
     mode,
     moveCount,
     moveLimit,
-    score: score ?? 0,
+    score: 0,
     rngState: [],
     isGameOver: false,
-    quotaTable,
   }).gameOver;
 }

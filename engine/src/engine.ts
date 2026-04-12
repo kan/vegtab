@@ -19,10 +19,18 @@ import {
 import { calculateStepScore, getFullClearBonus } from './score.js';
 import { checkGameOverState } from './gameOver.js';
 import { generateObstacles, damageObstacles, damageObstacleAt } from './obstacle.js';
-import { DEFAULT_QUOTA_TABLE } from './survival.js';
+import {
+  computeWavePositions, SURVIVAL_WAVE_INTERVAL, SURVIVAL_MAX_OBSTACLE_DURABILITY,
+} from './survival.js';
 
 const DEFAULT_MOVE_LIMIT = 15;
 const DEFAULT_CASCADE_MOVE_LIMIT = 15;
+
+/** Clear/Survivalモードではおじゃまタイルを固定し、非おじゃまタイルが
+ *  すり抜けて落下する（passThroughObstacles=true）。 */
+function isPassThroughMode(mode: GameMode): boolean {
+  return mode === 'clear' || mode === 'survival';
+}
 
 /** 方向から隣接位置を計算 */
 function getAdjacentPos(pos: Position, dir: Direction): Position {
@@ -45,7 +53,7 @@ export function initializeGame(
   let rngState = createColumnRngStates(mainRng);
 
   // 自動消去ループ: マッチがなくなるまで繰り返す
-  const passThrough = mode === 'clear';
+  const passThrough = isPassThroughMode(mode);
   while (hasMatches(board)) {
     const matches = findMatches(board);
     const positions = getUniquePositions(matches);
@@ -63,6 +71,7 @@ export function initializeGame(
     moveCount: 0,
     isGameOver: false,
     mode,
+    seed,
   };
 
   if (numColors !== NUM_COLORS) {
@@ -79,8 +88,7 @@ export function initializeGame(
       break;
     }
     case 'survival':
-      state.quotaTable = params?.quotaTable ?? [...DEFAULT_QUOTA_TABLE];
-      state.segmentStartScore = 0;
+      // 新仕様: 初期盤面にはおじゃまタイル配置なし。ウェーブ侵食で出現する。
       break;
     case 'cascade':
       state.moveLimit = params?.moveLimit ?? DEFAULT_CASCADE_MOVE_LIMIT;
@@ -101,10 +109,9 @@ export function cloneGameState(state: GameState): GameState {
     moveCount: state.moveCount,
     isGameOver: state.isGameOver,
     mode: state.mode,
+    seed: state.seed,
     moveLimit: state.moveLimit,
     isCleared: state.isCleared,
-    quotaTable: state.quotaTable ? [...state.quotaTable] : undefined,
-    segmentStartScore: state.segmentStartScore,
     numColors: state.numColors,
     maxChainIndex: state.maxChainIndex,
     cascadePoints: state.cascadePoints,
@@ -293,7 +300,7 @@ export function processDamage(board: (Cell | null)[][], clearedPositions: Positi
   let rng = rngState;
   const destroyed = damageObstacles(board, clearedPositions);
   if (destroyed.length > 0) {
-    applyGravity(board, mode === 'clear');
+    applyGravity(board, isPassThroughMode(mode));
     rng = fillEmptyCells(board, rng, numColors);
   }
   return rng;
@@ -321,10 +328,127 @@ function updateMaxChain(state: GameState, steps: ChainStep[]): void {
 /** ゲーム終了チェック */
 function applyGameOver(state: GameState): void {
   const result = checkGameOverState(state);
-  state.isGameOver = result.gameOver;
+  if (result.gameOver) state.isGameOver = true;
   if (result.isCleared !== undefined) state.isCleared = result.isCleared;
-  if (result.newSegmentStartScore !== undefined) state.segmentStartScore = result.newSegmentStartScore;
+}
 
+/** Survivalウェーブ侵食を盤面に適用する。
+ *
+ * 侵食位置 (シード×ウェーブ番号から決定論的に算出) を処理順に走査し:
+ *  1. 既存おじゃまタイル → 耐久値+1 (MAX到達で gameOver=true)
+ *  2. アイテム → 強制発動 (スプーンは周囲4マスのみ、flushは自動targetColor)
+ *     → アイテム発動後の落下・補充・連鎖処理を行い、最後にその位置へ耐久値1のおじゃまを上書き設置
+ *  3. 通常タイル (または空) → そのまま耐久値1のおじゃま設置
+ *
+ * boardを直接変更する。戻り値の gameOver=true の場合は呼び出し側で state.isGameOver を立てる。
+ * 公開されているのはテスト向け。通常は finalizeMove から呼ばれる。
+ */
+export function applyWave(
+  board: (Cell | null)[][],
+  seed: number,
+  waveNumber: number,
+  rngState: number[],
+  numColors: number,
+): { score: number; rngState: number[]; gameOver: boolean } {
+  const positions = computeWavePositions(seed, waveNumber);
+  let rng = rngState;
+  let totalScore = 0;
+  let gameOver = false;
+
+  for (const pos of positions) {
+    const cell = board[pos.row]?.[pos.col];
+
+    // Case 1: 既存のおじゃまタイル → 耐久値+1
+    if (cell?.obstacle) {
+      cell.obstacle.durability += 1;
+      if (cell.obstacle.durability >= SURVIVAL_MAX_OBSTACLE_DURABILITY) {
+        gameOver = true;
+      }
+      continue;
+    }
+
+    // Case 2: アイテム → 強制発動 → おじゃま上書き（仕様§3.7 侵食位置の処理 2.）
+    if (cell?.item) {
+      const item = cell.item;
+
+      if (item === 'scope') {
+        // スプーンの強制発動: 周囲4マスのみ消去（ユーザー選択なし）
+        board[pos.row][pos.col] = null;
+        const adjTargets = getScopeAdjacentTargets(board, pos);
+        for (const t of adjTargets) {
+          const adjCell = board[t.row]?.[t.col];
+          if (!adjCell) continue;
+          if (adjCell.obstacle) {
+            damageObstacleAt(board, t);
+            continue;
+          }
+          if (adjCell.item) {
+            let tc: number | undefined;
+            if (adjCell.item === 'flush') {
+              tc = findFlushTargetColor(board, t) ?? undefined;
+            }
+            const r = activateItem(board, t, adjCell.item, tc, 1, rng);
+            totalScore += r.score;
+            rng = r.rngState;
+          } else {
+            board[t.row][t.col] = null;
+            totalScore += 10;
+          }
+        }
+      } else if (item === 'flush') {
+        const targetColor = findFlushTargetColor(board, pos) ?? undefined;
+        if (targetColor === undefined) {
+          // 対象色なし: アイテムのみ除去
+          board[pos.row][pos.col] = null;
+        } else {
+          const result = activateItem(board, pos, item, targetColor, 1, rng);
+          totalScore += result.score;
+          rng = result.rngState;
+        }
+      } else {
+        const result = activateItem(board, pos, item, undefined, 1, rng);
+        totalScore += result.score;
+        rng = result.rngState;
+      }
+
+      // 落下 → 補充 → 連鎖（Survivalは Clearと同じく passThrough）
+      applyGravity(board, true);
+      rng = fillEmptyCells(board, rng, numColors);
+      const chainResult = processChains(board, rng, 2, 'survival', false, numColors);
+      totalScore += chainResult.score;
+      rng = chainResult.rngState;
+
+      // 強制発動後の位置におじゃまタイル設置（新アイテム/通常タイルを上書き）
+      const finalColor: Color = ((board[pos.row]?.[pos.col]?.color ?? 0) as Color);
+      board[pos.row][pos.col] = { color: finalColor, obstacle: { durability: 1 } };
+      continue;
+    }
+
+    // Case 3: 通常タイル or null → 耐久値1のおじゃま設置（仕様§3.7 侵食位置の処理 1.）
+    const color: Color = ((cell?.color ?? 0) as Color);
+    board[pos.row][pos.col] = { color, obstacle: { durability: 1 } };
+  }
+
+  return { score: totalScore, rngState: rng, gameOver };
+}
+
+/** Survivalウェーブを必要に応じて適用してから gameOver 判定を行う共通ヘルパー。
+ *  processAction/processScopeSynthesis 等の末尾で applyGameOver の代わりに呼ぶ。 */
+function finalizeMove(state: GameState): void {
+  if (state.mode === 'survival'
+      && state.seed !== undefined
+      && state.moveCount > 0
+      && state.moveCount % SURVIVAL_WAVE_INTERVAL === 0) {
+    const waveNumber = state.moveCount / SURVIVAL_WAVE_INTERVAL;
+    const nc = state.numColors ?? NUM_COLORS;
+    const result = applyWave(state.board, state.seed, waveNumber, state.rngState, nc);
+    state.score += result.score;
+    state.rngState = result.rngState;
+    if (result.gameOver) {
+      state.isGameOver = true;
+    }
+  }
+  applyGameOver(state);
 }
 
 /** プレイヤーの操作を処理して新しいGameStateを返す */
@@ -396,14 +520,14 @@ export function processAction(state: GameState, action: Action): GameState {
     }
 
     // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-    applyGravity(board, newState.mode === 'clear');
+    applyGravity(board, isPassThroughMode(newState.mode));
     newState.rngState = fillEmptyCells(board, newState.rngState, nc);
     const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
 
     updateMaxChain(newState, chainResult.steps);
-    applyGameOver(newState);
+    finalizeMove(newState);
     return newState;
   }
 
@@ -430,7 +554,7 @@ export function processAction(state: GameState, action: Action): GameState {
     newState.moveCount++;
 
     // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-    applyGravity(board, newState.mode === 'clear');
+    applyGravity(board, isPassThroughMode(newState.mode));
     newState.rngState = fillEmptyCells(board, newState.rngState, nc);
     const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
     newState.score += chainResult.score;
@@ -467,14 +591,14 @@ export function processAction(state: GameState, action: Action): GameState {
         newState.moveCount++;
 
         // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-        applyGravity(board, newState.mode === 'clear');
+        applyGravity(board, isPassThroughMode(newState.mode));
         newState.rngState = fillEmptyCells(board, newState.rngState, nc);
         const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
         newState.score += chainResult.score;
         newState.rngState = chainResult.rngState;
 
         updateMaxChain(newState, chainResult.steps);
-        applyGameOver(newState);
+        finalizeMove(newState);
         return newState;
       }
     }
@@ -496,7 +620,7 @@ export function processAction(state: GameState, action: Action): GameState {
       board[action.pos.row][action.pos.col] = cell2;
       board[targetPos.row][targetPos.col] = cell1;
 
-      const passThrough = newState.mode === 'clear';
+      const passThrough = isPassThroughMode(newState.mode);
 
       // #15: 野菜のマッチ判定を先に処理（pre-chains）
       const preChainResult = processChains(board, newState.rngState, 1, newState.mode, false, nc);
@@ -508,7 +632,7 @@ export function processAction(state: GameState, action: Action): GameState {
       if (!currentItemPos) {
         // アイテムが消滅（pre-chainで誘爆等） — スワップのみ有効
         newState.moveCount++;
-        applyGameOver(newState);
+        finalizeMove(newState);
         return newState;
       }
 
@@ -531,7 +655,7 @@ export function processAction(state: GameState, action: Action): GameState {
 
       updateMaxChain(newState, preChainResult.steps);
       updateMaxChain(newState, chainResult.steps);
-      applyGameOver(newState);
+      finalizeMove(newState);
       return newState;
     }
 
@@ -571,7 +695,7 @@ export function processAction(state: GameState, action: Action): GameState {
     newState.rngState = processDamage(board, cleared, newState.rngState, newState.mode, nc);
 
     // 落下 → 補充 → 連鎖
-    applyGravity(board, newState.mode === 'clear');
+    applyGravity(board, isPassThroughMode(newState.mode));
     newState.rngState = fillEmptyCells(board, newState.rngState, nc);
     const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
     newState.score += chainResult.score;
@@ -581,7 +705,7 @@ export function processAction(state: GameState, action: Action): GameState {
     updateMaxChain(newState, chainResult.steps);
   }
 
-  applyGameOver(newState);
+  finalizeMove(newState);
   return newState;
 }
 
@@ -662,7 +786,7 @@ function processSynthesis(
     }
 
     totalScore += getFullClearBonus();
-    applyGravity(board, mode === 'clear');
+    applyGravity(board, isPassThroughMode(mode));
     rng = fillEmptyCells(board, rng, numColors);
 
     return { score: totalScore, rngState: rng, clearedPositions: allCleared };
@@ -830,14 +954,14 @@ export function processScopeSynthesis(
 
   // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
   const nc = newState.numColors ?? NUM_COLORS;
-  applyGravity(board, newState.mode === 'clear');
+  applyGravity(board, isPassThroughMode(newState.mode));
   newState.rngState = fillEmptyCells(board, newState.rngState, nc);
   const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc);
   newState.score += chainResult.score;
   newState.rngState = chainResult.rngState;
 
   updateMaxChain(newState, chainResult.steps);
-  applyGameOver(newState);
+  finalizeMove(newState);
   return newState;
 }
 
@@ -874,7 +998,7 @@ export function processScopeSwap(
   if (!scopePos) {
     // Scope was destroyed during pre-chains
     newState.moveCount++;
-    applyGameOver(newState);
+    finalizeMove(newState);
     return newState;
   }
 
@@ -952,7 +1076,7 @@ function processChains(
         const c = getUniquePositions(m);
         for (const p of c) board[p.row][p.col] = null;
         rng = processDamage(board, c, rng, mode, numColors);
-        applyGravity(board, mode === 'clear');
+        applyGravity(board, isPassThroughMode(mode));
         rng = fillEmptyCells(board, rng, numColors);
       }
       break;
@@ -993,7 +1117,7 @@ function processChains(
     rng = processDamage(board, cleared, rng, mode, numColors);
 
     // 落下 → 補充
-    applyGravity(board, mode === 'clear');
+    applyGravity(board, isPassThroughMode(mode));
     rng = fillEmptyCells(board, rng, numColors);
   }
 
