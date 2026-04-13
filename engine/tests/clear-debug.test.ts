@@ -233,19 +233,20 @@ describe('CLEAR mode debug - 2026-04-05', () => {
     expect(flushCount).toBeGreaterThan(0);
   });
 
-  it('verify engine handles move 7 (f1右) correctly — obstacle destroyed', () => {
+  it('verify engine handles move 7 (f1右) correctly — obstacle survives after itemPos fix', () => {
     const { state: before } = applyMoves(6);
     const { state: after } = applyMoves(7);
 
-    // a4 had dur=1 before, should be destroyed after
+    // findItemPosition のスワップ後位置修正により、move 5 以降の盤面状態が変化。
+    // 修正前: 誤った flush が発動し大量連鎖 → move 7 で obstacle 破壊 → クリア
+    // 修正後: 正しい flush が発動 → move 7 では obstacle が残存
     expect(before.board[4][0]?.obstacle?.durability).toBe(1);
-    expect(after.board[4][0]?.obstacle).toBeUndefined();
+    expect(after.board[4][0]?.obstacle?.durability).toBe(1);
 
-    console.log('\nMove 7: a4 obstacle correctly destroyed (dur=1 → gone)');
-    console.log('User reports it "briefly reappears" — frontend animation timing issue.');
+    console.log('\nMove 7: a4 obstacle survives (dur=1 remains)');
+    console.log('itemPos fix changed flush activation in move 5, altering subsequent board state.');
 
-    expect(after.isGameOver).toBe(true);
-    expect(after.isCleared).toBe(true);
+    expect(after.isGameOver).toBe(false);
   });
 
   it('FIXED: frontend flow (damageObstacles+gravity+fill) matches processDamage for obstacle destruction', () => {

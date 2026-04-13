@@ -695,9 +695,8 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     // アイテムとのスワイプ（アイテム起動）
     if (cell1.item || cell2.item) {
       const itemCell = cell1.item ? cell1 : cell2;
-      const itemPos = cell1.item ? action.pos : targetPos;
+      const itemPos = cell1.item ? targetPos : action.pos;
       const otherCell = cell1.item ? cell2 : cell1;
-      const otherPos = cell1.item ? targetPos : action.pos;
 
       // スプーンはスワイプ起動不可（tapの代わりにscope actionで）
       if (itemCell.item === 'scope') return state;
