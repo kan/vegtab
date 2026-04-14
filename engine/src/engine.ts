@@ -481,6 +481,21 @@ export function applyWave(
     }
   }
 
+  // 全位置処理後に盤面を再チェック: アイテム強制発動で耐久値が下がった場合を反映
+  if (gameOver) {
+    gameOver = false;
+    for (let r = 0; r < board.length; r++) {
+      for (let c = 0; c < board[r].length; c++) {
+        const cell = board[r][c];
+        if (cell?.obstacle && cell.obstacle.durability >= SURVIVAL_MAX_OBSTACLE_DURABILITY) {
+          gameOver = true;
+          break;
+        }
+      }
+      if (gameOver) break;
+    }
+  }
+
   return { score: totalScore, rngState: rng, gameOver };
 }
 

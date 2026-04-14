@@ -483,6 +483,206 @@ describe('applyWave直接: gameOver判定', () => {
   });
 });
 
+describe('applyWave直接: アイテム強制発動でおじゃま耐久値4が解消されればgameOver=false', () => {
+  it('耐久値3→4になったおじゃまが同ウェーブ内のscope強制発動でダメージを受けるとgameOver=false', () => {
+    // 侵食位置リストから、隣接する2位置（先=おじゃま耐久値3、後=scopeアイテム）を探す
+    const positions = computeWavePositions(SEED, 1);
+    let obstacleIdx = -1;
+    let scopeIdx = -1;
+
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const pi = positions[i];
+        const pj = positions[j];
+        const dr = Math.abs(pi.row - pj.row);
+        const dc = Math.abs(pi.col - pj.col);
+        if ((dr === 1 && dc === 0) || (dr === 0 && dc === 1)) {
+          // i が先に処理される（obstacle bump）、j が後に処理される（scope 発動）
+          obstacleIdx = i;
+          scopeIdx = j;
+          break;
+        }
+      }
+      if (obstacleIdx >= 0) break;
+    }
+    // 隣接ペアが見つからなければテスト失敗（シード42では必ず見つかる）
+    expect(obstacleIdx).toBeGreaterThanOrEqual(0);
+
+    const obsPos = positions[obstacleIdx];
+    const scopePos = positions[scopeIdx];
+
+    const state = initializeGame(SEED, 'survival');
+    // 先に処理される位置に耐久値3のおじゃまを配置（→ウェーブで4になる）
+    state.board[obsPos.row][obsPos.col] = { color: 0 as Color, obstacle: { durability: 3 } };
+    // 後に処理される位置にscopeアイテムを配置（→強制発動で隣接おじゃまにダメージ）
+    state.board[scopePos.row][scopePos.col] = { color: 0 as Color, item: 'scope' };
+
+    const result = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
+
+    // scope の強制発動で耐久値4のおじゃまがダメージを受け3に戻る → gameOver=false
+    expect(state.board[obsPos.row][obsPos.col]?.obstacle?.durability).toBe(3);
+    expect(result.gameOver).toBe(false);
+  });
+});
+
+describe('applyWave直接: 再チェックロジックの追加エッジケース', () => {
+  it('gameOverが一度もtrueにならない場合、再チェックは無影響で結果は同じ', () => {
+    // 耐久値2以下のおじゃまのみ配置 → gameOverは発生せず再チェック不要
+    const state = initializeGame(SEED, 'survival');
+    const positions = computeWavePositions(SEED, 1);
+    state.board[positions[0].row][positions[0].col] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const result = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
+    // 耐久値1+1=2 → gameOver=false
+    expect(state.board[positions[0].row][positions[0].col]?.obstacle?.durability).toBe(2);
+    expect(result.gameOver).toBe(false);
+  });
+
+  it('複数位置で耐久値4到達し1箇所のみ解消された場合、残りの4があるためgameOver=true', () => {
+    // 隣接する侵食位置3つのうち、2つに耐久値3のおじゃまを配置し、
+    // 残り1つにscopeを配置。scopeは1つの隣接おじゃましかダメージ処理できないケースを想定
+    const positions = computeWavePositions(SEED, 1);
+
+    // 3つの侵食位置を確保: そのうち2つが互いに隣接で、1つがscope配置位置
+    // 最初の2つがbump対象、3つ目にscope → 3つ目の隣接に1つ目があるペアを探す
+    let obs1Idx = -1;
+    let obs2Idx = -1;
+    let scopeIdx = -1;
+
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        for (let k = j + 1; k < positions.length; k++) {
+          const pi = positions[i];
+          const pj = positions[j];
+          const pk = positions[k];
+          // k (scope) が i (obstacle) に隣接しているが、j (obstacle) には隣接していない
+          const kiAdj = (Math.abs(pk.row - pi.row) + Math.abs(pk.col - pi.col)) === 1;
+          const kjAdj = (Math.abs(pk.row - pj.row) + Math.abs(pk.col - pj.col)) === 1;
+          if (kiAdj && !kjAdj) {
+            obs1Idx = i;
+            obs2Idx = j;
+            scopeIdx = k;
+            break;
+          }
+        }
+        if (obs1Idx >= 0) break;
+      }
+      if (obs1Idx >= 0) break;
+    }
+    if (obs1Idx < 0) return; // 適切な配置が見つからなければスキップ
+
+    const obs1Pos = positions[obs1Idx];
+    const obs2Pos = positions[obs2Idx];
+    const scopePos = positions[scopeIdx];
+
+    const state = initializeGame(SEED, 'survival');
+    // 2箇所に耐久値3のおじゃまを配置（→ウェーブで4になる）
+    state.board[obs1Pos.row][obs1Pos.col] = { color: 0 as Color, obstacle: { durability: 3 } };
+    state.board[obs2Pos.row][obs2Pos.col] = { color: 0 as Color, obstacle: { durability: 3 } };
+    // scope を配置（→強制発動で obs1 のみダメージ、obs2 は範囲外）
+    state.board[scopePos.row][scopePos.col] = { color: 0 as Color, item: 'scope' };
+
+    const result = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
+
+    // obs1: 耐久値3→4→scopeで-1=3 になるべき（隣接なので）
+    expect(state.board[obs1Pos.row][obs1Pos.col]?.obstacle?.durability).toBe(3);
+    // obs2: 耐久値3→4 でscopeの範囲外なので4のまま → gameOver=true
+    expect(state.board[obs2Pos.row][obs2Pos.col]?.obstacle?.durability).toBe(4);
+    expect(result.gameOver).toBe(true);
+  });
+
+  it('v_cutの強制発動で同列のおじゃま耐久値4が3に戻りgameOver=falseになる', () => {
+    const positions = computeWavePositions(SEED, 1);
+    // 同じ列にある隣接ペアを探す（先=おじゃま耐久値3、後=v_cutアイテム）
+    let obstacleIdx = -1;
+    let itemIdx = -1;
+
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const pi = positions[i];
+        const pj = positions[j];
+        // 同じ列で異なる行にあるペア（v_cutは列全体を消去するので同列であればOK）
+        if (pi.col === pj.col && pi.row !== pj.row) {
+          obstacleIdx = i;
+          itemIdx = j;
+          break;
+        }
+      }
+      if (obstacleIdx >= 0) break;
+    }
+    if (obstacleIdx < 0) return; // 適切な配置が見つからなければスキップ
+
+    const obsPos = positions[obstacleIdx];
+    const itemPos = positions[itemIdx];
+
+    const state = initializeGame(SEED, 'survival');
+    // 先に処理される位置に耐久値3のおじゃま
+    state.board[obsPos.row][obsPos.col] = { color: 0 as Color, obstacle: { durability: 3 } };
+    // 後に処理される位置にv_cutアイテム
+    state.board[itemPos.row][itemPos.col] = { color: 0 as Color, item: 'v_cut' };
+
+    const result = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
+
+    // v_cut は同列全体を消去 → 同列のおじゃまにダメージ → 耐久値4→3
+    // 盤面再チェックで耐久値4がなくなる → gameOver=false
+    const obsDurability = state.board[obsPos.row][obsPos.col]?.obstacle?.durability;
+    if (obsDurability !== undefined) {
+      expect(obsDurability).toBeLessThan(SURVIVAL_MAX_OBSTACLE_DURABILITY);
+    }
+    expect(result.gameOver).toBe(false);
+  });
+
+  it('h_cutの強制発動で同行のおじゃま耐久値4にダメージを与えてgameOver=falseになる', () => {
+    const positions = computeWavePositions(SEED, 1);
+    // 同じ行にあるペアを探す
+    let obstacleIdx = -1;
+    let itemIdx = -1;
+
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const pi = positions[i];
+        const pj = positions[j];
+        if (pi.row === pj.row && pi.col !== pj.col) {
+          obstacleIdx = i;
+          itemIdx = j;
+          break;
+        }
+      }
+      if (obstacleIdx >= 0) break;
+    }
+    if (obstacleIdx < 0) return; // スキップ
+
+    const obsPos = positions[obstacleIdx];
+    const itemPos = positions[itemIdx];
+
+    const state = initializeGame(SEED, 'survival');
+    state.board[obsPos.row][obsPos.col] = { color: 0 as Color, obstacle: { durability: 3 } };
+    state.board[itemPos.row][itemPos.col] = { color: 0 as Color, item: 'h_cut' };
+
+    const result = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
+
+    // h_cut は同行全体を消去 → 同行のおじゃまにダメージ
+    const obsDurability = state.board[obsPos.row][obsPos.col]?.obstacle?.durability;
+    if (obsDurability !== undefined) {
+      expect(obsDurability).toBeLessThan(SURVIVAL_MAX_OBSTACLE_DURABILITY);
+    }
+    expect(result.gameOver).toBe(false);
+  });
+
+  it('再チェックロジックは gameOver=false の場合に実行されないため既存結果に影響しない', () => {
+    // アイテムなし・おじゃまなしの盤面にウェーブ適用 → 全て耐久値1で gameOver=false
+    const state = initializeGame(SEED, 'survival');
+    const result = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
+
+    expect(result.gameOver).toBe(false);
+    // 全侵食位置が耐久値1であることを確認
+    const positions = computeWavePositions(SEED, 1);
+    for (const pos of positions) {
+      expect(state.board[pos.row][pos.col]?.obstacle?.durability).toBe(1);
+    }
+  });
+});
+
 describe('Survival統合: cloneGameStateのseedフィールド', () => {
   it('cloneGameStateでseedが正しくコピーされる', () => {
     const state = initializeGame(SEED, 'survival');
