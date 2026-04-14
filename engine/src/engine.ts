@@ -374,6 +374,9 @@ export function applyWave(
   let totalScore = 0;
   let gameOver = false;
 
+  // --- フェーズ1: 全位置にお邪魔タイルを配置（アイテムは保存して後で発動） ---
+  const deferredItems: { pos: Position; item: ItemType }[] = [];
+
   for (const pos of positions) {
     const cell = board[pos.row]?.[pos.col];
 
@@ -394,82 +397,12 @@ export function applyWave(
       continue;
     }
 
-    // Case 2: アイテム → 強制発動 → おじゃま上書き（仕様§3.7 侵食位置の処理 2.）
+    // Case 2: アイテム → 保存してからおじゃま設置（発動はフェーズ2で）
     if (cell?.item) {
-      const item = cell.item;
-      let stepScore = 0;
-
-      if (item === 'scope') {
-        // スプーンの強制発動: 周囲4マスのみ消去（ユーザー選択なし）
-        board[pos.row][pos.col] = null;
-        const adjTargets = getScopeAdjacentTargets(board, pos);
-        for (const t of adjTargets) {
-          const adjCell = board[t.row]?.[t.col];
-          if (!adjCell) continue;
-          if (adjCell.obstacle) {
-            damageObstacleAt(board, t);
-            continue;
-          }
-          if (adjCell.item) {
-            let tc: number | undefined;
-            if (adjCell.item === 'flush') {
-              tc = findFlushTargetColor(board, t) ?? undefined;
-            }
-            const r = activateItem(board, t, adjCell.item, tc, 1, rng, undefined, collector);
-            stepScore += r.score;
-            rng = r.rngState;
-          } else {
-            board[t.row][t.col] = null;
-            stepScore += 10;
-          }
-        }
-      } else if (item === 'flush') {
-        const targetColor = findFlushTargetColor(board, pos) ?? undefined;
-        if (targetColor === undefined) {
-          // 対象色なし: アイテムのみ除去
-          board[pos.row][pos.col] = null;
-        } else {
-          const result = activateItem(board, pos, item, targetColor, 1, rng, undefined, collector);
-          stepScore += result.score;
-          rng = result.rngState;
-        }
-      } else {
-        const result = activateItem(board, pos, item, undefined, 1, rng, undefined, collector);
-        stepScore += result.score;
-        rng = result.rngState;
-      }
-
-      totalScore += stepScore;
-
-      // collector: gravity 前に dropMoves を計算
-      const dropData = collector?.onWaveStep
-        ? computeDropMoves(board, true)
-        : undefined;
-
-      // 落下 → 補充 → 連鎖（Survivalは Clearと同じく passThrough）
-      applyGravity(board, true);
-      rng = fillEmptyCells(board, rng, numColors);
-      const chainResult = processChains(board, rng, 2, 'survival', false, numColors, collector);
-      totalScore += chainResult.score;
-      rng = chainResult.rngState;
-
-      // 強制発動後の位置におじゃまタイル設置（新アイテム/通常タイルを上書き）
-      const finalColor: Color = ((board[pos.row]?.[pos.col]?.color ?? 0) as Color);
-      board[pos.row][pos.col] = { color: finalColor, obstacle: { durability: 1 } };
-
-      if (collector?.onWaveStep) {
-        collector.onWaveStep({
-          pos, kind: 'item_activate',
-          dropMoves: dropData?.moves,
-          newTileEntries: dropData?.newTileEntries,
-          boardAfter: cloneBoard(board),
-          score: stepScore + chainResult.score,
-        });
-      }
-      continue;
+      deferredItems.push({ pos, item: cell.item });
     }
 
-    // Case 3: 通常タイル or null → 耐久値1のおじゃま設置（仕様§3.7 侵食位置の処理 1.）
+    // Case 2 & 3: おじゃまタイル設置（アイテム位置も通常タイル位置も同じ処理）
     const color: Color = ((cell?.color ?? 0) as Color);
     board[pos.row][pos.col] = { color, obstacle: { durability: 1 } };
     if (collector?.onWaveStep) {
@@ -477,6 +410,72 @@ export function applyWave(
         pos, kind: 'place',
         boardAfter: cloneBoard(board),
         score: 0,
+      });
+    }
+  }
+
+  // --- フェーズ2: 保存したアイテムを順に強制発動 ---
+  for (const { pos, item } of deferredItems) {
+    // おじゃまタイルを一時的に除去してアイテムを発動
+    board[pos.row][pos.col] = null;
+    let stepScore = 0;
+
+    if (item === 'scope') {
+      const adjTargets = getScopeAdjacentTargets(board, pos);
+      for (const t of adjTargets) {
+        const adjCell = board[t.row]?.[t.col];
+        if (!adjCell) continue;
+        if (adjCell.obstacle) {
+          damageObstacleAt(board, t);
+          continue;
+        }
+        if (adjCell.item) {
+          let tc: number | undefined;
+          if (adjCell.item === 'flush') {
+            tc = findFlushTargetColor(board, t) ?? undefined;
+          }
+          const r = activateItem(board, t, adjCell.item, tc, 1, rng, undefined, collector);
+          stepScore += r.score;
+          rng = r.rngState;
+        } else {
+          board[t.row][t.col] = null;
+          stepScore += 10;
+        }
+      }
+    } else if (item === 'flush') {
+      const targetColor = findFlushTargetColor(board, pos) ?? undefined;
+      if (targetColor !== undefined) {
+        const result = activateItem(board, pos, item, targetColor, 1, rng, undefined, collector);
+        stepScore += result.score;
+        rng = result.rngState;
+      }
+    } else {
+      const result = activateItem(board, pos, item, undefined, 1, rng, undefined, collector);
+      stepScore += result.score;
+      rng = result.rngState;
+    }
+
+    totalScore += stepScore;
+
+    // collector: gravity 前に dropMoves を計算
+    const dropData = collector?.onWaveStep
+      ? computeDropMoves(board, true)
+      : undefined;
+
+    // 落下 → 補充 → 連鎖（Survivalは Clearと同じく passThrough）
+    applyGravity(board, true);
+    rng = fillEmptyCells(board, rng, numColors);
+    const chainResult = processChains(board, rng, 2, 'survival', false, numColors, collector);
+    totalScore += chainResult.score;
+    rng = chainResult.rngState;
+
+    if (collector?.onWaveStep) {
+      collector.onWaveStep({
+        pos, kind: 'item_activate',
+        dropMoves: dropData?.moves,
+        newTileEntries: dropData?.newTileEntries,
+        boardAfter: cloneBoard(board),
+        score: stepScore + chainResult.score,
       });
     }
   }

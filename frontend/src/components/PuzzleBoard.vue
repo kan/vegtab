@@ -1019,8 +1019,8 @@ async function animateWave(plan: WaveAnimPlan, finalScore: number) {
       for (const ch of step.chainsAfter ?? []) stepScore += ch.score;
       running += stepScore;
       store.setDisplayScore(running);
-      // アイテム発動後にここで obstacle を設置（ポップ）
-      await animateWaveObstaclePlace(step.pos, step.boardAfter);
+      // 発動後の盤面を反映（おじゃまは再設置されない）
+      visualBoard.value = cloneBoard(step.boardAfter);
     } else {
       // place: 普通のタイルを obstacle で上書き
       await animateWaveObstaclePlace(step.pos, step.boardAfter);

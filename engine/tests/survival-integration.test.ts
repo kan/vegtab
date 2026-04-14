@@ -219,7 +219,7 @@ describe('applyWave直接: アイテム強制発動の検証', () => {
   // processAction 経由では事前のスワップでアイテムが動かされる可能性があるため、
   // applyWave を直接呼ぶことで強制発動ロジックを隔離してテストする。
 
-  it('v_cut アイテムがある位置に侵食が来ると、v_cut が発動しておじゃまが設置される', () => {
+  it('v_cut アイテムがある位置に侵食が来ると、v_cut が発動しておじゃまは消える', () => {
     const positions = computeWavePositions(SEED, 1);
     const target = positions[0];
 
@@ -235,17 +235,14 @@ describe('applyWave直接: アイテム強制発動の検証', () => {
 
     // v_cut が発動したはずなのでスコアが増える
     expect(itemRes.score).toBeGreaterThan(0);
-    // 最終的に target 位置はおじゃまタイルで上書きされる
-    const cell = itemState.board[target.row][target.col];
-    expect(cell?.obstacle).toBeDefined();
-    expect(cell?.obstacle?.durability).toBe(1);
+    // アイテム発動でおじゃまは消え、通常タイルが補充される
+    expect(itemState.board[target.row][target.col]?.obstacle).toBeUndefined();
   });
 
-  it('scope アイテムが侵食位置にある場合、周囲4マスが消去されおじゃまが設置される', () => {
+  it('scope アイテムが侵食位置にある場合、周囲4マスが消去されおじゃまは消える', () => {
     const positions = computeWavePositions(SEED, 1);
     const target = positions[0];
 
-    // 周囲がクリアされるか確認したいので、ベース盤面を取得
     const state = initializeGame(SEED, 'survival');
     state.board[target.row][target.col] = { color: 0 as Color, item: 'scope' };
 
@@ -253,8 +250,8 @@ describe('applyWave直接: アイテム強制発動の検証', () => {
 
     // scope がすくなくとも 1 マス以上消去 → スコア増
     expect(res.score).toBeGreaterThanOrEqual(10);
-    // target におじゃまが設置される
-    expect(state.board[target.row][target.col]?.obstacle?.durability).toBe(1);
+    // アイテム発動でおじゃまは消える
+    expect(state.board[target.row][target.col]?.obstacle).toBeUndefined();
   });
 
   it('burst アイテムが侵食位置にある場合、強制発動してスコアが入る', () => {
@@ -267,7 +264,8 @@ describe('applyWave直接: アイテム強制発動の検証', () => {
     const res = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
 
     expect(res.score).toBeGreaterThan(0);
-    expect(state.board[target.row][target.col]?.obstacle?.durability).toBe(1);
+    // アイテム発動でおじゃまは消える
+    expect(state.board[target.row][target.col]?.obstacle).toBeUndefined();
   });
 
   it('flush アイテムが侵食位置にある場合、同色全消去が発動する', () => {
@@ -283,7 +281,8 @@ describe('applyWave直接: アイテム強制発動の検証', () => {
 
     // flush 発動でスコアが入る
     expect(res.score).toBeGreaterThan(0);
-    expect(state.board[target.row][target.col]?.obstacle?.durability).toBe(1);
+    // アイテム発動でおじゃまは消える
+    expect(state.board[target.row][target.col]?.obstacle).toBeUndefined();
   });
 
   it('既存おじゃまのある位置に侵食が来ると耐久値が+1される', () => {
@@ -519,8 +518,9 @@ describe('applyWave直接: アイテム強制発動でおじゃま耐久値4が�
 
     const result = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
 
-    // scope の強制発動で耐久値4のおじゃまがダメージを受け3に戻る → gameOver=false
-    expect(state.board[obsPos.row][obsPos.col]?.obstacle?.durability).toBe(3);
+    // scope の強制発動で耐久値4のおじゃまがダメージを受け4未満に戻る → gameOver=false
+    // （連鎖でさらにダメージが入る可能性があるので具体値ではなく4未満を検証）
+    expect(state.board[obsPos.row][obsPos.col]?.obstacle?.durability).toBeLessThan(SURVIVAL_MAX_OBSTACLE_DURABILITY);
     expect(result.gameOver).toBe(false);
   });
 });
@@ -584,10 +584,10 @@ describe('applyWave直接: 再チェックロジックの追加エッジケー�
 
     const result = applyWave(state.board, SEED, 1, state.rngState, NUM_COLORS);
 
-    // obs1: 耐久値3→4→scopeで-1=3 になるべき（隣接なので）
-    expect(state.board[obs1Pos.row][obs1Pos.col]?.obstacle?.durability).toBe(3);
+    // obs1: 耐久値3→4→scopeで-1で4未満に戻る（隣接なので）
+    expect(state.board[obs1Pos.row][obs1Pos.col]?.obstacle?.durability).toBeLessThan(SURVIVAL_MAX_OBSTACLE_DURABILITY);
     // obs2: 耐久値3→4 でscopeの範囲外なので4のまま → gameOver=true
-    expect(state.board[obs2Pos.row][obs2Pos.col]?.obstacle?.durability).toBe(4);
+    expect(state.board[obs2Pos.row][obs2Pos.col]?.obstacle?.durability).toBe(SURVIVAL_MAX_OBSTACLE_DURABILITY);
     expect(result.gameOver).toBe(true);
   });
 
