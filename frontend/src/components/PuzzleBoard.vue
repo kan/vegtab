@@ -680,17 +680,33 @@ async function animateFlush(pos: Position, targets: Position[]) {
   }
   sweepIcon.value = null;
 
+  // Check if targets are obstacle tiles (flush×obstacle swap)
+  const isObstacleEffect = targets.length > 0 && targets.every(
+    t => activeBoard.value?.[t.row]?.[t.col]?.obstacle,
+  );
+
   // Show flush overlay on all targets simultaneously
   for (const t of targets) {
     cellItemOverlay.set(pk(t.row, t.col), 'flush');
   }
   await wait(scaled(200));
 
-  // Clear
-  for (const t of targets) {
-    itemClearingCells.add(pk(t.row, t.col));
+  if (isObstacleEffect) {
+    // Obstacle damage: shake animation instead of clearing
+    for (const t of targets) {
+      obstacleDamagedCells.add(pk(t.row, t.col));
+    }
+    await wait(scaled(300));
+    for (const t of targets) {
+      obstacleDamagedCells.delete(pk(t.row, t.col));
+    }
+  } else {
+    // Normal flush: clearing animation
+    for (const t of targets) {
+      itemClearingCells.add(pk(t.row, t.col));
+    }
+    await wait(ANIM.value.ITEM_CLEAR_WAIT);
   }
-  await wait(ANIM.value.ITEM_CLEAR_WAIT);
 }
 
 // --- Synthesis effect animations ---

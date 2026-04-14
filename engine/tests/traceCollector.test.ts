@@ -514,3 +514,75 @@ describe('collector: ChainStepData の score 合計と engine の整合性', () 
     expect(totalCollected).toBe(engineDelta);
   });
 });
+
+// ---------------------------------------------------------------------------
+// flush×おじゃまスワイプ時の collector 通知
+// ---------------------------------------------------------------------------
+describe('flush×おじゃまスワイプ時の collector 通知', () => {
+  it('onItemEffect が itemType=flush で呼ばれ、targets に全おじゃま位置が含まれる', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const { collector, events } = createTestCollector();
+    processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' }, collector);
+
+    // onItemEffect が1回呼ばれる
+    const flushEffects = events.itemEffects.filter(e => e.itemType === 'flush');
+    expect(flushEffects.length).toBe(1);
+
+    const effect = flushEffects[0];
+    // targets にスワイプ対象のおじゃま(3,4→スワイプ後(3,3))と(0,0)が含まれる
+    expect(effect.targets.length).toBeGreaterThanOrEqual(2);
+    // depth は 0
+    expect(effect.depth).toBe(0);
+    // detonations は空
+    expect(effect.detonations).toEqual([]);
+  });
+
+  it('afterSwap, beforeItemActivation, boardAfterClear, afterItemDrop のスナップショットが記録される', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+
+    const { collector, events } = createTestCollector();
+    processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' }, collector);
+
+    const labels = events.boardSnapshots.map(s => s.label);
+    expect(labels).toContain('afterSwap');
+    expect(labels).toContain('beforeItemActivation');
+    expect(labels).toContain('boardAfterClear');
+    expect(labels).toContain('afterItemDrop');
+  });
+
+  it('onDropData が呼ばれる', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const { collector, events } = createTestCollector();
+    processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' }, collector);
+
+    // おじゃま破壊後に落下が発生するのでonDropDataが呼ばれる
+    expect(events.dropDataCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('collector のスコア合計がエンジンのスコア差分と一致する', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+    const scoreBefore = state.score;
+
+    const { collector, events } = createTestCollector();
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' }, collector);
+
+    const chainScore = events.chainSteps.reduce((sum, s) => sum + s.score, 0);
+    const itemScore = events.itemEffects.reduce((sum, e) => sum + e.score, 0);
+    const totalCollected = chainScore + itemScore;
+    const engineDelta = result.score - scoreBefore;
+
+    expect(totalCollected).toBe(engineDelta);
+  });
+});

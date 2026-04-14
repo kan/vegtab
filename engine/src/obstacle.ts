@@ -117,6 +117,29 @@ export function damageObstacleAt(board: (Cell | null)[][], pos: Position): boole
 }
 
 /**
+ * 盤上の全おじゃまタイルに1ダメージを与える。
+ * 耐久値が0になったおじゃまタイルはnullに置き換える。
+ * @returns damaged: ダメージを受けた全位置, destroyed: 破壊された位置
+ */
+export function damageAllObstacles(board: (Cell | null)[][]): { damaged: Position[]; destroyed: Position[] } {
+  const damaged: Position[] = [];
+  const destroyed: Position[] = [];
+  for (let row = 0; row < BOARD_SIZE; row++) {
+    for (let col = 0; col < BOARD_SIZE; col++) {
+      const cell = board[row][col];
+      if (!cell?.obstacle) continue;
+      damaged.push({ row, col });
+      cell.obstacle.durability--;
+      if (cell.obstacle.durability <= 0) {
+        board[row][col] = null;
+        destroyed.push({ row, col });
+      }
+    }
+  }
+  return { damaged, destroyed };
+}
+
+/**
  * おじゃまタイルにダメージを与える
  * 消去された位置の上下左右のおじゃまタイルの耐久値を1減らす
  * 耐久値が0になったおじゃまタイルはnullに置き換える

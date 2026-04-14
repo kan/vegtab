@@ -18,7 +18,7 @@ import {
 } from './item.js';
 import { calculateStepScore, getFullClearBonus } from './score.js';
 import { checkGameOverState } from './gameOver.js';
-import { generateObstacles, damageObstacles, damageObstacleAt } from './obstacle.js';
+import { generateObstacles, damageObstacles, damageObstacleAt, damageAllObstacles } from './obstacle.js';
 import {
   computeWavePositions, SURVIVAL_WAVE_INTERVAL, SURVIVAL_MAX_OBSTACLE_DURABILITY,
 } from './survival.js';
@@ -715,6 +715,59 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
       // スプーンはスワイプ起動不可（tapの代わりにscope actionで）
       if (itemCell.item === 'scope') return state;
+
+      // サラダボウル×おじゃまタイル: 全おじゃまの耐久値-1
+      if (itemCell.item === 'flush' && otherCell.obstacle) {
+        // まず入れ替え（アニメーション用のスナップショットを取るため）
+        board[action.pos.row][action.pos.col] = cell2;
+        board[targetPos.row][targetPos.col] = cell1;
+        collector?.onBoardSnapshot?.('afterSwap', cloneBoard(board));
+
+        // サラダボウルを消去（itemPos = スワップ後のflush位置）
+        board[itemPos.row][itemPos.col] = null;
+        newState.moveCount++;
+
+        collector?.onBoardSnapshot?.('beforeItemActivation', cloneBoard(board));
+
+        // 全おじゃまに1ダメージ
+        const { damaged, destroyed } = damageAllObstacles(board);
+
+        // collector: アイテム効果を通知（アニメーション用）
+        collector?.onItemEffect?.({
+          itemType: 'flush',
+          itemPos: itemPos,
+          targets: damaged,
+          detonations: [],
+          depth: 0,
+          score: destroyed.length * 10,
+        });
+
+        // 破壊されたおじゃまの位置を消去扱い（スコア加算）
+        newState.score += destroyed.length * 10;
+
+        collector?.onBoardSnapshot?.('boardAfterClear', cloneBoard(board));
+
+        const passThrough = isPassThroughMode(newState.mode);
+
+        // collector: gravity 前に dropMoves を計算
+        if (collector?.onDropData) {
+          const dm = computeDropMoves(board, passThrough);
+          collector.onDropData(dm.moves, dm.newTileEntries);
+        }
+
+        // 落下 → 補充 → 連鎖
+        applyGravity(board, passThrough);
+        newState.rngState = fillEmptyCells(board, newState.rngState, nc);
+
+        collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
+
+        const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc, collector);
+        newState.score += chainResult.score;
+        newState.rngState = chainResult.rngState;
+        updateMaxChain(newState, chainResult.steps);
+        finalizeMove(newState, collector);
+        return newState;
+      }
 
       // サラダボウルのtargetColorを事前保存（pre-chainで消去される可能性）
       const savedOtherColor = otherCell.item ? undefined : otherCell.color;

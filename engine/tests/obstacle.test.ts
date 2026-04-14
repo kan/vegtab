@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateObstacles, damageObstacles, countObstacles, allObstaclesCleared, hasObstacleWithMinDurability } from '../src/obstacle.js';
+import { generateObstacles, damageObstacles, damageAllObstacles, countObstacles, allObstaclesCleared, hasObstacleWithMinDurability } from '../src/obstacle.js';
 import { processDamage } from '../src/engine.js';
 import { createRng } from '../src/rng.js';
 import { createColumnRngStates, cloneBoard, fillEmptyCells } from '../src/board.js';
@@ -231,6 +231,94 @@ describe('hasObstacleWithMinDurability', () => {
     board[2][2] = { color: 0 as Color, obstacle: { durability: 3 } };
     expect(hasObstacleWithMinDurability(board, 3)).toBe(true);
     expect(hasObstacleWithMinDurability(board, 4)).toBe(false);
+  });
+});
+
+describe('damageAllObstacles', () => {
+  it('全おじゃまタイルの耐久値が1減少する', () => {
+    const board = makeEmptyBoard();
+    board[0][0] = { color: 0 as Color, obstacle: { durability: 3 } };
+    board[3][3] = { color: 0 as Color, obstacle: { durability: 2 } };
+    board[7][7] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const { damaged, destroyed } = damageAllObstacles(board);
+    expect(damaged.length).toBe(3);
+    // (0,0): 3→2
+    expect(board[0][0]?.obstacle?.durability).toBe(2);
+    // (3,3): 2→1
+    expect(board[3][3]?.obstacle?.durability).toBe(1);
+    // (7,7): 1→0 → 破壊
+    expect(board[7][7]).toBeNull();
+    expect(destroyed.length).toBe(1);
+    expect(destroyed[0]).toEqual({ row: 7, col: 7 });
+  });
+
+  it('耐久値1のおじゃまタイルが破壊されてnullになる', () => {
+    const board = makeEmptyBoard();
+    board[2][3] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const { damaged, destroyed } = damageAllObstacles(board);
+    expect(board[2][3]).toBeNull();
+    expect(damaged).toEqual([{ row: 2, col: 3 }]);
+    expect(destroyed).toEqual([{ row: 2, col: 3 }]);
+  });
+
+  it('おじゃまタイルがない盤面では空配列を返す', () => {
+    const board = makeEmptyBoard();
+    const { damaged, destroyed } = damageAllObstacles(board);
+    expect(damaged).toEqual([]);
+    expect(destroyed).toEqual([]);
+  });
+
+  it('破壊されたおじゃまはdestroyedに含まれ、生存おじゃまはdamagedにのみ含まれる', () => {
+    const board = makeEmptyBoard();
+    board[0][0] = { color: 0 as Color, obstacle: { durability: 2 } }; // 生存
+    board[1][1] = { color: 0 as Color, obstacle: { durability: 1 } }; // 破壊
+
+    const { damaged, destroyed } = damageAllObstacles(board);
+    expect(damaged.length).toBe(2);
+    expect(destroyed.length).toBe(1);
+    expect(destroyed[0]).toEqual({ row: 1, col: 1 });
+    // 生存おじゃまはdamagedにいるがdestroyedにはいない
+    expect(damaged).toContainEqual({ row: 0, col: 0 });
+    expect(destroyed).not.toContainEqual({ row: 0, col: 0 });
+  });
+
+  it('全おじゃまが耐久値1の場合は全て破壊される', () => {
+    const board = makeEmptyBoard();
+    board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+    board[1][1] = { color: 0 as Color, obstacle: { durability: 1 } };
+    board[2][2] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const { damaged, destroyed } = damageAllObstacles(board);
+    expect(damaged.length).toBe(3);
+    expect(destroyed.length).toBe(3);
+    expect(board[0][0]).toBeNull();
+    expect(board[1][1]).toBeNull();
+    expect(board[2][2]).toBeNull();
+  });
+
+  it('nullセルは無視される', () => {
+    const board = makeEmptyBoard();
+    board[0][0] = null;
+    board[1][1] = { color: 0 as Color, obstacle: { durability: 2 } };
+
+    const { damaged, destroyed } = damageAllObstacles(board);
+    expect(damaged.length).toBe(1);
+    expect(damaged[0]).toEqual({ row: 1, col: 1 });
+    expect(destroyed.length).toBe(0);
+  });
+
+  it('通常セル（おじゃまなし）には影響しない', () => {
+    const board = makeEmptyBoard();
+    board[0][0] = { color: 0 as Color, obstacle: { durability: 2 } };
+    // (3,3) は通常セル
+    const normalCell = board[3][3];
+
+    damageAllObstacles(board);
+    // 通常セルは変化なし
+    expect(board[3][3]).toBe(normalCell);
+    expect(board[3][3]?.obstacle).toBeUndefined();
   });
 });
 

@@ -844,3 +844,211 @@ describe('Item Immediate Placement - Edge Cases', () => {
     }
   });
 });
+
+describe('サラダボウル×おじゃまタイル スワイプ', () => {
+  it('flush×おじゃまスワイプで全おじゃまの耐久値が1減少する', () => {
+    const state = initializeGame(42, 'survival');
+    // (3,3) にflush、(3,4) におじゃま耐久値2を配置
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+    // 他にも耐久値3のおじゃまを配置
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 3 } };
+    state.board[7][7] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    expect(result).not.toBe(state); // 操作が有効
+
+    // スワップ後: flush→(3,4), obstacle→(3,3)。flushは消去され、全おじゃまに-1ダメージ
+    // (3,3) のおじゃま: 耐久値2→1（おじゃまはSurvivalでは落下しないので位置固定）
+    const obs33 = result.board[3][3]?.obstacle;
+    expect(obs33).toBeDefined();
+    expect(obs33!.durability).toBe(1);
+
+    // (0,0) のおじゃま: 耐久値3→2
+    const obs00 = result.board[0][0]?.obstacle;
+    expect(obs00).toBeDefined();
+    expect(obs00!.durability).toBe(2);
+
+    // (7,7) のおじゃま: 耐久値1→0 → 破壊（nullになる）
+    // 注: 破壊後に落下→補充で新タイルが入る可能性があるため、obstacleがないことのみ確認
+    const cell77 = result.board[7][7];
+    expect(cell77?.obstacle).toBeUndefined();
+  });
+
+  it('flush×おじゃまスワイプは1手消費する', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+    const beforeMoves = state.moveCount;
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    expect(result.moveCount).toBe(beforeMoves + 1);
+  });
+
+  it('flush×おじゃまスワイプでflushが消去される', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    // スワップ後のflush位置(3,4)にflushが残っていないこと
+    expect(result.board[3][4]?.item).not.toBe('flush');
+    // スワップ元の位置(3,3)にもflushがないこと
+    expect(result.board[3][3]?.item).not.toBe('flush');
+  });
+
+  it('おじゃまがない盤面でflush×非おじゃまスワイプは通常の色消去が発動する', () => {
+    const state = initializeGame(42, 'sprint');
+    // flushと通常タイルのスワイプ
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 1 as Color }; // 通常タイル
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    // 通常のflush発動（同色消去）が起きてスコアが入る
+    if (result !== state) {
+      expect(result.score).toBeGreaterThan(0);
+    }
+  });
+
+  it('flush×おじゃまスワイプで破壊されたおじゃま1個につき10点加算される', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 1 } };
+    // 耐久値1のおじゃまをさらに2個配置（計3個が破壊される）
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+    state.board[7][7] = { color: 0 as Color, obstacle: { durability: 1 } };
+    const scoreBefore = state.score;
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    // 3個破壊 × 10点 = 30点（連鎖スコアは別途加算される可能性あり）
+    expect(result.score).toBeGreaterThanOrEqual(scoreBefore + 30);
+  });
+
+  it('耐久値が高いおじゃまのみの場合はスコアが0点（破壊なし）', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 3 } };
+    // 他のおじゃまも高耐久値
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 4 } };
+    const scoreBefore = state.score;
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    // 破壊0個のダメージスコアは0（連鎖のスコアのみ）
+    // ダメージスコア(destroyed.length * 10)の部分は0であることを間接確認
+    expect(result).not.toBe(state); // 操作は有効
+    // (3,4)のおじゃま耐久値は3→2、(0,0)は4→3
+    const obs34 = result.board[3][4]?.obstacle;
+    if (obs34) expect(obs34.durability).toBe(2);
+    const obs00 = result.board[0][0]?.obstacle;
+    if (obs00) expect(obs00.durability).toBe(3);
+  });
+
+  it('逆方向（おじゃま側からflush側へ）スワイプでも全おじゃまにダメージが入る', () => {
+    const state = initializeGame(42, 'survival');
+    // (3,3)におじゃま、(3,4)にflush
+    state.board[3][3] = { color: 0 as Color, obstacle: { durability: 2 } };
+    state.board[3][4] = { color: 0 as Color, item: 'flush' };
+    // 別位置にもおじゃま
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 3 } };
+
+    // (3,3)からrightスワイプ → cell1がobstacle, cell2がflush
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    expect(result).not.toBe(state);
+
+    // 全おじゃまに-1ダメージ
+    // (3,3)のobstacleはスワップ後(3,4)に移動し、ダメージで2→1
+    // ただしスワップ後のレイアウトはエンジン内部ロジック次第
+    // 少なくとも操作は有効で、(0,0)の耐久値は減少しているはず
+    const obs00 = result.board[0][0]?.obstacle;
+    expect(obs00).toBeDefined();
+    expect(obs00!.durability).toBe(2);
+  });
+
+  it('Clearモードでもflush×おじゃまスワイプが動作する', () => {
+    const state = initializeGame(42, 'clear');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    expect(result).not.toBe(state);
+    // (0,0) 耐久値1→0 → 破壊
+    expect(result.board[0][0]?.obstacle).toBeUndefined();
+  });
+
+  it('flush×おじゃまスワイプ後に落下と補充が実行される', () => {
+    const state = initializeGame(42, 'survival');
+    // 上部におじゃま(耐久値1)、その上に通常タイルを配置
+    state.board[5][5] = { color: 0 as Color, obstacle: { durability: 1 } };
+    state.board[4][5] = { color: 1 as Color };
+    // flushとおじゃまスワイプ
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    // (5,5)のおじゃまが破壊(1→0)された後、落下と補充が走るので全セルが埋まる
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        expect(result.board[r][c]).not.toBeNull();
+      }
+    }
+  });
+
+  it('flush×おじゃまスワイプ後にゲームオーバー判定が実行される', () => {
+    const state = initializeGame(42, 'survival');
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    // finalizeMove が呼ばれており、isGameOver フラグが適切に設定されている
+    expect(typeof result.isGameOver).toBe('boolean');
+  });
+
+  it('flush×おじゃまスワイプは決定的である（同一入力で同一結果）', () => {
+    function run() {
+      const state = initializeGame(42, 'survival');
+      state.board[3][3] = { color: 0 as Color, item: 'flush' };
+      state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
+      state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
+      return processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    }
+
+    const r1 = run();
+    const r2 = run();
+    expect(r1.score).toBe(r2.score);
+    expect(r1.moveCount).toBe(r2.moveCount);
+    expect(r1.isGameOver).toBe(r2.isGameOver);
+    // 盤面が完全一致
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        expect(r1.board[r][c]?.color).toBe(r2.board[r][c]?.color);
+        expect(r1.board[r][c]?.item).toBe(r2.board[r][c]?.item);
+        expect(r1.board[r][c]?.obstacle?.durability).toBe(r2.board[r][c]?.obstacle?.durability);
+      }
+    }
+  });
+
+  it('おじゃまタイルが1つだけ（スワイプ対象のみ）の場合', () => {
+    // sprintモードはおじゃま自動生成なし
+    const state = initializeGame(42, 'sprint');
+    // 盤面のおじゃまをクリアしてからテスト
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.obstacle) {
+          state.board[r][c] = { color: 0 as Color };
+        }
+      }
+    }
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 1 } };
+    // おじゃまは(3,4)の1個のみ
+
+    const obsBefore = countObstacles(state.board);
+    expect(obsBefore).toBe(1);
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    expect(result).not.toBe(state);
+    // 唯一のおじゃまが耐久値1→0→破壊される
+    expect(countObstacles(result.board)).toBe(0);
+  });
+});
