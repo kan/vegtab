@@ -113,6 +113,7 @@ export default {
     chainPotential: 'MAX {count}連鎖',
     milestoneBonus: '{chain}連鎖ボーナス! +{bonus} CP',
     cascadeNewBest: 'NEW BEST: {count}連鎖!',
+    sparkleBonus: '+{count} CP',
     obstacles: 'おじゃま: {count}',
     turnOver: 'ターンオーバー',
     cleared: 'クリア！',

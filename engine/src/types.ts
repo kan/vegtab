@@ -12,6 +12,7 @@ export type Cell = {
   color: Color;
   item?: ItemType;
   obstacle?: Obstacle;
+  sparkle?: boolean;   // Cascade: キラキラ野菜（消去時+1 CP）
 };
 
 /** 盤面座標 */
@@ -43,6 +44,7 @@ export type ChainStep = {
   clearedPositions: Position[];
   generatedItems: { pos: Position; item: ItemType }[];
   score: number;
+  sparkleCount?: number;  // Cascade: 消去されたキラキラ数
 };
 
 /** ゲームモード */
@@ -80,6 +82,7 @@ export type GameState = {
   maxChainIndex?: number;    // Cascade: max chain achieved so far
   cascadePoints?: number;    // Cascade: cumulative chain points (sum of chainIndex for chainIndex >= 2)
   milestonesClaimed?: number[];  // Cascade: chain milestones already claimed this game
+  sparkleRngState?: number[];    // Cascade: per-column sparkle RNG
   lastChainCount?: number;   // Chain count of the last action (for replay display)
 };
 

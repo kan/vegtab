@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
   initializeGame, processAction, processScopeSynthesis,
-  peekNextColors,
+  peekNextColors, peekNextTiles,
   countObstacles,
   currentWaveNumber, movesUntilNextWave, waveObstacleCount,
   previewWaveNumber, previewWavePositions,
@@ -75,10 +75,15 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const maxChainIndex = computed(() => gameState.value?.maxChainIndex ?? 0);
   const cascadePoints = computed(() => gameState.value?.cascadePoints ?? 0);
   const milestonesClaimed = computed<number[]>(() => gameState.value?.milestonesClaimed ?? []);
-  /** Cascade mode: preview of next tiles per column */
-  const nextTilePreview = computed<Color[][] | null>(() => {
+  /** Cascade mode: preview of next tiles per column (color + sparkle) */
+  const nextTilePreview = computed<{ color: Color; sparkle: boolean }[][] | null>(() => {
     if (!gameState.value || gameState.value.mode !== 'cascade') return null;
-    return peekNextColors(gameState.value.rngState, 4, gameState.value.numColors ?? NUM_COLORS);
+    if (gameState.value.sparkleRngState) {
+      return peekNextTiles(gameState.value.rngState, gameState.value.sparkleRngState, 4, gameState.value.numColors ?? NUM_COLORS);
+    }
+    // fallback (sparkleRngStateがない場合)
+    return peekNextColors(gameState.value.rngState, 4, gameState.value.numColors ?? NUM_COLORS)
+      .map(col => col.map(color => ({ color, sparkle: false })));
   });
   /** Cascade mode: 全スワイプ候補から算出した最大連鎖ポテンシャル */
   const chainPotential = computed(() => {

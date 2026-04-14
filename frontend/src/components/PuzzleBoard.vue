@@ -1093,6 +1093,19 @@ async function animateChainStep(chain: ChainAnimData) {
   } else {
     playSE('match'); vibrate(15);
   }
+  // キラキラCP表示（連鎖数に関わらず）
+  if (store.mode === 'cascade' && chain.sparkleCount && chain.sparkleCount > 0) {
+    addFloatingScore(chain.clearedPositions, 0); // placeholder for position
+    // sparkle用の専用フローティング
+    const { x, y } = centroidPx(chain.clearedPositions);
+    const id = floatingId++;
+    const text = t('mode.sparkleBonus', { count: chain.sparkleCount });
+    floatingMilestoneLabels.push({ id, x, y: y + 16, text });
+    addFloatingTimer(scaled(1200), () => {
+      const idx = floatingMilestoneLabels.findIndex(f => f.id === id);
+      if (idx !== -1) floatingMilestoneLabels.splice(idx, 1);
+    });
+  }
   for (const p of chain.clearedPositions) matchedCells.add(pk(p.row, p.col));
   addFloatingScore(chain.clearedPositions, chain.score);
   await wait(ANIM.value.MATCH_SHOW);
@@ -1184,11 +1197,11 @@ function tileTransition(r: number, c: number) {
         :style="{ width: cellSize + 'px' }"
       >
         <div
-          v-for="(color, i) in store.nextTilePreview[col - 1]"
+          v-for="(tile, i) in store.nextTilePreview[col - 1]"
           :key="i"
           class="next-preview-tile"
         >
-          <VegetableIcon :color="color" :size="previewTileSize" />
+          <VegetableIcon :color="tile.color" :size="previewTileSize" :sparkle="tile.sparkle" />
         </div>
       </div>
     </div>
@@ -1260,6 +1273,7 @@ function tileTransition(r: number, c: number) {
                   <VegetableIcon
                     :color="activeBoard[row - 1][col - 1]!.color"
                     :size="Math.max(0, cellSize - 5)"
+                    :sparkle="activeBoard[row - 1][col - 1]!.sparkle"
                   />
                   <span
                     v-if="matchedCells.has(pk(row - 1, col - 1)) || clearingCells.has(pk(row - 1, col - 1))"

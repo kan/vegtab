@@ -113,6 +113,7 @@ export default {
     chainPotential: 'MAX {count} Chain',
     milestoneBonus: '{chain}-Chain Bonus! +{bonus} CP',
     cascadeNewBest: 'NEW BEST: {count} Chain!',
+    sparkleBonus: '+{count} CP',
     obstacles: 'Obstacles: {count}',
     turnOver: 'TURN OVER',
     cleared: 'CLEARED!',

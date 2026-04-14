@@ -56,6 +56,7 @@ export interface ChainAnimData {
   itemGens: { pos: Position; item: ItemType }[];
   score: number;
   chainIndex: number;
+  sparkleCount?: number;
   dropMoves: { col: number; fromRow: number; toRow: number }[];
   newTileEntries: { row: number; col: number; segNulls: number }[];
   boardAfterDrop: (Cell | null)[][];
@@ -261,6 +262,7 @@ function createCollector(cs: CollectorState): TraceCollector {
         itemGens: data.itemGens,
         score: data.score,
         chainIndex: data.chainIndex,
+        sparkleCount: data.sparkleCount,
         dropMoves: data.dropMoves,
         newTileEntries: data.newTileEntries,
         boardAfterDrop: data.boardAfterDrop,

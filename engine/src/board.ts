@@ -14,6 +14,13 @@ export function createEmptyBoard(): (Cell | null)[][] {
   );
 }
 
+// --- キラキラ野菜定数 ---
+const SPARKLE_SALT = 0x5A4B3C2D;
+const SPARKLE_INIT_SALT = 0x1A2B3C4D;
+export const SPARKLE_PROBABILITY = 10;
+export const INITIAL_SPARKLE_COUNT = 2;
+export const SPARKLE_BONUS_CP = 1;
+
 /** メインRNGから列ごとの独立RNGシードを生成 */
 export function createColumnRngStates(rngState: number): number[] {
   let rng = rngState;
@@ -24,6 +31,35 @@ export function createColumnRngStates(rngState: number): number[] {
     states.push(createRng(seed));
   }
   return states;
+}
+
+/** キラキラ判定用の列ごと独立RNGを生成（色RNGとは完全に独立） */
+export function createSparkleRngStates(seed: number): number[] {
+  const mainRng = createRng(seed ^ SPARKLE_SALT);
+  return createColumnRngStates(mainRng);
+}
+
+/** 盤面に初期キラキラを配置（自動消去後の安定盤面に対して実行） */
+export function placeInitialSparkles(board: (Cell | null)[][], seed: number): void {
+  let rng = createRng(seed ^ SPARKLE_INIT_SALT);
+
+  // 非nullセル位置を収集
+  const positions: { row: number; col: number }[] = [];
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c]) positions.push({ row: r, col: c });
+    }
+  }
+
+  // Fisher-Yates で先頭 INITIAL_SPARKLE_COUNT 個を選出
+  const count = Math.min(INITIAL_SPARKLE_COUNT, positions.length);
+  for (let i = 0; i < count; i++) {
+    let j: number;
+    [rng, j] = nextInt(rng, positions.length - i);
+    j += i;
+    [positions[i], positions[j]] = [positions[j], positions[i]];
+    board[positions[i].row][positions[i].col]!.sparkle = true;
+  }
 }
 
 /** シード値から初期盤面を生成（自動消去前） */
@@ -44,7 +80,12 @@ export function generateRawBoard(seed: number, numColors: number = NUM_COLORS): 
  * 盤面上の空きマスを列ごとのRNGストリームで補充する。
  * 各列の補充タイル列はシードにより一意に決まる（操作順に依存しない）。
  */
-export function fillEmptyCells(board: (Cell | null)[][], columnRngStates: number[], numColors: number = NUM_COLORS): number[] {
+export function fillEmptyCells(
+  board: (Cell | null)[][],
+  columnRngStates: number[],
+  numColors: number = NUM_COLORS,
+  sparkleRngStates?: number[],
+): number[] {
   const states = [...columnRngStates];
   for (let col = 0; col < BOARD_SIZE; col++) {
     let rng = states[col];
@@ -52,7 +93,14 @@ export function fillEmptyCells(board: (Cell | null)[][], columnRngStates: number
       if (board[row][col] === null) {
         let color: Color;
         [rng, color] = nextColor(rng, numColors);
-        board[row][col] = { color };
+        const cell: Cell = { color };
+        // キラキラ判定（独立RNG）
+        if (sparkleRngStates) {
+          let sVal: number;
+          [sparkleRngStates[col], sVal] = nextInt(sparkleRngStates[col], 100);
+          if (sVal < SPARKLE_PROBABILITY) cell.sparkle = true;
+        }
+        board[row][col] = cell;
       }
     }
     states[col] = rng;
@@ -79,6 +127,32 @@ export function peekNextColors(
       colors.push(color);
     }
     result.push(colors);
+  }
+  return result;
+}
+
+/**
+ * 各列の次に落ちてくるタイルの色とキラキラ状態を先読みする（RNG状態を消費しない）。
+ */
+export function peekNextTiles(
+  columnRngStates: number[],
+  sparkleRngStates: number[],
+  count: number,
+  numColors: number = NUM_COLORS,
+): { color: Color; sparkle: boolean }[][] {
+  const result: { color: Color; sparkle: boolean }[][] = [];
+  for (let col = 0; col < BOARD_SIZE; col++) {
+    const tiles: { color: Color; sparkle: boolean }[] = [];
+    let rng = columnRngStates[col];
+    let sRng = sparkleRngStates[col];
+    for (let i = 0; i < count; i++) {
+      let color: Color;
+      [rng, color] = nextColor(rng, numColors);
+      let sVal: number;
+      [sRng, sVal] = nextInt(sRng, 100);
+      tiles.push({ color, sparkle: sVal < SPARKLE_PROBABILITY });
+    }
+    result.push(tiles);
   }
   return result;
 }

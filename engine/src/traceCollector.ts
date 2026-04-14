@@ -35,6 +35,7 @@ export interface ChainStepData {
   destroyedObstacles: Position[];
   itemGens: { pos: Position; item: ItemType }[];
   score: number;
+  sparkleCount?: number;
   /** gravity 前の board から計算した落下移動（アニメ用） */
   dropMoves: DropMove[];
   /** gravity 前の board から計算した新タイル出現情報（アニメ用） */
