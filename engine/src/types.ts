@@ -79,6 +79,7 @@ export type GameState = {
   numColors?: number;        // Cascade: number of colors (default NUM_COLORS)
   maxChainIndex?: number;    // Cascade: max chain achieved so far
   cascadePoints?: number;    // Cascade: cumulative chain points (sum of chainIndex for chainIndex >= 2)
+  milestonesClaimed?: number[];  // Cascade: chain milestones already claimed this game
   lastChainCount?: number;   // Chain count of the last action (for replay display)
 };
 

@@ -23,6 +23,7 @@ import {
   type SynthesisAnimPlan, type ScopeAnimPlan, type ScopeSynthesisAnimPlan,
   type ScopeSwapPreChainResult,
   NUM_COLORS,
+  computeMaxChainPotential,
 } from '@vegtab/engine';
 
 // Re-export animation types and calcItemEffectScore for consumers (PuzzleBoard.vue etc.)
@@ -73,11 +74,22 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   });
   const maxChainIndex = computed(() => gameState.value?.maxChainIndex ?? 0);
   const cascadePoints = computed(() => gameState.value?.cascadePoints ?? 0);
+  const milestonesClaimed = computed<number[]>(() => gameState.value?.milestonesClaimed ?? []);
   /** Cascade mode: preview of next tiles per column */
   const nextTilePreview = computed<Color[][] | null>(() => {
     if (!gameState.value || gameState.value.mode !== 'cascade') return null;
     return peekNextColors(gameState.value.rngState, 4, gameState.value.numColors ?? NUM_COLORS);
   });
+  /** Cascade mode: 全スワイプ候補から算出した最大連鎖ポテンシャル */
+  const chainPotential = computed(() => {
+    if (!gameState.value || gameState.value.mode !== 'cascade' || gameState.value.isGameOver) return 0;
+    return computeMaxChainPotential(gameState.value);
+  });
+
+  // --- Cascade chain meter ---
+  const currentChainMeterLevel = ref(0);
+  function resetChainMeter() { currentChainMeterLevel.value = 0; }
+  function setChainMeterLevel(level: number) { currentChainMeterLevel.value = level; }
 
   // --- Survival wave state ---
   /** 現在までに発生済みのウェーブ番号（未発生なら0） */
@@ -268,7 +280,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   return {
     gameState, seed, replayLog,
     board, score, moveCount, autoActivating, isGameOver, isCleared,
-    mode, moveLimit, remainingMoves, maxChainIndex, cascadePoints, nextTilePreview,
+    mode, moveLimit, remainingMoves, maxChainIndex, cascadePoints, milestonesClaimed, nextTilePreview,
+    chainPotential, currentChainMeterLevel, resetChainMeter, setChainMeterLevel,
     obstacleCount,
     waveNumber, movesUntilWave, nextWaveNumber, nextWaveObstacleCount,
     wavePreviewNumber, wavePreviewPositions, wavePreviewKeySet, wavePreviewLethalKeySet,

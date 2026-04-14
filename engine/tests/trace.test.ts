@@ -809,9 +809,10 @@ describe('Cross-function consistency', () => {
 
       if (plan && engineState !== state) {
         assertFinalStateMatch(plan.finalState, engineState, `cascade step=${step}`);
-        // cascadePoints / maxChainIndex の一致
+        // cascadePoints / maxChainIndex / milestonesClaimed の一致
         expect(plan.finalState.cascadePoints).toBe(engineState.cascadePoints);
         expect(plan.finalState.maxChainIndex).toBe(engineState.maxChainIndex);
+        expect(plan.finalState.milestonesClaimed).toEqual(engineState.milestonesClaimed);
         state = engineState;
       } else {
         break;

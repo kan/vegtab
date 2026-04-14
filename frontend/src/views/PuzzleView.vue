@@ -346,7 +346,10 @@ const gameOverScore = computed(() => {
             </template>
             <template v-else-if="selectedMode === 'cascade'">
               <div class="score-label">{{ t('mode.cascadePoints') }}: {{ store.cascadePoints }}</div>
-              <div class="move-label">{{ t('puzzle.score', { score: store.score }) }}</div>
+              <div class="cascade-sub-row">
+                <span class="move-label">{{ t('puzzle.score', { score: store.score }) }}</span>
+                <span :class="['potential-badge', { 'potential-high': store.chainPotential >= 3 }]">{{ t('mode.chainPotential', { count: store.chainPotential }) }}</span>
+              </div>
             </template>
             <template v-else-if="selectedMode === 'survival'">
               <div class="score-label">{{ t('puzzle.score', { score: store.score }) }}</div>
@@ -363,6 +366,14 @@ const gameOverScore = computed(() => {
             <div :class="['remaining-moves', { 'remaining-urgent': store.remainingMoves <= 5 }]">
               <span class="remaining-number">{{ store.remainingMoves }}</span>
               <span class="remaining-label">{{ t('puzzle.movesRemaining', { remaining: store.remainingMoves }) }}</span>
+            </div>
+            <!-- Cascade chain meter -->
+            <div v-if="selectedMode === 'cascade'" class="chain-meter">
+              <div
+                v-for="seg in 9"
+                :key="seg"
+                :class="['chain-meter-seg', `seg-${seg}`, { active: store.currentChainMeterLevel >= seg }]"
+              />
             </div>
           </template>
           <div v-else class="move-label">
@@ -563,6 +574,52 @@ const gameOverScore = computed(() => {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.15); }
 }
+/* Cascade: potential badge */
+.cascade-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.potential-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border, #ddd);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.potential-high {
+  color: #ff8f00;
+  border-color: #ff8f00;
+  background: rgba(255, 143, 0, 0.1);
+}
+/* Cascade: chain meter */
+.chain-meter {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  margin-left: auto;
+}
+.chain-meter-seg {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--border, #ccc);
+  opacity: 0.3;
+  transition: opacity 0.2s, background 0.2s;
+}
+.chain-meter-seg.active { opacity: 1; }
+.chain-meter-seg.seg-1.active { background: #4caf50; }
+.chain-meter-seg.seg-2.active { background: #66bb6a; }
+.chain-meter-seg.seg-3.active { background: #8bc34a; }
+.chain-meter-seg.seg-4.active { background: #cddc39; }
+.chain-meter-seg.seg-5.active { background: #ffeb3b; }
+.chain-meter-seg.seg-6.active { background: #ffc107; }
+.chain-meter-seg.seg-7.active { background: #ff9800; }
+.chain-meter-seg.seg-8.active { background: #ff5722; }
+.chain-meter-seg.seg-9.active { background: #f44336; }
+
 .board-urgent::after {
   content: '';
   position: absolute;

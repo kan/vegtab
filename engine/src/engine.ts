@@ -28,6 +28,14 @@ import { computeDropMoves } from './dropMoves.js';
 const DEFAULT_MOVE_LIMIT = 15;
 const DEFAULT_CASCADE_MOVE_LIMIT = 15;
 
+/** Cascadeモードの連鎖マイルストーンボーナス定義
+ * 1ゲーム中に初めて到達した連鎖数に応じてCPを加算する */
+export const CASCADE_MILESTONES: readonly { chain: number; bonus: number }[] = [
+  { chain: 3, bonus: 10 },
+  { chain: 5, bonus: 25 },
+  { chain: 7, bonus: 50 },
+];
+
 /** Clear/Survivalモードではおじゃまタイルを固定し、非おじゃまタイルが
  *  すり抜けて落下する（passThroughObstacles=true）。 */
 export function isPassThroughMode(mode: GameMode): boolean {
@@ -96,6 +104,7 @@ export function initializeGame(
       state.moveLimit = params?.moveLimit ?? DEFAULT_CASCADE_MOVE_LIMIT;
       state.maxChainIndex = 0;
       state.cascadePoints = 0;
+      state.milestonesClaimed = [];
       break;
   }
 
@@ -117,6 +126,7 @@ export function cloneGameState(state: GameState): GameState {
     numColors: state.numColors,
     maxChainIndex: state.maxChainIndex,
     cascadePoints: state.cascadePoints,
+    milestonesClaimed: state.milestonesClaimed ? [...state.milestonesClaimed] : undefined,
     lastChainCount: state.lastChainCount,
   };
 }
@@ -340,6 +350,16 @@ function updateMaxChain(state: GameState, steps: ChainStep[]): void {
 
   if (state.maxChainIndex !== undefined && maxInAction > state.maxChainIndex) {
     state.maxChainIndex = maxInAction;
+  }
+
+  // マイルストーンボーナス: 初到達の連鎖数に応じてCP加算
+  if (state.milestonesClaimed !== undefined && state.cascadePoints !== undefined) {
+    for (const ms of CASCADE_MILESTONES) {
+      if (maxInAction >= ms.chain && !state.milestonesClaimed.includes(ms.chain)) {
+        state.cascadePoints += ms.bonus;
+        state.milestonesClaimed.push(ms.chain);
+      }
+    }
   }
 }
 

@@ -2,7 +2,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan, type WaveAnimPlan, type WaveAnimStep } from '@/stores/puzzle';
-import { BOARD_SIZE, cloneBoard, getSynthesisEffect, processAutoActivation, type Position, type Direction, type Cell, type Color, type ItemType } from '@vegtab/engine';
+import { BOARD_SIZE, cloneBoard, getSynthesisEffect, processAutoActivation, CASCADE_MILESTONES, type Position, type Direction, type Cell, type Color, type ItemType } from '@vegtab/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
@@ -100,6 +100,12 @@ let scopeHintTimer: ReturnType<typeof setTimeout> | undefined;
 const floatingScores = reactive<{ id: number; x: number; y: number; text: string }[]>([]);
 // --- Floating chain labels (Cascade mode) ---
 const floatingChainLabels = reactive<{ id: number; x: number; y: number; chainText: string; cpText: string }[]>([]);
+// --- Floating milestone labels (Cascade mode) ---
+const floatingMilestoneLabels = reactive<{ id: number; x: number; y: number; text: string }[]>([]);
+const milestoneShown = new Set<number>();
+// --- NEW BEST overlay ---
+const newBestOverlay = ref<string | null>(null);
+let prevMaxChainIndex = 0;
 let floatingId = 0;
 const floatingTimers: ReturnType<typeof setTimeout>[] = [];
 
@@ -141,6 +147,23 @@ function addFloatingChainLabel(positions: Position[], chainIndex: number) {
     const idx = floatingChainLabels.findIndex(f => f.id === id);
     if (idx !== -1) floatingChainLabels.splice(idx, 1);
   });
+}
+
+function addFloatingMilestoneLabel(positions: Position[], chain: number, bonus: number) {
+  if (positions.length === 0) return;
+  const { x, y } = centroidPx(positions);
+  const id = floatingId++;
+  const text = t('mode.milestoneBonus', { chain, bonus });
+  floatingMilestoneLabels.push({ id, x, y: y - 32, text });
+  addFloatingTimer(scaled(1800), () => {
+    const idx = floatingMilestoneLabels.findIndex(f => f.id === id);
+    if (idx !== -1) floatingMilestoneLabels.splice(idx, 1);
+  });
+}
+
+function showNewBestOverlay(chainCount: number) {
+  newBestOverlay.value = t('mode.cascadeNewBest', { count: chainCount });
+  addFloatingTimer(scaled(2000), () => { newBestOverlay.value = null; });
 }
 
 function showItemEffectScore(effect: ItemEffectStep) {
@@ -267,6 +290,8 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
     visualBoard.value = null;
   }
 
+  store.resetChainMeter();
+  if (store.milestonesClaimed.length === 0) { milestoneShown.clear(); prevMaxChainIndex = 0; }
   const plan = store.computeScopePlan(scopePos, targetCells);
   if (!plan) {
     // Fallback: apply instantly
@@ -444,6 +469,9 @@ async function commitSwap(pos: Position, dir: Direction) {
   // Block swipes while scope selection is active (waiting for user to tap target)
   if (scope.scopeSelecting.value) return;
   drag.setLocked(true);
+  store.resetChainMeter();
+  // 新しいゲーム開始時にマイルストーン表示状態をリセット
+  if (store.milestonesClaimed.length === 0) { milestoneShown.clear(); prevMaxChainIndex = 0; }
   const cs = cellSize.value;
   const nb = adj(pos, dir);
   const fullX = (nb.col - pos.col) * cs, fullY = (nb.row - pos.row) * cs;
@@ -1045,9 +1073,22 @@ async function animateChainStep(chain: ChainAnimData) {
   if (chain.chainIndex >= 2) {
     playSE('chain'); vibrate(25);
     shaking.value = true; setTimeout(() => { shaking.value = false; }, scaled(300));
-    // Cascade mode: show chain label + CP gain
+    // Cascade mode: show chain label + CP gain + meter + milestone
     if (store.mode === 'cascade') {
       addFloatingChainLabel(chain.clearedPositions, chain.chainIndex);
+      store.setChainMeterLevel(chain.chainIndex);
+      // マイルストーンボーナス表示
+      for (const ms of CASCADE_MILESTONES) {
+        if (chain.chainIndex >= ms.chain && !milestoneShown.has(ms.chain)) {
+          milestoneShown.add(ms.chain);
+          addFloatingMilestoneLabel(chain.clearedPositions, ms.chain, ms.bonus);
+        }
+      }
+      // NEW BEST演出
+      if (chain.chainIndex > prevMaxChainIndex && chain.chainIndex >= 2) {
+        prevMaxChainIndex = chain.chainIndex;
+        showNewBestOverlay(chain.chainIndex);
+      }
     }
   } else {
     playSE('match'); vibrate(15);
@@ -1285,6 +1326,17 @@ function tileTransition(r: number, c: number) {
         <span class="chain-text">{{ cl.chainText }}</span>
         <span class="chain-cp-text">{{ cl.cpText }}</span>
       </div>
+
+      <!-- Floating milestone labels (Cascade mode) -->
+      <div
+        v-for="ml in floatingMilestoneLabels"
+        :key="ml.id"
+        class="floating-milestone-label"
+        :style="{ left: ml.x + 'px', top: ml.y + 'px' }"
+      >{{ ml.text }}</div>
+
+      <!-- NEW BEST overlay (Cascade mode) -->
+      <div v-if="newBestOverlay" class="new-best-overlay">{{ newBestOverlay }}</div>
 
       <!-- Survival wave banner -->
       <div v-if="waveBanner" class="wave-banner">
@@ -1713,6 +1765,48 @@ function tileTransition(r: number, c: number) {
   15%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   60%  { opacity: 1; transform: translate(-50%, -50%) translateY(-12px); }
   100% { opacity: 0; transform: translate(-50%, -50%) translateY(-36px) scale(0.8); }
+}
+
+/* Floating milestone labels (Cascade mode) */
+.floating-milestone-label {
+  position: absolute;
+  pointer-events: none;
+  z-index: 36;
+  transform: translate(-50%, -50%);
+  font-size: 15px;
+  font-weight: 900;
+  color: #ffd600;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.4), 0 0 12px rgba(255,214,0,0.6);
+  white-space: nowrap;
+  animation: milestone-float calc(1.8s / var(--anim-duration-factor, 1)) ease-out forwards;
+}
+@keyframes milestone-float {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(2); }
+  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  55%  { opacity: 1; transform: translate(-50%, -50%) translateY(-16px); }
+  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-48px) scale(0.7); }
+}
+/* NEW BEST overlay (Cascade mode) */
+.new-best-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  font-weight: 900;
+  color: #ffd600;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.5), 0 0 20px rgba(255,214,0,0.5);
+  z-index: 40;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: new-best-pop calc(2s / var(--anim-duration-factor, 1)) ease-out forwards;
+}
+@keyframes new-best-pop {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  10%  { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+  20%  { transform: translate(-50%, -50%) scale(1); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-20px); }
 }
 
 /* Survival wave banner */
