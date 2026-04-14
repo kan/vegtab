@@ -120,6 +120,19 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     for (const p of wavePreviewPositions.value) s.add(`${p.row},${p.col}`);
     return s;
   });
+  /** 予告位置のうち耐久値3のおじゃまがある位置（次ウェーブで耐久値4=即死） */
+  const wavePreviewLethalKeySet = computed<Set<string>>(() => {
+    const s = new Set<string>();
+    const b = board.value;
+    if (!b) return s;
+    for (const p of wavePreviewPositions.value) {
+      const cell = b[p.row]?.[p.col];
+      if (cell?.obstacle && cell.obstacle.durability >= 3) {
+        s.add(`${p.row},${p.col}`);
+      }
+    }
+    return s;
+  });
 
   function startGame(newSeed?: number, gameMode?: GameMode) {
     seed.value = newSeed ?? Math.floor(Math.random() * 0x7FFFFFFF);
@@ -244,19 +257,27 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     gameState.value.board[pos.row][pos.col] = { color: 0 as Color, item };
   }
 
+  /** Debug-only: place an obstacle on the board */
+  function placeObstacle(pos: Position, durability: number) {
+    if (!gameState.value) return;
+    const cell = gameState.value.board[pos.row]?.[pos.col];
+    if (!cell) return;
+    gameState.value.board[pos.row][pos.col] = { color: 0 as Color, obstacle: { durability } };
+  }
+
   return {
     gameState, seed, replayLog,
     board, score, moveCount, autoActivating, isGameOver, isCleared,
     mode, moveLimit, remainingMoves, maxChainIndex, cascadePoints, nextTilePreview,
     obstacleCount,
     waveNumber, movesUntilWave, nextWaveNumber, nextWaveObstacleCount,
-    wavePreviewNumber, wavePreviewPositions, wavePreviewKeySet,
+    wavePreviewNumber, wavePreviewPositions, wavePreviewKeySet, wavePreviewLethalKeySet,
     startGame, restoreState, recordAction, swap, tap,
     activateScope, applyScopeSynthesis,
     computeScopePlan, computeScopeSwapPreChains, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,
     computeAutoActivationPlan,
-    applyState, setDisplayScore, placeItem,
+    applyState, setDisplayScore, placeItem, placeObstacle,
     maxChain, generatedItemTypes, recordPlanStats,
   };
 });

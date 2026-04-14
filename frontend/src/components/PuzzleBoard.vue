@@ -1227,7 +1227,10 @@ function tileTransition(r: number, c: number) {
             <div
               v-if="store.wavePreviewKeySet.has(pk(row - 1, col - 1))"
               class="wave-preview-marker"
-              :class="{ 'wave-preview-urgent': (store.movesUntilWave ?? 99) <= 1 }"
+              :class="{
+                'wave-preview-urgent': (store.movesUntilWave ?? 99) <= 1,
+                'wave-preview-lethal': store.wavePreviewLethalKeySet.has(pk(row - 1, col - 1)),
+              }"
               :style="{ width: (cellSize - 6) + 'px', height: (cellSize - 6) + 'px' }"
             />
           </div>
@@ -1539,6 +1542,25 @@ function tileTransition(r: number, c: number) {
 }
 .wave-preview-urgent::after {
   background: rgba(244, 67, 54, 0.18);
+}
+/* Lethal: durability 3 obstacle at preview position — next wave = instant death */
+.wave-preview-lethal {
+  border: 3px solid var(--danger, #f44336);
+  border-style: solid;
+  animation: wave-preview-lethal-flash 0.45s ease-in-out infinite;
+  box-shadow: 0 0 8px 2px rgba(244, 67, 54, 0.5);
+}
+.wave-preview-lethal::after {
+  background: rgba(244, 67, 54, 0.3);
+  animation: wave-preview-lethal-bg 0.45s ease-in-out infinite;
+}
+@keyframes wave-preview-lethal-flash {
+  0%, 100% { opacity: 0.7; box-shadow: 0 0 8px 2px rgba(244, 67, 54, 0.5); }
+  50% { opacity: 1; box-shadow: 0 0 14px 4px rgba(244, 67, 54, 0.7); }
+}
+@keyframes wave-preview-lethal-bg {
+  0%, 100% { background: rgba(244, 67, 54, 0.15); }
+  50% { background: rgba(244, 67, 54, 0.35); }
 }
 @keyframes wave-preview-pulse {
   0%, 100% { opacity: 0.55; }
