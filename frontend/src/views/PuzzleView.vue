@@ -275,6 +275,8 @@ const { animSpeed, cycleSpeed } = useAnim();
 const showSettings = ref(false);
 
 // --- Game over display ---
+const peekingBoard = ref(false);
+
 const gameOverTitle = computed(() => {
   if (selectedMode.value === 'clear') {
     return store.isCleared ? t('mode.cleared') : t('mode.failed');
@@ -393,7 +395,14 @@ const gameOverScore = computed(() => {
       </div>
 
       <!-- Game over overlay -->
-      <div v-if="store.isGameOver && !store.autoActivating" class="game-over-overlay">
+      <div
+        v-if="store.isGameOver && !store.autoActivating"
+        class="game-over-overlay"
+        :class="{ 'game-over-peek': peekingBoard }"
+        @pointerdown.self="peekingBoard = true"
+        @pointerup.self="peekingBoard = false"
+        @pointerleave="peekingBoard = false"
+      >
         <div class="game-over-card">
           <h2>{{ gameOverTitle }}</h2>
           <p class="final-score">{{ gameOverScore }}</p>
@@ -724,6 +733,13 @@ const gameOverScore = computed(() => {
   align-items: center;
   justify-content: center;
   z-index: 10;
+}
+.game-over-peek {
+  background: transparent;
+}
+.game-over-peek .game-over-card {
+  opacity: 0;
+  pointer-events: none;
 }
 .game-over-card {
   background: var(--bg-card);
