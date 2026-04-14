@@ -9,6 +9,7 @@ const store = usePuzzleStore();
 
 const visible = ref(false);
 const pendingItem = ref<ItemType | null>(null);
+const pendingObstacle = ref<number | null>(null);
 
 function show() {
   visible.value = true;
@@ -17,36 +18,53 @@ function show() {
 function hide() {
   visible.value = false;
   pendingItem.value = null;
+  pendingObstacle.value = null;
 }
 
 function selectItem(item: ItemType) {
   pendingItem.value = item;
+  pendingObstacle.value = null;
+  visible.value = false;
+}
+
+function selectObstacle(durability: number) {
+  pendingObstacle.value = durability;
+  pendingItem.value = null;
   visible.value = false;
 }
 
 function cancel() {
   pendingItem.value = null;
+  pendingObstacle.value = null;
 }
 
 defineExpose({
   show,
   handleCellTap(row: number, col: number): boolean {
-    if (!pendingItem.value) return false;
-    store.placeItem({ row, col }, pendingItem.value);
-    pendingItem.value = null;
-    return true;
+    if (pendingItem.value) {
+      store.placeItem({ row, col }, pendingItem.value);
+      pendingItem.value = null;
+      return true;
+    }
+    if (pendingObstacle.value !== null) {
+      store.placeObstacle({ row, col }, pendingObstacle.value);
+      pendingObstacle.value = null;
+      return true;
+    }
+    return false;
   },
   get isPlacing() {
-    return pendingItem.value !== null;
+    return pendingItem.value !== null || pendingObstacle.value !== null;
   },
 });
 </script>
 
 <template>
   <!-- Place status bar (shown on puzzle screen when placing) -->
-  <div v-if="pendingItem" class="place-bar">
+  <div v-if="pendingItem || pendingObstacle !== null" class="place-bar">
     <span class="place-label">Tap a cell to place</span>
-    <ItemIcon :item="pendingItem" :size="18" />
+    <ItemIcon v-if="pendingItem" :item="pendingItem" :size="18" />
+    <span v-if="pendingObstacle !== null" class="obstacle-badge">HP{{ pendingObstacle }}</span>
     <button class="cancel-btn" @click="cancel">Cancel</button>
   </div>
 
@@ -55,9 +73,11 @@ defineExpose({
     <div v-if="visible" class="debug-overlay" @click.self="hide">
       <div class="debug-modal">
         <div class="debug-header">
-          <span class="debug-title">DEBUG: Place Item</span>
+          <span class="debug-title">DEBUG: Place Item / Obstacle</span>
           <button class="close-btn" @click="hide">&times;</button>
         </div>
+
+        <div class="section-label">Items</div>
         <div class="item-grid">
           <button
             v-for="item in ALL_ITEM_TYPES"
@@ -66,6 +86,18 @@ defineExpose({
             @click="selectItem(item)"
           >
             <ItemIcon :item="item" :size="28" />
+          </button>
+        </div>
+
+        <div class="section-label">Obstacles</div>
+        <div class="item-grid">
+          <button
+            v-for="hp in [1, 2, 3]"
+            :key="hp"
+            class="item-btn obstacle-btn"
+            @click="selectObstacle(hp)"
+          >
+            <span class="obstacle-label">HP{{ hp }}</span>
           </button>
         </div>
       </div>
@@ -96,6 +128,14 @@ defineExpose({
   padding: 3px 10px;
   font-size: 10px;
   cursor: pointer;
+}
+.obstacle-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: #757575;
+  border-radius: 4px;
+  padding: 2px 8px;
 }
 .debug-overlay {
   position: fixed;
@@ -133,6 +173,17 @@ defineExpose({
   cursor: pointer;
   padding: 0 4px;
 }
+.section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 12px 0 6px;
+}
+.section-label:first-of-type {
+  margin-top: 0;
+}
 .item-grid {
   display: flex;
   flex-wrap: wrap;
@@ -152,5 +203,13 @@ defineExpose({
 }
 .item-btn:active {
   background: #3a3a5e;
+}
+.obstacle-btn {
+  border-color: #666;
+}
+.obstacle-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ccc;
 }
 </style>
