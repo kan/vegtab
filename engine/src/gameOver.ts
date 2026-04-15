@@ -11,14 +11,32 @@ export function hasValidSwap(board: (Cell | null)[][]): boolean {
   for (let row = 0; row < BOARD_SIZE; row++) {
     for (let col = 0; col < BOARD_SIZE; col++) {
       const cell = board[row][col];
-      if (cell === null || cell.obstacle) continue;
+      if (cell === null) continue;
 
       for (const [dr, dc] of directions) {
         const nr = row + dr;
         const nc = col + dc;
         if (nr >= BOARD_SIZE || nc >= BOARD_SIZE) continue;
         const neighbor = board[nr][nc];
-        if (neighbor === null || neighbor.obstacle) continue;
+        if (neighbor === null) continue;
+
+        // おじゃま同士のスワイプは不可
+        if (cell.obstacle && neighbor.obstacle) continue;
+
+        // 片方がおじゃまタイルの場合
+        if (cell.obstacle || neighbor.obstacle) {
+          const nonObstacle = cell.obstacle ? neighbor : cell;
+          // アイテム（scope以外）×おじゃま は常に有効（アイテム発動）
+          if (nonObstacle.item && nonObstacle.item !== 'scope') return true;
+          // 通常タイル×おじゃま: 入れ替えてマッチが成立するか
+          if (!nonObstacle.item) {
+            const testBoard = cloneBoard(board);
+            testBoard[row][col] = { ...neighbor };
+            testBoard[nr][nc] = { ...cell };
+            if (findMatches(testBoard).length > 0) return true;
+          }
+          continue;
+        }
 
         // アイテム同士のスワイプは常に有効（合成）
         if (cell.item && neighbor.item) return true;
