@@ -1220,7 +1220,7 @@ export function processScopeSynthesis(
   // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
   const nc = newState.numColors ?? NUM_COLORS;
   applyGravity(board, isPassThroughMode(newState.mode));
-  newState.rngState = fillEmptyCells(board, newState.rngState, nc);
+  newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
 
   // collector: gravity + fill 後の盤面スナップショット
   collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
@@ -1261,6 +1261,7 @@ export function processScopeSwap(
   const preChainResult = processChains(board, newState.rngState, 1, newState.mode, false, nc, collector, newState.sparkleRngState);
   newState.score += preChainResult.score;
   newState.rngState = preChainResult.rngState;
+  updateMaxChain(newState, preChainResult.steps);
 
   // Re-find scope position after gravity
   const origScopePos = cell1?.item === 'scope' ? targetPos : pos;
@@ -1276,53 +1277,60 @@ export function processScopeSwap(
   return processAction(newState, { type: 'scope', pos: scopePos, targetCells }, collector);
 }
 
-/** Sprint終了時の残存アイテム自動発動。moveCountを増やさず、新アイテム生成を抑制する。 */
-export function processAutoActivation(state: GameState, collector?: TraceCollector): GameState {
-  if (state.mode !== 'sprint') return state;
+/** Sprint終了時の残存アイテム自動発動（1アイテムのみ）。moveCountを増やさず、連鎖なし。
+ *  最初に見つかったscope以外のアイテムを1つ発動し、新しいGameStateを返す。
+ *  アイテムが見つからなければnullを返す。 */
+export function processAutoActivationStep(state: GameState, collector?: TraceCollector): GameState | null {
+  if (state.mode !== 'sprint') return null;
 
-  let current = cloneGameState(state);
+  const current = cloneGameState(state);
   const board = current.board;
 
-  // 盤面を走査し、アイテムを1つずつ発動する
-  let found = true;
-  while (found) {
-    found = false;
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        const cell = board[r][c];
-        if (!cell?.item) continue;
-        if (cell.item === 'scope') continue; // スプーンは自動発動しない（ユーザー選択が必要）
-        const pos = { row: r, col: c };
-        let targetColor: number | undefined;
-        if (cell.item === 'flush') {
-          targetColor = findFlushTargetColor(board, pos) ?? undefined;
-          if (targetColor === undefined) continue;
-        }
-        collector?.onBoardSnapshot?.('beforeItemActivation', cloneBoard(board));
-        const result = activateItem(board, pos, cell.item, targetColor, 1, current.rngState, undefined, collector);
-        current.score += result.score;
-        current.rngState = result.rngState;
-
-        // collector: gravity 前に dropMoves を計算
-        if (collector?.onDropData) {
-          const dm = computeDropMoves(board, false);
-          collector.onDropData(dm.moves, dm.newTileEntries);
-        }
-
-        applyGravity(board, false);
-        current.rngState = fillEmptyCells(board, current.rngState, current.numColors ?? NUM_COLORS);
-
-        // collector: gravity + fill 後の盤面スナップショット
-        collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
-
-        // 連鎖処理なし — アイテム効果のスコアのみ加算（#9: スキル要素を損なうランダム連鎖を抑制）
-        found = true;
-        break;
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const cell = board[r][c];
+      if (!cell?.item) continue;
+      if (cell.item === 'scope') continue; // スプーンは自動発動しない（ユーザー選択が必要）
+      const pos = { row: r, col: c };
+      let targetColor: number | undefined;
+      if (cell.item === 'flush') {
+        targetColor = findFlushTargetColor(board, pos) ?? undefined;
+        if (targetColor === undefined) continue;
       }
-      if (found) break;
+      collector?.onBoardSnapshot?.('beforeItemActivation', cloneBoard(board));
+      const result = activateItem(board, pos, cell.item, targetColor, 1, current.rngState, undefined, collector);
+      current.score += result.score;
+      current.rngState = result.rngState;
+
+      // collector: gravity 前に dropMoves を計算
+      if (collector?.onDropData) {
+        const dm = computeDropMoves(board, false);
+        collector.onDropData(dm.moves, dm.newTileEntries);
+      }
+
+      applyGravity(board, false);
+      current.rngState = fillEmptyCells(board, current.rngState, current.numColors ?? NUM_COLORS);
+
+      // collector: gravity + fill 後の盤面スナップショット
+      collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
+
+      // 連鎖処理なし — アイテム効果のスコアのみ加算（#9: スキル要素を損なうランダム連鎖を抑制）
+      return current;
     }
   }
 
+  return null;
+}
+
+/** Sprint終了時の残存アイテム自動発動（全アイテム）。moveCountを増やさず、新アイテム生成を抑制する。 */
+export function processAutoActivation(state: GameState, collector?: TraceCollector): GameState {
+  if (state.mode !== 'sprint') return state;
+  let current = state;
+  let next = processAutoActivationStep(current, collector);
+  while (next) {
+    current = next;
+    next = processAutoActivationStep(current, collector);
+  }
   return current;
 }
 

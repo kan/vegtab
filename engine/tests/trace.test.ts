@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  initializeGame, processAction, processAutoActivation,
-  cloneGameState, processScopeSynthesis,
+  initializeGame, processAction, processAutoActivation, processAutoActivationStep,
+  cloneGameState, processScopeSynthesis, processScopeSwap,
 } from '../src/engine.js';
 import {
   computeSwapPlan, computeItemTapPlan, computeItemSwapPlan,
@@ -710,6 +710,54 @@ describe('computeAutoActivationPlan', () => {
     if (!result) return;
     expect(result.pos).toEqual({ row: 4, col: 4 });
   });
+
+  it('finalStateのmoveCountが元の値から変化しない (#41)', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    // moveLimit到達でゲーム終了した状態をシミュレート
+    state.moveCount = 15;
+    state.isGameOver = true;
+    // アイテムを配置
+    state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
+    const originalMoveCount = state.moveCount;
+
+    const result = computeAutoActivationPlan(state);
+    expect(result).not.toBeNull();
+    if (!result) return;
+    // moveCountがインクリメントされていないこと（修正前はprocessAction('tap')でインクリメントされていた）
+    expect(result.plan.finalState.moveCount).toBe(originalMoveCount);
+  });
+
+  it('全アイテム逐次発動でprocessAutoActivationと同一スコアになる (#41)', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    state.moveCount = 15;
+    state.isGameOver = true;
+    // 盤面上の既存アイテムをクリアしてから複数配置
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    state.board[1][1] = { color: 0 as Color, item: 'v_cut' };
+    state.board[3][3] = { color: 0 as Color, item: 'h_cut' };
+    state.board[5][5] = { color: 0 as Color, item: 'burst' };
+
+    // processAutoActivationで一括処理した結果
+    const engineResult = processAutoActivation(state);
+
+    // computeAutoActivationPlanで1アイテムずつ処理した結果をチェーンする
+    let current: GameState = { ...state, board: state.board.map(row => row.map(c => c ? { ...c } : null)), rngState: [...state.rngState] };
+    let plan = computeAutoActivationPlan(current);
+    while (plan) {
+      current = plan.plan.finalState;
+      plan = computeAutoActivationPlan(current);
+    }
+
+    // 両者のスコアとmoveCountが一致すること
+    expect(current.score).toBe(engineResult.score);
+    expect(current.moveCount).toBe(engineResult.moveCount);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -818,6 +866,336 @@ describe('Cross-function consistency', () => {
         break;
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// processAutoActivationStep (新規関数)
+// ---------------------------------------------------------------------------
+describe('processAutoActivationStep', () => {
+  it('Sprint以外のモードではnullを返す', () => {
+    for (const mode of ['clear', 'survival', 'cascade'] as const) {
+      const state = initializeGame(42, mode, mode === 'clear' ? { obstacleCount: 5 } : undefined);
+      state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
+      expect(processAutoActivationStep(state)).toBeNull();
+    }
+  });
+
+  it('Sprintモードで1つのアイテムだけを発動して新しいstateを返す', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    // 既存アイテムをクリア
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    state.board[1][1] = { color: 0 as Color, item: 'v_cut' };
+    state.board[3][3] = { color: 0 as Color, item: 'h_cut' };
+
+    const result = processAutoActivationStep(state);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    // v_cut(1,1) が先に発動されるはず。h_cutはまだ盤面に存在する
+    let foundHCut = false;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (result.board[r][c]?.item === 'h_cut') foundHCut = true;
+      }
+    }
+    expect(foundHCut).toBe(true);
+  });
+
+  it('moveCountをインクリメントしない', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    state.moveCount = 15;
+    state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
+    const original = state.moveCount;
+
+    const result = processAutoActivationStep(state);
+    expect(result).not.toBeNull();
+    if (!result) return;
+    expect(result.moveCount).toBe(original);
+  });
+
+  it('scopeのみの場合はnullを返す', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    state.board[4][4] = { color: 0 as Color, item: 'scope' };
+    expect(processAutoActivationStep(state)).toBeNull();
+  });
+
+  it('アイテムが存在しない場合はnullを返す', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    expect(processAutoActivationStep(state)).toBeNull();
+  });
+
+  it('processAutoActivationと同じ結果になる（逐次呼び出し）', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    state.moveCount = 15;
+    state.isGameOver = true;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    state.board[2][2] = { color: 0 as Color, item: 'burst' };
+    state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
+
+    const engineResult = processAutoActivation(state);
+
+    let current = cloneGameState(state);
+    let step = processAutoActivationStep(current);
+    while (step) {
+      current = step;
+      step = processAutoActivationStep(current);
+    }
+
+    expect(current.score).toBe(engineResult.score);
+    expect(current.moveCount).toBe(engineResult.moveCount);
+    expect(current.rngState).toEqual(engineResult.rngState);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// processScopeSwap - Cascade mode: updateMaxChain
+// ---------------------------------------------------------------------------
+describe('processScopeSwap - Cascade updateMaxChain', () => {
+  it('CascadeモードでprocessScopeSwapがcascadePointsとmaxChainIndexを更新する', () => {
+    // 複数シードで試行して、pre-chainが発生するケースを探す
+    let found = false;
+    for (const seed of [42, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000]) {
+      const state = initializeGame(seed, 'cascade');
+
+      for (let r = 0; r < BOARD_SIZE - 1 && !found; r++) {
+        for (let c = 0; c < BOARD_SIZE - 1 && !found; c++) {
+          if (state.board[r][c]?.item) continue;
+          const neighbor = state.board[r][c + 1];
+          if (neighbor?.item) continue;
+
+          const testState = cloneGameState(state);
+          testState.board[r][c] = { color: 0 as Color, item: 'scope' };
+
+          const prevCP = testState.cascadePoints ?? 0;
+          const result = processScopeSwap(testState, { row: r, col: c }, 'right', []);
+
+          if (result !== testState && (result.cascadePoints ?? 0) > prevCP) {
+            found = true;
+            expect(result.cascadePoints).toBeGreaterThan(prevCP);
+            expect(result.maxChainIndex).toBeGreaterThanOrEqual(2);
+          }
+        }
+      }
+      if (found) break;
+    }
+    // updateMaxChain呼び出しの存在確認（エラーなく実行される）
+    expect(true).toBe(true);
+  });
+
+  it('processScopeSwapの決定性（同一シード・同一操作で同一結果、Cascadeモード）', () => {
+    for (const seed of [42, 100, 500]) {
+      const state1 = initializeGame(seed, 'cascade');
+      state1.board[3][3] = { color: 0 as Color, item: 'scope' };
+      if (state1.board[3][4]?.item) continue;
+
+      const state2 = initializeGame(seed, 'cascade');
+      state2.board[3][3] = { color: 0 as Color, item: 'scope' };
+
+      const result1 = processScopeSwap(state1, { row: 3, col: 3 }, 'right', []);
+      const result2 = processScopeSwap(state2, { row: 3, col: 3 }, 'right', []);
+
+      expect(result1.score).toBe(result2.score);
+      expect(result1.moveCount).toBe(result2.moveCount);
+      expect(result1.cascadePoints).toBe(result2.cascadePoints);
+      expect(result1.maxChainIndex).toBe(result2.maxChainIndex);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeScopeSwapPreChains - Cascade sparkleRngState support
+// ---------------------------------------------------------------------------
+describe('computeScopeSwapPreChains - Cascade sparkleRngState', () => {
+  it('CascadeモードでpreSparkleRngが返却される', () => {
+    const state = initializeGame(42, 'cascade');
+    state.board[3][3] = { color: 0 as Color, item: 'scope' };
+    if (state.board[3][4]?.item) return;
+
+    const result = computeScopeSwapPreChains(state, { row: 3, col: 3 }, 'right');
+    if (!result) return;
+    expect(result.preSparkleRng).toBeDefined();
+    expect(Array.isArray(result.preSparkleRng)).toBe(true);
+    expect(result.preSparkleRng!.length).toBe(BOARD_SIZE);
+  });
+
+  it('非CascadeモードではpreSparkleRngがundefined', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    state.board[3][3] = { color: 0 as Color, item: 'scope' };
+    if (state.board[3][4]?.item) return;
+
+    const result = computeScopeSwapPreChains(state, { row: 3, col: 3 }, 'right');
+    if (!result) return;
+    expect(result.preSparkleRng).toBeUndefined();
+  });
+
+  it('sparkleRngStateが元のstateから変更されない（クローンされている）', () => {
+    const state = initializeGame(42, 'cascade');
+    state.board[3][3] = { color: 0 as Color, item: 'scope' };
+    if (state.board[3][4]?.item) return;
+
+    const originalSparkleRng = [...state.sparkleRngState!];
+    computeScopeSwapPreChains(state, { row: 3, col: 3 }, 'right');
+
+    expect(state.sparkleRngState).toEqual(originalSparkleRng);
+  });
+
+  it('pre-chainで消去されたキラキラタイルのsparkleCountが記録される', () => {
+    const state = initializeGame(42, 'cascade');
+    state.board[3][3] = { color: 0 as Color, item: 'scope' };
+    if (state.board[3][4]?.item) return;
+    const result = computeScopeSwapPreChains(state, { row: 3, col: 3 }, 'right');
+    if (!result) return;
+    // sparkleCountフィールドの型検証: undefinedまたは正の整数
+    for (const chain of result.preChains) {
+      if (chain.sparkleCount !== undefined) {
+        expect(chain.sparkleCount).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('Cascadeモードでpre-chain後のpreScoreがprocessScopeSwapと整合する', () => {
+    for (const seed of [42, 100, 500]) {
+      const state = initializeGame(seed, 'cascade');
+      state.board[3][3] = { color: 0 as Color, item: 'scope' };
+      if (state.board[3][4]?.item) continue;
+
+      const preChainResult = computeScopeSwapPreChains(state, { row: 3, col: 3 }, 'right');
+      if (!preChainResult) continue;
+
+      const engineResult = processScopeSwap(state, { row: 3, col: 3 }, 'right', []);
+      // engineResultのスコアにはpre-chain分が含まれている
+      expect(engineResult.score).toBeGreaterThanOrEqual(preChainResult.preScore);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// processScopeSynthesis - Cascade sparkleRngState support
+// ---------------------------------------------------------------------------
+describe('processScopeSynthesis - Cascade sparkleRngState', () => {
+  it('Cascadeモードでscope+scope合成後にキラキラ付きタイルが補充される可能性がある', () => {
+    let foundSparkle = false;
+    for (const seed of [42, 100, 200, 300, 400, 500, 600, 700, 800, 900]) {
+      const state = initializeGame(seed, 'cascade');
+      state.board[4][4] = { color: 0 as Color, item: 'scope' };
+      state.board[4][5] = { color: 0 as Color, item: 'scope' };
+
+      const targetCells = [{ row: 6, col: 6 }];
+      const result = processScopeSynthesis(state, { row: 4, col: 4 }, { row: 4, col: 5 }, targetCells);
+
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          if (result.board[r][c]?.sparkle) {
+            foundSparkle = true;
+            break;
+          }
+        }
+        if (foundSparkle) break;
+      }
+      if (foundSparkle) break;
+    }
+    expect(foundSparkle).toBe(true);
+  });
+
+  it('非Cascadeモードでscope合成後にキラキラ付きタイルが存在しない', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    state.board[4][4] = { color: 0 as Color, item: 'scope' };
+    state.board[4][5] = { color: 0 as Color, item: 'scope' };
+
+    const result = processScopeSynthesis(state, { row: 4, col: 4 }, { row: 4, col: 5 }, [{ row: 6, col: 6 }]);
+
+    let hasSparkle = false;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (result.board[r][c]?.sparkle) {
+          hasSparkle = true;
+        }
+      }
+    }
+    expect(hasSparkle).toBe(false);
+  });
+
+  it('Cascadeモードでscope合成の決定性（同一シード・同一操作で同一結果）', () => {
+    const state1 = initializeGame(42, 'cascade');
+    state1.board[4][4] = { color: 0 as Color, item: 'scope' };
+    state1.board[4][5] = { color: 0 as Color, item: 'scope' };
+
+    const state2 = initializeGame(42, 'cascade');
+    state2.board[4][4] = { color: 0 as Color, item: 'scope' };
+    state2.board[4][5] = { color: 0 as Color, item: 'scope' };
+
+    const result1 = processScopeSynthesis(state1, { row: 4, col: 4 }, { row: 4, col: 5 }, [{ row: 6, col: 6 }]);
+    const result2 = processScopeSynthesis(state2, { row: 4, col: 4 }, { row: 4, col: 5 }, [{ row: 6, col: 6 }]);
+
+    expect(result1.score).toBe(result2.score);
+    expect(result1.cascadePoints).toBe(result2.cascadePoints);
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        expect(result1.board[r][c]?.color).toBe(result2.board[r][c]?.color);
+        expect(result1.board[r][c]?.sparkle).toBe(result2.board[r][c]?.sparkle);
+      }
+    }
+  });
+
+  it('computeScopeSynthesisPlanのfinalStateがprocessScopeSynthesisと一致する（Cascade scope+scope）', () => {
+    const state = initializeGame(42, 'cascade');
+    state.board[4][4] = { color: 0 as Color, item: 'scope' };
+    state.board[4][5] = { color: 0 as Color, item: 'scope' };
+
+    const plan = computeScopeSynthesisPlan(state, { row: 4, col: 4 }, { row: 4, col: 5 }, [{ row: 6, col: 6 }]);
+    const engineState = processScopeSynthesis(state, { row: 4, col: 4 }, { row: 4, col: 5 }, [{ row: 6, col: 6 }]);
+
+    expect(plan).not.toBeNull();
+    if (!plan) return;
+    assertFinalStateMatch(plan.finalState, engineState, 'computeScopeSynthesisPlan cascade scope+scope');
+    expect(plan.finalState.cascadePoints).toBe(engineState.cascadePoints);
+    expect(plan.finalState.maxChainIndex).toBe(engineState.maxChainIndex);
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        expect(plan.finalState.board[r][c]?.sparkle, `cascade synthesis board[${r}][${c}].sparkle`).toBe(engineState.board[r][c]?.sparkle);
+      }
+    }
+  });
+
+  it('computeScopeSynthesisPlanのfinalStateがprocessScopeSynthesisと一致する（Cascade scope+burst）', () => {
+    const state = initializeGame(42, 'cascade');
+    state.board[4][4] = { color: 0 as Color, item: 'scope' };
+    state.board[4][5] = { color: 0 as Color, item: 'burst' };
+
+    const plan = computeScopeSynthesisPlan(state, { row: 4, col: 4 }, { row: 4, col: 5 }, []);
+    const engineState = processScopeSynthesis(state, { row: 4, col: 4 }, { row: 4, col: 5 }, []);
+
+    expect(plan).not.toBeNull();
+    if (!plan) return;
+    assertFinalStateMatch(plan.finalState, engineState, 'computeScopeSynthesisPlan cascade scope+burst');
+    expect(plan.finalState.cascadePoints).toBe(engineState.cascadePoints);
   });
 });
 

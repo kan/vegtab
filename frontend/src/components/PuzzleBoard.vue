@@ -2,7 +2,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan, type WaveAnimPlan, type WaveAnimStep } from '@/stores/puzzle';
-import { BOARD_SIZE, cloneBoard, getSynthesisEffect, processAutoActivation, CASCADE_MILESTONES, type Position, type Direction, type Cell, type Color, type ItemType } from '@vegtab/engine';
+import { BOARD_SIZE, cloneBoard, getSynthesisEffect, CASCADE_MILESTONES, type Position, type Direction, type Cell, type Color, type ItemType } from '@vegtab/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
@@ -198,13 +198,11 @@ function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() =>
 async function autoActivateItems() {
   if (!store.isGameOver || store.mode !== 'sprint') return;
 
-  // Compute engine's authoritative auto-activation result before animating
-  const preAutoState = store.gameState!;
-  const engineResult = processAutoActivation(preAutoState);
-
   store.autoActivating = true;
   await wait(scaled(400)); // brief pause before auto-activation starts
 
+  // computeAutoActivationPlan now uses processAutoActivationStep internally,
+  // so finalState has correct moveCount (not incremented) and score (no chains).
   let autoPlan = store.computeAutoActivationPlan();
   while (autoPlan) {
     visualBoard.value = autoPlan.plan.boardBeforeActivation;
@@ -214,11 +212,6 @@ async function autoActivateItems() {
     store.applyState(autoPlan.plan.finalState);
     visualBoard.value = null;
     autoPlan = store.computeAutoActivationPlan();
-  }
-
-  // Apply engine's authoritative final state to ensure score matches
-  if (engineResult.score !== preAutoState.score) {
-    store.applyState(engineResult);
   }
 
   store.autoActivating = false;
@@ -525,6 +518,7 @@ async function commitSwap(pos: Position, dir: Direction) {
             board: preChainResult.boardAfterPreChains,
             score: preChainResult.preScore,
             rngState: preChainResult.preRng,
+            sparkleRngState: preChainResult.preSparkleRng ?? state.sparkleRngState,
           });
         } else {
           store.applyState({ ...state, board: preChainResult.boardAfterSwap });

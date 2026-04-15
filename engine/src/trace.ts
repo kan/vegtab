@@ -24,7 +24,7 @@ import { calculateStepScore } from './score.js';
 import { damageObstacles } from './obstacle.js';
 import { computeDropMoves } from './dropMoves.js';
 import {
-  isPassThroughMode, processAction, processDamage, processScopeSynthesis,
+  isPassThroughMode, processAction, processAutoActivationStep, processDamage, processScopeSynthesis,
 } from './engine.js';
 import { SURVIVAL_WAVE_INTERVAL } from './survival.js';
 import type {
@@ -172,6 +172,7 @@ export interface ScopeSwapPreChainResult {
   preChains: ChainAnimData[];
   preScore: number;
   preRng: number[];
+  preSparkleRng?: number[];
   scopePos: Position;
 }
 
@@ -618,7 +619,9 @@ export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: 
 
   const passThrough = isPassThroughMode(state.mode);
   const nc = state.numColors ?? NUM_COLORS;
-  let rng = state.rngState;
+  let rng = [...state.rngState];
+  // Cascade: sparkleRngState をクローンして進める（fillEmptyCells がインプレースで変更するため）
+  const sparkleRng = state.sparkleRngState ? [...state.sparkleRngState] : undefined;
   const chains: ChainAnimData[] = [];
   const MAX_CHAIN_ITERATIONS = 20;
   let chainIndex = 1;
@@ -636,7 +639,7 @@ export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: 
         for (const p of c) board[p.row][p.col] = null;
         rng = processDamage(board, c, rng, state.mode, nc);
         applyGravity(board, passThrough);
-        rng = fillEmptyCells(board, rng, nc);
+        rng = fillEmptyCells(board, rng, nc, sparkleRng);
       }
       break;
     }
@@ -646,7 +649,12 @@ export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: 
     const stepScore = calculateStepScore(matches, chainIndex);
     totalScore += stepScore;
 
-    for (const p of clearedPositions) board[p.row][p.col] = null;
+    // キラキラカウント
+    let sparkleCount = 0;
+    for (const p of clearedPositions) {
+      if (board[p.row][p.col]?.sparkle) sparkleCount++;
+      board[p.row][p.col] = null;
+    }
     for (const ig of itemGens) {
       board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
     }
@@ -654,12 +662,12 @@ export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: 
     const destroyed = damageObstacles(board, clearedPositions);
     if (destroyed.length > 0) {
       applyGravity(board, passThrough);
-      rng = fillEmptyCells(board, rng, nc);
+      rng = fillEmptyCells(board, rng, nc, sparkleRng);
     }
 
     const dm = computeDropMoves(board, passThrough);
     applyGravity(board, passThrough);
-    rng = fillEmptyCells(board, rng, nc);
+    rng = fillEmptyCells(board, rng, nc, sparkleRng);
 
     chains.push({
       matches,
@@ -668,6 +676,7 @@ export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: 
       itemGens,
       score: stepScore,
       chainIndex,
+      sparkleCount: sparkleCount > 0 ? sparkleCount : undefined,
       dropMoves: dm.moves,
       newTileEntries: dm.newTileEntries,
       boardAfterDrop: cloneBoard(board),
@@ -686,6 +695,7 @@ export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: 
     preChains: chains,
     preScore: totalScore,
     preRng: rng,
+    preSparkleRng: sparkleRng,
     scopePos,
   };
 }
@@ -741,24 +751,23 @@ export function computeScopeSynthesisPlan(state: GameState, pos1: Position, pos2
 
 /**
  * Auto-activation is special: it processes one item at a time with
- * suppressChains=true and no moveCount increment.  We can't use
- * processAction('tap') because that has different semantics (moveCount+1,
- * chains enabled).
+ * no chains and no moveCount increment — matching processAutoActivationStep
+ * exactly.
  *
- * We find the first non-scope item, run processAction('tap') with a
- * collector to get the item effects and drop data, then construct the
- * plan.  The finalState comes from processAction for consistency.
+ * Previously this used processAction('tap') which incorrectly incremented
+ * moveCount and processed chains, causing score/moveCount mismatch between
+ * the animation and the authoritative engine result.
  */
 export function computeAutoActivationPlan(state: GameState): { pos: Position; plan: ItemAnimPlan } | null {
   if (state.mode !== 'sprint') return null;
 
+  // Find the first activatable item (same scan order as processAutoActivationStep)
+  let itemPos: Position | null = null;
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
       const cell = state.board[r][c];
       if (!cell?.item || cell.item === 'scope') continue;
-      const pos = { row: r, col: c };
 
-      // For flush, check if target color exists
       if (cell.item === 'flush') {
         const board = state.board;
         let hasTargetColor = false;
@@ -774,30 +783,31 @@ export function computeAutoActivationPlan(state: GameState): { pos: Position; pl
         if (!hasTargetColor) continue;
       }
 
-      const cs = createCollectorState();
-      const collector = createCollector(cs);
-
-      // Auto-activation happens after game over, but processAction
-      // short-circuits when isGameOver=true.  Temporarily clear the flag.
-      const tempState: GameState = { ...state, isGameOver: false, board: cloneBoard(state.board), rngState: [...state.rngState] };
-      const finalState = processAction(tempState, { type: 'tap', pos }, collector);
-      if (finalState === tempState) continue;
-
-      const boardAfterDrop = cs.boardAfterItemDrop ?? cloneBoard(finalState.board);
-
-      return {
-        pos,
-        plan: {
-          boardBeforeActivation: cs.boardBeforeItemActivation ?? cloneBoard(state.board),
-          effects: cs.itemEffects,
-          dropMoves: cs.dropMoves,
-          newTileEntries: cs.newTileEntries,
-          boardAfterDrop,
-          regularChains: [],
-          finalState,
-        },
-      };
+      itemPos = { row: r, col: c };
+      break;
     }
+    if (itemPos) break;
   }
-  return null;
+  if (!itemPos) return null;
+
+  const cs = createCollectorState();
+  const collector = createCollector(cs);
+
+  const finalState = processAutoActivationStep(state, collector);
+  if (!finalState) return null;
+
+  const boardAfterDrop = cs.boardAfterItemDrop ?? cloneBoard(finalState.board);
+
+  return {
+    pos: itemPos,
+    plan: {
+      boardBeforeActivation: cs.boardBeforeItemActivation ?? cloneBoard(state.board),
+      effects: cs.itemEffects,
+      dropMoves: cs.dropMoves,
+      newTileEntries: cs.newTileEntries,
+      boardAfterDrop,
+      regularChains: [],
+      finalState,
+    },
+  };
 }

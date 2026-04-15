@@ -11,7 +11,7 @@ export * from './survival.js';
 export * from './traceCollector.js';
 export * from './dropMoves.js';
 export * from './trace.js';
-export { initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation, cloneGameState, processDamage, applyWave, isPassThroughMode, CASCADE_MILESTONES } from './engine.js';
+export { initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation, processAutoActivationStep, cloneGameState, processDamage, applyWave, isPassThroughMode, CASCADE_MILESTONES } from './engine.js';
 export { computeMaxChainPotential } from './potential.js';
 export { generateDailySeed } from './seed.js';
 export { playGame } from './autoPlayer.js';
