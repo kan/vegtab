@@ -1433,6 +1433,7 @@ function tileTransition(r: number, c: number) {
   border-radius: 8px;
   overflow: hidden;
   position: relative;
+  isolation: isolate;
 }
 .board-row { display: flex; }
 .cell {
