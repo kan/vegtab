@@ -642,7 +642,7 @@ describe('computeAutoActivationPlan', () => {
     expect(result).toBeNull();
   });
 
-  it('Sprintモードでもscopeのみの場合はnullを返す', () => {
+  it('Sprintモードでscopeのみの場合も自動発動する', () => {
     const state = initializeGame(42, 'sprint', { moveLimit: 30 });
     // 盤面にscopeだけ配置
     // まず全アイテムをクリア
@@ -655,7 +655,8 @@ describe('computeAutoActivationPlan', () => {
     }
     state.board[4][4] = { color: 0 as Color, item: 'scope' };
     const result = computeAutoActivationPlan(state);
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(result!.pos).toEqual({ row: 4, col: 4 });
   });
 
   it('Sprintモードでアイテムがない場合にnullを返す', () => {
@@ -672,7 +673,7 @@ describe('computeAutoActivationPlan', () => {
     expect(result).toBeNull();
   });
 
-  it('最初に見つかったアイテム（scope以外）が返される', () => {
+  it('最初に見つかったアイテムが返される（scopeも含む）', () => {
     const state = initializeGame(42, 'sprint', { moveLimit: 30 });
     // 盤面上のアイテムを全て削除
     for (let r = 0; r < BOARD_SIZE; r++) {
@@ -683,15 +684,15 @@ describe('computeAutoActivationPlan', () => {
       }
     }
     // 複数アイテムを配置
-    state.board[2][2] = { color: 0 as Color, item: 'scope' }; // スキップされる
+    state.board[2][2] = { color: 0 as Color, item: 'scope' };
     state.board[3][3] = { color: 0 as Color, item: 'h_cut' };
     state.board[5][5] = { color: 0 as Color, item: 'burst' };
 
     const result = computeAutoActivationPlan(state);
     expect(result).not.toBeNull();
     if (!result) return;
-    // scope(2,2) はスキップされて h_cut(3,3) が最初に見つかる
-    expect(result.pos).toEqual({ row: 3, col: 3 });
+    // scope(2,2) が最初に見つかる（周囲4マス消去のみで自動発動）
+    expect(result.pos).toEqual({ row: 2, col: 2 });
   });
 
   it('flush でターゲットカラーが見つかる場合にプランを返す', () => {
@@ -755,6 +756,68 @@ describe('computeAutoActivationPlan', () => {
     }
 
     // 両者のスコアとmoveCountが一致すること
+    expect(current.score).toBe(engineResult.score);
+    expect(current.moveCount).toBe(engineResult.moveCount);
+  });
+
+  it('scopeの自動発動プランにitemEffects情報が含まれる', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    state.moveCount = 15;
+    state.isGameOver = true;
+    // 既存アイテムをクリア
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    state.board[4][4] = { color: 0 as Color, item: 'scope' };
+
+    const result = computeAutoActivationPlan(state);
+    expect(result).not.toBeNull();
+    if (!result) return;
+
+    expect(result.pos).toEqual({ row: 4, col: 4 });
+    // scopeが発動されたので、finalStateではscopeは存在しない
+    expect(result.plan.finalState.board[4][4]?.item).toBeUndefined();
+    // スコアが加算されている
+    expect(result.plan.finalState.score).toBeGreaterThan(state.score);
+  });
+
+  it('scope含む複数アイテムの逐次発動でprocessAutoActivationと一致する', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    state.moveCount = 15;
+    state.isGameOver = true;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    // scope + 他アイテムの混在
+    state.board[1][1] = { color: 0 as Color, item: 'scope' };
+    state.board[3][3] = { color: 0 as Color, item: 'v_cut' };
+    state.board[5][5] = { color: 0 as Color, item: 'burst' };
+
+    const engineResult = processAutoActivation(state);
+
+    let current: GameState = {
+      ...state,
+      board: state.board.map(row => row.map(c => c ? { ...c } : null)),
+      rngState: [...state.rngState],
+    };
+    let plan = computeAutoActivationPlan(current);
+    const activatedItems: string[] = [];
+    while (plan) {
+      activatedItems.push(current.board[plan.pos.row][plan.pos.col]?.item ?? 'unknown');
+      current = plan.plan.finalState;
+      plan = computeAutoActivationPlan(current);
+    }
+
+    // scopeが最初に発動される（行スキャン順で (1,1) が先）
+    expect(activatedItems[0]).toBe('scope');
     expect(current.score).toBe(engineResult.score);
     expect(current.moveCount).toBe(engineResult.moveCount);
   });
@@ -920,7 +983,7 @@ describe('processAutoActivationStep', () => {
     expect(result.moveCount).toBe(original);
   });
 
-  it('scopeのみの場合はnullを返す', () => {
+  it('scopeも自動発動する（周囲4マス消去のみ）', () => {
     const state = initializeGame(42, 'sprint', { moveLimit: 15 });
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -930,7 +993,12 @@ describe('processAutoActivationStep', () => {
       }
     }
     state.board[4][4] = { color: 0 as Color, item: 'scope' };
-    expect(processAutoActivationStep(state)).toBeNull();
+    const result = processAutoActivationStep(state);
+    expect(result).not.toBeNull();
+    // scopeが消費されている
+    expect(result!.board[4][4]?.item).toBeUndefined();
+    // スコアが加算されている（周囲4マス消去）
+    expect(result!.score).toBeGreaterThan(state.score);
   });
 
   it('アイテムが存在しない場合はnullを返す', () => {
@@ -971,6 +1039,105 @@ describe('processAutoActivationStep', () => {
     expect(current.score).toBe(engineResult.score);
     expect(current.moveCount).toBe(engineResult.moveCount);
     expect(current.rngState).toEqual(engineResult.rngState);
+  });
+
+  it('scopeが盤面角（0,0）にある場合も自動発動する', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    state.board[0][0] = { color: 0 as Color, item: 'scope' };
+    const result = processAutoActivationStep(state);
+    expect(result).not.toBeNull();
+    // scopeが消費されている
+    expect(result!.board[0][0]?.item).toBeUndefined();
+    // 角なので周囲は最大2マス（右と下）しかないが、スコアは加算される
+    expect(result!.score).toBeGreaterThan(state.score);
+  });
+
+  it('scope + 他アイテム混在で逐次発動するとprocessAutoActivationと一致する', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    state.moveCount = 15;
+    state.isGameOver = true;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    state.board[1][1] = { color: 0 as Color, item: 'scope' };
+    state.board[3][3] = { color: 0 as Color, item: 'h_cut' };
+    state.board[6][6] = { color: 0 as Color, item: 'burst' };
+
+    const engineResult = processAutoActivation(state);
+
+    let current = cloneGameState(state);
+    let step = processAutoActivationStep(current);
+    while (step) {
+      current = step;
+      step = processAutoActivationStep(current);
+    }
+
+    // scopeを含む全アイテムが発動された結果が一致する
+    expect(current.score).toBe(engineResult.score);
+    expect(current.moveCount).toBe(engineResult.moveCount);
+    expect(current.rngState).toEqual(engineResult.rngState);
+  });
+
+  it('scopeの自動発動は周囲4マス（上下左右）のみ消去しユーザー選択はない', () => {
+    const state = initializeGame(42, 'sprint', { moveLimit: 15 });
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (state.board[r][c]?.item) {
+          state.board[r][c] = { color: state.board[r][c]!.color };
+        }
+      }
+    }
+    // 盤面中央にscopeを配置（周囲4マスが全て存在する位置）
+    const scopeRow = 4;
+    const scopeCol = 4;
+    state.board[scopeRow][scopeCol] = { color: 0 as Color, item: 'scope' };
+
+    // 周囲4マスにあるタイルの色を記録
+    const adjacentPositions = [
+      { row: scopeRow - 1, col: scopeCol },  // 上
+      { row: scopeRow + 1, col: scopeCol },  // 下
+      { row: scopeRow, col: scopeCol - 1 },  // 左
+      { row: scopeRow, col: scopeCol + 1 },  // 右
+    ];
+    // 隣接セルが全て非アイテム・非おじゃまであることを確認
+    for (const pos of adjacentPositions) {
+      if (state.board[pos.row][pos.col]?.item) {
+        state.board[pos.row][pos.col] = { color: state.board[pos.row][pos.col]!.color };
+      }
+    }
+    const adjacentColorsBefore = adjacentPositions.map(p => state.board[p.row]?.[p.col]?.color);
+
+    // 斜め位置のタイルの色を記録
+    const diagonalPositions = [
+      { row: scopeRow - 1, col: scopeCol - 1 },
+      { row: scopeRow - 1, col: scopeCol + 1 },
+      { row: scopeRow + 1, col: scopeCol - 1 },
+      { row: scopeRow + 1, col: scopeCol + 1 },
+    ];
+
+    const result = processAutoActivationStep(state);
+    expect(result).not.toBeNull();
+
+    // scopeの位置自体はnull化後に重力+補充で変わる可能性があるが、
+    // スコアが加算されていることで効果が発動したことを確認
+    expect(result!.score).toBeGreaterThan(state.score);
+    // 消去されるのは最大4マス（上下左右）* 10点 * chainIndex(1) = 最大40点
+    // 周囲のタイルが一部アイテムだった場合は誘爆が起きるが、上でクリア済み
+    const scoreDiff = result!.score - state.score;
+    // 周囲4マスのうち存在するものだけが消去される（最大40点）
+    expect(scoreDiff).toBeLessThanOrEqual(40);
+    expect(scoreDiff).toBeGreaterThan(0);
   });
 });
 

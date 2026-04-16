@@ -1278,7 +1278,8 @@ export function processScopeSwap(
 }
 
 /** Sprint終了時の残存アイテム自動発動（1アイテムのみ）。moveCountを増やさず、連鎖なし。
- *  最初に見つかったscope以外のアイテムを1つ発動し、新しいGameStateを返す。
+ *  最初に見つかったアイテムを1つ発動し、新しいGameStateを返す。
+ *  scopeは周囲4マス消去のみ（ユーザー選択なし、誘爆時と同じ）。
  *  アイテムが見つからなければnullを返す。 */
 export function processAutoActivationStep(state: GameState, collector?: TraceCollector): GameState | null {
   if (state.mode !== 'sprint') return null;
@@ -1290,7 +1291,6 @@ export function processAutoActivationStep(state: GameState, collector?: TraceCol
     for (let c = 0; c < BOARD_SIZE; c++) {
       const cell = board[r][c];
       if (!cell?.item) continue;
-      if (cell.item === 'scope') continue; // スプーンは自動発動しない（ユーザー選択が必要）
       const pos = { row: r, col: c };
       let targetColor: number | undefined;
       if (cell.item === 'flush') {

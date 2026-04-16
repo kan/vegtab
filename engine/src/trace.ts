@@ -766,7 +766,7 @@ export function computeAutoActivationPlan(state: GameState): { pos: Position; pl
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
       const cell = state.board[r][c];
-      if (!cell?.item || cell.item === 'scope') continue;
+      if (!cell?.item) continue;
 
       if (cell.item === 'flush') {
         const board = state.board;
