@@ -13,22 +13,22 @@
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@types/qrcode": "^1.5.6",
-    "@vitejs/plugin-vue": "^6.0.5",
+    "@vitejs/plugin-vue": "^6.0.6",
     "@vueuse/core": "^14.2.1",
     "pinia": "^3.0.4",
     "qrcode": "^1.5.4",
-    "typescript": "^6.0.2",
+    "typescript": "^6.0.3",
     "vite": "^8.0.8",
     "vite-plugin-pwa": "^1.2.0",
     "vue": "^3.5.32",
     "vue-router": "^5.0.4",
-    "vue-tsc": "^3.2.6"
+    "vue-tsc": "^3.2.7"
   },
   "dependencies": {
-    "@capacitor/android": "^8.3.0",
-    "@capacitor/cli": "^8.3.0",
-    "@capacitor/core": "^8.2.0",
-    "@capacitor/ios": "^8.3.0",
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/ios": "^8.3.1",
     "@capacitor/preferences": "^8.0.1",
     "sharp-cli": "^5.2.0",
     "vue-i18n": "^11.3.2"
