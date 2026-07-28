@@ -46,6 +46,13 @@ Phase 1 → 2 → 3 → 4 の順で段階的に実装する。各Phaseの詳細�
 npm install                    # ルートで全 workspace の依存をインストール
 ```
 
+**`package-lock.json` を削除してから作り直さないこと。** npm がその時点の
+プラットフォーム向けの optional な native binding（`@rolldown/binding-*` /
+`@rollup/rollup-*` / `@esbuild/*`）しか lockfile に残さないため、Linux で
+作り直すと macOS ランナーの iOS ビルドが `Cannot find native binding` で
+失敗する。既存の lockfile を残したまま `npm install` / `npm audit fix` /
+`npm i <pkg>@<ver>` で更新する。
+
 ### Cloudflare リソース（初回のみ）
 ```bash
 cd backend
