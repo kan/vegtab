@@ -65,8 +65,9 @@ wrangler secret put JWT_SECRET                  # JWT シークレット（リ�
 
 ### アプリアイコン・スプラッシュの再生成
 `frontend/assets/` の元画像から Android / iOS 用リソースを生成する。
-`@capacitor/assets` は依存ツリーに脆弱性を持ち込むわりに手動実行しかしないため
-devDependencies には入れず、必要なときだけ `npx` で実行する。
+`@capacitor/assets`（アプリアイコン）と `sharp-cli`（PWA アイコン）は依存ツリーに
+脆弱性を持ち込むわりに手動実行しかしないため devDependencies には入れず、
+必要なときだけ `npx` で実行する。
 
 ```bash
 cd frontend && npx @capacitor/assets generate
