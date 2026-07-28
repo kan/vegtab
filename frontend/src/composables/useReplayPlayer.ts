@@ -6,7 +6,7 @@ import {
   processDamage, determineItemFromMatches,
   type GameState, type GameMode, type Cell, type GameInitParams,
   type Position, type Direction, type ItemType, type Color,
-  BOARD_SIZE, NUM_COLORS,
+  BOARD_SIZE, NUM_COLORS, MAX_STABILIZE_ITERATIONS,
 } from '@vegtab/engine';
 import type { ReplayAction } from '@/stores/puzzle';
 
@@ -72,8 +72,10 @@ function computeSwapChains(state: GameState, pos: Position, dir: Direction): Ste
   chains.push({ matchedPositions: [...cleared1], boardAfterDrop: cloneBoard(board) });
 
   // --- 2連鎖目以降 (processChains相当) ---
+  // 安全弁: 通常は数連鎖で収束する。無限ループでタブを固めないよう上限を設ける
   matches = findMatches(board);
-  while (matches.length > 0) {
+  let iterations = 0;
+  while (matches.length > 0 && iterations++ < MAX_STABILIZE_ITERATIONS) {
     const itemGens = determineItemFromMatches(matches);
 
     const cleared = getUniquePositions(matches);

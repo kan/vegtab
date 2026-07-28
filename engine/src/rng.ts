@@ -24,3 +24,21 @@ export function nextInt(state: number, max: number): [number, number] {
   const value = ((raw >>> 0) % max);
   return [next, value];
 }
+
+/**
+ * 32bit の avalanche ハッシュ（splitmix32 の finalizer 相当）。
+ *
+ * xorshift の状態を「別ストリームの開始点」として使いたいときに挟む。
+ * nextInt(rng, 0x7fffffff) の戻り値は raw が正の int32 のとき raw そのもの
+ * （= 次の状態）になるため、それをそのまま別ストリームの種にすると
+ * 両者が 1 ステップずれただけの同一ストリームになってしまう。
+ */
+export function mix32(x: number): number {
+  let h = x >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  h = Math.imul(h, 0x7feb352d) >>> 0;
+  h = (h ^ (h >>> 15)) >>> 0;
+  h = Math.imul(h, 0x846ca68b) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h | 0;
+}

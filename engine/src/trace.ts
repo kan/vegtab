@@ -25,6 +25,7 @@ import { damageObstacles } from './obstacle.js';
 import { computeDropMoves } from './dropMoves.js';
 import {
   isPassThroughMode, processAction, processAutoActivationStep, processDamage, processScopeSynthesis,
+  MAX_STABILIZE_ITERATIONS,
 } from './engine.js';
 import { SURVIVAL_WAVE_INTERVAL } from './survival.js';
 import type {
@@ -632,7 +633,8 @@ export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: 
   while (matches.length > 0) {
     iterations++;
     if (iterations > MAX_CHAIN_ITERATIONS) {
-      while (true) {
+      let stabilize = 0;
+      while (stabilize++ < MAX_STABILIZE_ITERATIONS) {
         const m = findMatches(board);
         if (m.length === 0) break;
         const c = getUniquePositions(m);

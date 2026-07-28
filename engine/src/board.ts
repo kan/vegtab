@@ -1,5 +1,5 @@
 import { Cell, Color, ItemType, Position, BOARD_SIZE, NUM_COLORS } from './types.js';
-import { createRng, nextInt } from './rng.js';
+import { createRng, nextInt, mix32 } from './rng.js';
 
 /** 新しいランダムな色を生成 */
 export function nextColor(rngState: number, numColors: number = NUM_COLORS): [number, Color] {
@@ -21,14 +21,29 @@ export const SPARKLE_PROBABILITY = 10;
 export const INITIAL_SPARKLE_COUNT = 2;
 export const SPARKLE_BONUS_CP = 1;
 
-/** メインRNGから列ごとの独立RNGシードを生成 */
+/** 列シードを撹拌するための黄金比定数（列ごとに異なる値を混ぜる） */
+const COLUMN_SALT = 0x9e3779b9;
+
+/**
+ * メインRNGから列ごとの独立RNGシードを生成。
+ *
+ * `nextInt(rng, 0x7fffffff)` の戻り値は、raw が正の int32 のとき raw そのもの
+ * （= xorshift の次の状態）になる。これを素の列シードにすると 8 列が
+ * 「同じストリームを 1 ステップずつずらしただけ」になり、ある列が隣の列より
+ * 1 回多く補充された時点で両者の状態が完全に一致してしまう。一致した列は
+ * 以後ずっと同じ色を引くため、消しても同じ並びが補充され続けて自動消去
+ * ループが終わらない（例: 2026-07-26 のシード 1161844543）。
+ *
+ * mix32 で撹拌し、列同士のストリーム上の距離を実質ランダムにすることで
+ * この衝突を防ぐ。
+ */
 export function createColumnRngStates(rngState: number): number[] {
   let rng = rngState;
   const states: number[] = [];
   for (let col = 0; col < BOARD_SIZE; col++) {
     let seed: number;
     [rng, seed] = nextInt(rng, 0x7fffffff);
-    states.push(createRng(seed));
+    states.push(createRng(mix32(seed ^ Math.imul(col + 1, COLUMN_SALT))));
   }
   return states;
 }

@@ -29,6 +29,15 @@ import { computeDropMoves } from './dropMoves.js';
 const DEFAULT_MOVE_LIMIT = 15;
 const DEFAULT_CASCADE_MOVE_LIMIT = 15;
 
+/**
+ * 「マッチがなくなるまで消して補充する」ループの安全弁。
+ *
+ * 列RNGが独立していれば数回〜十数回で収束するため、この上限に達すること自体が
+ * バグの兆候。到達した場合は盤面にマッチが残るが、次の操作で解消される。
+ * 無限ループでブラウザやWorkerを固めるよりは望ましいので break する。
+ */
+export const MAX_STABILIZE_ITERATIONS = 200;
+
 /** Cascadeモードの連鎖マイルストーンボーナス定義
  * 1ゲーム中に初めて到達した連鎖数に応じてCPを加算する */
 export const CASCADE_MILESTONES: readonly { chain: number; bonus: number }[] = [
@@ -65,7 +74,11 @@ export function initializeGame(
 
   // 自動消去ループ: マッチがなくなるまで繰り返す
   const passThrough = isPassThroughMode(mode);
+  let iterations = 0;
   while (hasMatches(board)) {
+    // 安全弁: 列RNGが独立していれば数回で収束する（実測の最大は19回）。
+    // 万一収束しない場合でも無限ループにしない。
+    if (++iterations > MAX_STABILIZE_ITERATIONS) break;
     const matches = findMatches(board);
     const positions = getUniquePositions(matches);
     for (const pos of positions) {
@@ -1362,7 +1375,8 @@ function processChains(
     iterations++;
     if (iterations > MAX_CHAIN_ITERATIONS) {
       // 連鎖上限到達: 残りのマッチをスコアなしで安定化
-      while (true) {
+      let stabilize = 0;
+      while (stabilize++ < MAX_STABILIZE_ITERATIONS) {
         const m = findMatches(board);
         if (m.length === 0) break;
         const c = getUniquePositions(m);

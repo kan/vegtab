@@ -12,12 +12,12 @@
  *    doesn't replicate this behavior in its animation chain computation.
  */
 import { describe, it, expect } from 'vitest';
-import { initializeGame, processAction, cloneGameState, processDamage } from '../src/engine.js';
+import { initializeGame, processAction, processDamage } from '../src/engine.js';
 import { generateDailySeed } from '../src/seed.js';
 import { BOARD_SIZE, Cell, Action, Position, Color, NUM_COLORS } from '../src/types.js';
 import { countObstacles, damageObstacles } from '../src/obstacle.js';
 import { applyGravity } from '../src/gravity.js';
-import { cloneBoard, fillEmptyCells } from '../src/board.js';
+import { fillEmptyCells } from '../src/board.js';
 
 const colorNames = ['R', 'G', 'B', 'Y', 'P'];
 const itemShort: Record<string, string> = { scope: 'Sp', v_cut: 'Vc', h_cut: 'Hc', burst: 'Bu', flush: 'Fl' };
@@ -202,70 +202,57 @@ describe('CLEAR mode debug - 2026-04-05', () => {
     console.log('which the frontend skips — causing RNG state desync.');
   });
 
-  it('verify engine handles move 4 (f7左ush activation) correctly', () => {
-    const { state: before } = applyMoves(3);
-    const { state: after } = applyMoves(4);
+  // 以前ここには、この日付の盤面に固定した期待値（「a4 のおじゃまが dur=2→1」等）を
+  // 持つテストが 4 件あった。列RNGの独立性を修正した際に全シードの盤面が変わったため、
+  // それらの期待値は成立しなくなっている。
+  //
+  // これらが守っていた不変条件は、いずれも盤面を明示的に組み立てるテストが個別に
+  // カバーしている:
+  //   - おじゃまタイルのダメージ・破壊 → obstacle.test.ts
+  //   - スワップ後の findItemPosition  → item-swap-position.test.ts
+  //   - flush の誘爆とターゲット決定    → flush-chain.test.ts
+  //   - フロントエンドフローとの一致    → 本ファイル後半の "FIXED:" 2 件
+  //
+  // ここには盤面に依存しない結合テストとしての価値だけを残す。
+  it('7手のプレイスルーで盤面の整合性が保たれる', () => {
+    let prevObstacles = countObstacles(applyMoves(0).state.board);
 
-    // Engine: a4 goes from dur=2 to dur=1
-    expect(before.board[4][0]?.obstacle?.durability).toBe(2);
-    expect(after.board[4][0]?.obstacle?.durability).toBe(1);
+    for (let m = 1; m <= 7; m++) {
+      const { state } = applyMoves(m);
 
-    console.log('\nMove 4: Engine correctly damages a4 from dur=2 to dur=1');
-    console.log('User reports the number does not change — this is a frontend display bug.');
+      // 盤面に穴が残らない
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          expect(state.board[r][c], `move ${m}: cell (${r},${c}) が null`).not.toBeNull();
+        }
+      }
+
+      // おじゃまタイルは増えない（Clear モードは侵食がないため単調非増加）
+      const obstacles = countObstacles(state.board);
+      expect(obstacles, `move ${m}: おじゃまタイルが増加`).toBeLessThanOrEqual(prevObstacles);
+      prevObstacles = obstacles;
+
+      // おじゃまタイルの耐久値は常に 1 以上
+      for (const ob of findAllObstacles(state.board)) {
+        expect(ob.durability, `move ${m}: (${ob.row},${ob.col}) の耐久値`).toBeGreaterThan(0);
+      }
+
+      expect(state.score).toBeGreaterThanOrEqual(0);
+    }
   });
 
-  it('verify engine handles move 5 (e4右, flush swap) correctly', () => {
-    const { state: before } = applyMoves(4);
-    const { state: after } = applyMoves(5);
-
-    // e4 had a flush item before move 5
-    expect(before.board[4][4]?.item).toBe('flush');
-
-    // After flush activation, many items were generated from chain reactions
-    const items = findAllItems(after.board);
-    console.log('\nMove 5 generated items:', items.map(i => `${posLabel(i.row, i.col)}=${i.item}`).join(', '));
-    console.log('The "mysterious salad bowl" is legitimate: flush activation cleared many tiles,');
-    console.log('chain reactions generated new items including flush items.');
-
-    // The flush items are from massive chain matches after the flush cleared all R tiles
-    const flushCount = items.filter(i => i.item === 'flush').length;
-    console.log(`Flush items generated: ${flushCount}`);
-    expect(flushCount).toBeGreaterThan(0);
-  });
-
-  it('verify engine handles move 7 (f1右) correctly — obstacle survives after itemPos fix', () => {
-    const { state: before } = applyMoves(6);
-    const { state: after } = applyMoves(7);
-
-    // findItemPosition のスワップ後位置修正により、move 5 以降の盤面状態が変化。
-    // 修正前: 誤った flush が発動し大量連鎖 → move 7 で obstacle 破壊 → クリア
-    // 修正後: 正しい flush が発動 → move 7 では obstacle が残存
-    expect(before.board[4][0]?.obstacle?.durability).toBe(1);
-    expect(after.board[4][0]?.obstacle?.durability).toBe(1);
-
-    console.log('\nMove 7: a4 obstacle survives (dur=1 remains)');
-    console.log('itemPos fix changed flush activation in move 5, altering subsequent board state.');
-
-    expect(after.isGameOver).toBe(false);
-  });
-
-  it('FIXED: frontend flow (damageObstacles+gravity+fill) matches processDamage for obstacle destruction', () => {
-    // このテストは修正後のフロントエンドフローがエンジンの processDamage と同じ
-    // 盤面状態・RNG状態を生むことを検証する。
-    // 修正前: フロントエンドは damageObstacles のみ呼び、gravity+fill を省略していた。
-    // 修正後: 破壊時に gravity+fill を追加実行（processDamage と同等）。
-
-    // Move 4 の直前状態を取得
-    const { state: before4 } = applyMoves(3);
-    const boardState = cloneBoard(before4.board);
-    const rng = [...before4.rngState];
-
-    // Move 4 ではおじゃまタイルへのダメージが発生する
-    // エンジン: processAction 内で processDamage が呼ばれる
-    const { state: afterEngine } = applyMoves(4);
-
-    // a4 のおじゃまタイルが dur=2 → dur=1 にダメージを受ける
-    expect(afterEngine.board[4][0]?.obstacle?.durability).toBe(1);
+  it('同一シード・同一操作で同一結果を返す（決定性）', () => {
+    const a = applyMoves(7).state;
+    const b = applyMoves(7).state;
+    expect(a.score).toBe(b.score);
+    expect(a.rngState).toEqual(b.rngState);
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        expect(a.board[r][c]?.color, `cell (${r},${c})`).toBe(b.board[r][c]?.color);
+        expect(a.board[r][c]?.obstacle?.durability, `cell (${r},${c}) obstacle`)
+          .toBe(b.board[r][c]?.obstacle?.durability);
+      }
+    }
   });
 
   it('FIXED: multiple chain steps with obstacle destruction produce consistent RNG between engine and manual flow', () => {
