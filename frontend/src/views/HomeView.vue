@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
-import { generateTransferCode, redeemTransferCode, showToast, api } from '@/api/client';
+import { generateTransferCode, redeemTransferCode, showToast, api, ApiError } from '@/api/client';
 import { useSound } from '@/sound';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
@@ -105,8 +105,9 @@ async function doRedeem() {
     await gameStore.resetAfterTransfer(result.displayName);
     showRedeemInput.value = false;
     showToast('success', 'transfer.success');
-  } catch {
-    showToast('error', 'transfer.failed');
+  } catch (e) {
+    const rateLimited = e instanceof ApiError && e.status === 429;
+    showToast('error', rateLimited ? 'transfer.tooManyAttempts' : 'transfer.failed');
   }
   redeemLoading.value = false;
 }

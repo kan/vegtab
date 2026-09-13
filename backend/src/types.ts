@@ -11,6 +11,7 @@ export type Bindings = {
   VAPID_PUBLIC_KEY: string;
   VAPID_PRIVATE_KEY: string;
   VAPID_SUBJECT: string;
+  TRANSFER_RATE_LIMITER: RateLimit;
 };
 
 export type Variables = {

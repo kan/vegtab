@@ -212,6 +212,7 @@ export default {
     codeExpiry: 'Expires in {minutes} minutes',
     success: 'Account transferred successfully!',
     failed: 'Transfer failed. The code may be invalid or expired.',
+    tooManyAttempts: 'Too many attempts. Please wait a minute and try again.',
     warning: 'Your current local data will be replaced with the transferred account data.',
     confirm: 'Transfer',
   },

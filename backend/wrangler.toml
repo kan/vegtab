@@ -59,3 +59,15 @@ bucket_name = "vegtab-downloads"
 
 [env.production.triggers]
 crons = ["5 15 * * *"]
+
+# --- Rate limits (bindings are not inherited by environments, so both are listed) ---
+# Account transfer code redemption, keyed by client IP
+[[ratelimits]]
+name = "TRANSFER_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }
+
+[[env.production.ratelimits]]
+name = "TRANSFER_RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 10, period = 60 }

@@ -13,6 +13,8 @@ const refreshSchema = z.object({
   refreshToken: z.string(),
 });
 
+const TRANSFER_CODE_TTL_SECONDS = 600;
+
 const redeemSchema = z.object({
   code: z.string().min(1).max(10),
   deviceId: z.string().uuid(),
@@ -107,58 +109,62 @@ authRoutes.post('/transfer-code', async (c) => {
     return c.json({ error: 'Invalid token' }, 401);
   }
 
-  // Generate 8-char code, store in KV with 10-min TTL
+  // One active 8-char code per user: issuing a new code invalidates the previous one.
+  // Expired codes of any user are purged at the same time.
   const code = generateShareCode(8);
-  await c.env.KV.put(`transfer:${code}`, userId, { expirationTtl: 600 });
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      "DELETE FROM transfer_codes WHERE user_id = ? OR expires_at <= datetime('now')"
+    ).bind(userId),
+    c.env.DB.prepare(
+      "INSERT INTO transfer_codes (code, user_id, expires_at) VALUES (?, ?, datetime('now', ?))"
+    ).bind(code, userId, `+${TRANSFER_CODE_TTL_SECONDS} seconds`),
+  ]);
 
-  return c.json({ code, expiresIn: 600 });
+  return c.json({ code, expiresIn: TRANSFER_CODE_TTL_SECONDS });
 });
 
 // POST /api/auth/redeem-transfer - Redeem a transfer code (public)
 authRoutes.post('/redeem-transfer', zValidator('json', redeemSchema), async (c) => {
   const { code, deviceId } = c.req.valid('json');
 
-  // Look up the transfer code
-  const userId = await c.env.KV.get(`transfer:${code.toUpperCase()}`);
+  // Throttle guessing: codes are short-lived but the endpoint is public
+  const clientIp = c.req.header('cf-connecting-ip') ?? 'unknown';
+  const { success } = await c.env.TRANSFER_RATE_LIMITER.limit({ key: clientIp });
+  if (!success) {
+    return c.json({ error: 'Too many attempts' }, 429);
+  }
+
+  // Link the device and consume the code in one transaction: the code can be redeemed only once,
+  // and a failed link can't leave it used up. Both statements use the same clock reading,
+  // formatted like SQLite's datetime('now').
+  const normalizedCode = code.toUpperCase();
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const [, consumed] = await c.env.DB.batch<{ user_id: string }>([
+    c.env.DB.prepare(`
+      INSERT INTO user_devices (id, user_id, device_id)
+      SELECT ?, user_id, ? FROM transfer_codes WHERE code = ? AND expires_at > ?
+      ON CONFLICT (device_id) DO UPDATE SET user_id = excluded.user_id
+    `).bind(generateId(), deviceId, normalizedCode, now),
+    c.env.DB.prepare(
+      'DELETE FROM transfer_codes WHERE code = ? AND expires_at > ? RETURNING user_id'
+    ).bind(normalizedCode, now),
+  ]);
+  const userId = consumed.results[0]?.user_id;
   if (!userId) {
     return c.json({ error: 'Invalid or expired transfer code' }, 400);
   }
 
-  // Verify user exists
-  const user = await c.env.DB.prepare(
-    'SELECT id, display_name FROM users WHERE id = ?'
-  ).bind(userId).first<{ id: string; display_name: string | null }>();
-  if (!user) {
-    return c.json({ error: 'User not found' }, 400);
-  }
-
-  // Link device to user (update if already linked to a different user)
-  const existingLink = await c.env.DB.prepare(
-    'SELECT user_id FROM user_devices WHERE device_id = ?'
-  ).bind(deviceId).first<{ user_id: string }>();
-
-  if (existingLink) {
-    if (existingLink.user_id !== userId) {
-      await c.env.DB.prepare(
-        'UPDATE user_devices SET user_id = ? WHERE device_id = ?'
-      ).bind(userId, deviceId).run();
-    }
-  } else {
-    await c.env.DB.prepare(
-      'INSERT INTO user_devices (id, user_id, device_id) VALUES (?, ?, ?)'
-    ).bind(generateId(), userId, deviceId).run();
-  }
-
-  // Issue new tokens and delete the transfer code (one-time use) in parallel
-  const [accessToken, refreshToken] = await Promise.all([
+  const [user, accessToken, refreshToken] = await Promise.all([
+    c.env.DB.prepare('SELECT display_name FROM users WHERE id = ?')
+      .bind(userId).first<{ display_name: string | null }>(),
     createAccessToken(userId, c.env.JWT_SECRET),
     createRefreshToken(userId, c.env.JWT_SECRET),
-    c.env.KV.delete(`transfer:${code.toUpperCase()}`),
   ]);
 
   return c.json({
     userId,
-    displayName: user.display_name,
+    displayName: user?.display_name ?? null,
     accessToken,
     refreshToken,
   });

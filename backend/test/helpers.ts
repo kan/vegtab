@@ -75,6 +75,13 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON push_subscriptions(endpoint);
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);
+
+CREATE TABLE IF NOT EXISTS transfer_codes (
+  code TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 export async function applyMigrations() {
