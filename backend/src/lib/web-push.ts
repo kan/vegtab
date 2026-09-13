@@ -14,6 +14,19 @@ export type PushResult = {
   error?: string;
 };
 
+/** Hosts of the push services browsers hand out endpoints for (Chrome, Firefox, Safari, Edge) */
+const PUSH_SERVICE_HOST = /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|(.+\.)?push\.apple\.com|.+\.notify\.windows\.com)$/;
+
+/** Whether an endpoint belongs to a real push service. The daily cron POSTs to every stored endpoint. */
+export function isPushServiceEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    return url.protocol === 'https:' && PUSH_SERVICE_HOST.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Send a push notification to a single subscription.
  */

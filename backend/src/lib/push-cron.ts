@@ -1,6 +1,6 @@
 import type { VapidKeys } from '@block65/webcrypto-web-push';
 import type { Bindings } from '../types';
-import { sendPushNotification, type PushPayload } from './web-push';
+import { isPushServiceEndpoint, sendPushNotification, type PushPayload } from './web-push';
 
 const BATCH_SIZE = 100;
 
@@ -32,8 +32,15 @@ export async function sendDailyPushNotifications(env: Bindings): Promise<void> {
     const rows = batch.results ?? [];
     if (rows.length === 0) break;
 
+    // Endpoints stored before host validation existed are removed instead of being POSTed to
+    const deliverable: typeof rows = [];
+    for (const sub of rows) {
+      if (isPushServiceEndpoint(sub.endpoint)) deliverable.push(sub);
+      else staleEndpoints.push(sub.endpoint);
+    }
+
     const results = await Promise.allSettled(
-      rows.map(sub =>
+      deliverable.map(sub =>
         sendPushNotification(
           { endpoint: sub.endpoint, keyP256dh: sub.key_p256dh, keyAuth: sub.key_auth },
           payload,
@@ -45,7 +52,7 @@ export async function sendDailyPushNotifications(env: Bindings): Promise<void> {
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
       if (r.status === 'fulfilled' && r.value.gone) {
-        staleEndpoints.push(rows[i].endpoint);
+        staleEndpoints.push(deliverable[i].endpoint);
       }
     }
 

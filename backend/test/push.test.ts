@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF } from 'cloudflare:test';
-import { applyMigrations, registerUser, authHeader } from './helpers';
+import { applyMigrations, registerUser, authHeader, subscribePush } from './helpers';
 
 describe('Push Notification API', () => {
   let accessToken: string;
@@ -11,55 +11,30 @@ describe('Push Notification API', () => {
     accessToken = reg.accessToken;
   });
 
-  const subscription = {
-    endpoint: 'https://fcm.googleapis.com/fcm/send/test-endpoint-123',
-    keys: {
-      p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8p8REfWIA',
-      auth: 'tBHItJI5svbpC7sc9d8MqQ',
-    },
-  };
+  const endpoint = 'https://fcm.googleapis.com/fcm/send/test-endpoint-123';
 
   it('POST /api/push/subscribe — 正常登録', async () => {
-    const res = await SELF.fetch('http://localhost/api/push/subscribe', {
-      method: 'POST',
-      headers: { ...authHeader(accessToken), 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription),
-    });
+    const res = await subscribePush(accessToken, endpoint);
     expect(res.status).toBe(200);
     const data = await res.json() as { ok: boolean };
     expect(data.ok).toBe(true);
   });
 
   it('POST /api/push/subscribe — 同一endpointでUPSERT', async () => {
-    // First registration
-    await SELF.fetch('http://localhost/api/push/subscribe', {
-      method: 'POST',
-      headers: { ...authHeader(accessToken), 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription),
-    });
+    await subscribePush(accessToken, endpoint);
 
     // Second registration with same endpoint (should update, not error)
-    const res = await SELF.fetch('http://localhost/api/push/subscribe', {
-      method: 'POST',
-      headers: { ...authHeader(accessToken), 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription),
-    });
+    const res = await subscribePush(accessToken, endpoint);
     expect(res.status).toBe(200);
   });
 
   it('DELETE /api/push/unsubscribe — 正常削除', async () => {
-    // Subscribe first
-    await SELF.fetch('http://localhost/api/push/subscribe', {
-      method: 'POST',
-      headers: { ...authHeader(accessToken), 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription),
-    });
+    await subscribePush(accessToken, endpoint);
 
-    // Unsubscribe
     const res = await SELF.fetch('http://localhost/api/push/unsubscribe', {
       method: 'DELETE',
       headers: { ...authHeader(accessToken), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ endpoint: subscription.endpoint }),
+      body: JSON.stringify({ endpoint }),
     });
     expect(res.status).toBe(200);
     const data = await res.json() as { ok: boolean };
@@ -76,11 +51,7 @@ describe('Push Notification API', () => {
   });
 
   it('未認証アクセスは拒否', async () => {
-    const res = await SELF.fetch('http://localhost/api/push/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(subscription),
-    });
+    const res = await subscribePush(null, endpoint);
     expect(res.status).toBe(401);
   });
 });

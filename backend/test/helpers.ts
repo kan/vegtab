@@ -139,6 +139,20 @@ export async function submitReplay(token: string, mode: GameMode, moves: number,
   return { res, state };
 }
 
+/** Dummy Web Push subscription keys (format-valid, not tied to a real browser) */
+export const PUSH_KEYS = {
+  p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8p8REfWIA',
+  auth: 'tBHItJI5svbpC7sc9d8MqQ',
+};
+
+export function subscribePush(token: string | null, endpoint: string) {
+  return SELF.fetch('http://localhost/api/push/subscribe', {
+    method: 'POST',
+    headers: { ...(token ? authHeader(token) : {}), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint, keys: PUSH_KEYS }),
+  });
+}
+
 /** Get (and auto-create) today's daily seed id */
 export async function getTodaySeedId(token: string): Promise<string> {
   const res = await SELF.fetch('http://localhost/api/seeds/daily', { headers: authHeader(token) });
