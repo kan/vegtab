@@ -2,7 +2,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan, type WaveAnimPlan, type WaveAnimStep } from '@/stores/puzzle';
-import { BOARD_SIZE, cloneBoard, getSynthesisEffect, CASCADE_MILESTONES, type Position, type Direction, type Cell, type Color, type ItemType } from '@vegtab/engine';
+import { BOARD_SIZE, cloneBoard, getSynthesisEffect, CASCADE_MILESTONES, type Position, type Direction, type Cell, type Color, type ItemType, type GameState } from '@vegtab/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
@@ -26,7 +26,7 @@ const cellSize = ref(0);
 // --- Scope selection ---
 const scope = useScopeSelection();
 /** Tracks pending scope swap info for replay recording */
-let pendingScopeSwap: { pos: Position; dir: Direction } | null = null;
+let pendingScopeSwap: { pos: Position; dir: Direction; stateBefore: GameState } | null = null;
 
 // Vegetable colors for check-overlay
 const VEGGIE_COLORS = ['#d4b828', '#4a9a4e', '#7B4FAA', '#c85a5a', '#8a8a7a'];
@@ -106,6 +106,13 @@ const milestoneShown = new Set<number>();
 // --- NEW BEST overlay ---
 const newBestOverlay = ref<string | null>(null);
 let prevMaxChainIndex = 0;
+
+/** マイルストーン・NEW BEST の表示済みの記録を現在の状態に合わせる（新しいゲームの開始や、スプーン入れ替えのキャンセルで状態を戻したとき） */
+function syncChainDisplay() {
+  milestoneShown.clear();
+  for (const chain of store.milestonesClaimed) milestoneShown.add(chain);
+  prevMaxChainIndex = store.maxChainIndex;
+}
 let floatingId = 0;
 const floatingTimers: ReturnType<typeof setTimeout>[] = [];
 
@@ -268,6 +275,11 @@ async function handleScopeSelection(pos: Position) {
 
 function cancelScopeSelection() {
   scope.cancelSelection();
+  // スプーンの入れ替えは選択を確定するまで操作として記録しないので、入れ替え（と事前連鎖）の前の状態に戻す
+  if (pendingScopeSwap) {
+    store.applyState(pendingScopeSwap.stateBefore);
+    syncChainDisplay();
+  }
   pendingScopeSwap = null;
   visualBoard.value = null;
   showScopeTapHint.value = false;
@@ -285,7 +297,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   }
 
   store.resetChainMeter();
-  if (store.milestonesClaimed.length === 0) { milestoneShown.clear(); prevMaxChainIndex = 0; }
+  syncChainDisplay();
   const plan = store.computeScopePlan(scopePos, targetCells);
   if (!plan) {
     // Fallback: apply instantly, logging the action only if it changed the board
@@ -464,8 +476,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   if (scope.scopeSelecting.value) return;
   drag.setLocked(true);
   store.resetChainMeter();
-  // 新しいゲーム開始時にマイルストーン表示状態をリセット
-  if (store.milestonesClaimed.length === 0) { milestoneShown.clear(); prevMaxChainIndex = 0; }
+  syncChainDisplay();
   const cs = cellSize.value;
   const nb = adj(pos, dir);
   const fullX = (nb.col - pos.col) * cs, fullY = (nb.row - pos.row) * cs;
@@ -499,7 +510,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     if (cell1 && cell2) {
       const scopeCell = cell1.item === 'scope' ? cell1 : cell2.item === 'scope' ? cell2 : null;
       if (scopeCell && !(cell1.item && cell2.item)) {
-        pendingScopeSwap = { pos, dir };
+        pendingScopeSwap = { pos, dir, stateBefore: store.gameState! };
         clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
 
         const preChainResult = store.computeScopeSwapPreChains(pos, dir);
@@ -511,19 +522,12 @@ async function commitSwap(pos: Position, dir: Direction) {
         visualBoard.value = preChainResult.boardAfterSwap;
 
         // Animate pre-chains before entering selection mode
-        const state = store.gameState!;
+        const { stateAfterPreChains } = preChainResult;
         if (preChainResult.preChains.length > 0) {
-          await animateChainsWithScore(preChainResult.preChains, preChainResult.preScore);
-          store.applyState({
-            ...state,
-            board: preChainResult.boardAfterPreChains,
-            score: preChainResult.preScore,
-            rngState: preChainResult.preRng,
-            sparkleRngState: preChainResult.preSparkleRng ?? state.sparkleRngState,
-          });
-        } else {
-          store.applyState({ ...state, board: preChainResult.boardAfterSwap });
+          await animateChainsWithScore(preChainResult.preChains, stateAfterPreChains.score);
         }
+        // CP・最大連鎖・マイルストーンも事前連鎖の分を反映した状態（サーバーの processScopeSwap と一致する）
+        store.applyState(stateAfterPreChains);
         visualBoard.value = null;
 
         scope.startSelection(preChainResult.scopePos);

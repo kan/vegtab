@@ -360,15 +360,34 @@ function activateCoffeeSynthesis(
 /** おじゃまタイルへのダメージ処理（消去位置に基づく）
  * boardを直接変更する: 隣接おじゃまの耐久値減少・破壊時のgravity・補充
  * @returns 更新後のrngState */
-export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number[], mode: GameMode = 'sprint', numColors: number = NUM_COLORS): number[] {
+export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number[], mode: GameMode = 'sprint', numColors: number = NUM_COLORS, sparkleRngStates?: number[]): number[] {
   if (clearedPositions.length === 0) return rngState;
   let rng = rngState;
   const destroyed = damageObstacles(board, clearedPositions);
   if (destroyed.length > 0) {
     applyGravity(board, isPassThroughMode(mode));
-    rng = fillEmptyCells(board, rng, numColors);
+    rng = fillEmptyCells(board, rng, numColors, sparkleRngStates);
   }
   return rng;
+}
+
+/** Cascade のときだけ盤面のキラキラを数える（アイテム効果で消えたキラキラを CP に足すため） */
+function countSparkles(state: GameState): number {
+  if (state.cascadePoints === undefined) return 0;
+  let count = 0;
+  for (const row of state.board) {
+    for (const cell of row) if (cell?.sparkle) count++;
+  }
+  return count;
+}
+
+/**
+ * アイテム効果の前後のキラキラの数の差を CP に加算する（連鎖で消えた分は applyChainStats が加算する）。
+ * 効果による消去の後、落下・補充の前に呼ぶ
+ */
+function addClearedSparkleCp(state: GameState, sparklesBefore: number): void {
+  if (state.cascadePoints === undefined) return;
+  state.cascadePoints += sparklesBefore - countSparkles(state);
 }
 
 /**
@@ -382,8 +401,8 @@ function chainStartAfterItems(depthLevels: number, preChains = 0): number {
   return Math.max(2, depthLevels + preChains + 1);
 }
 
-/** cascade モードの maxChainIndex と cascadePoints を更新 */
-function updateMaxChain(state: GameState, steps: ChainStep[]): void {
+/** 連鎖の結果から maxChainIndex・lastChainCount と Cascade の CP（連鎖・キラキラ・マイルストーン）を更新する */
+export function applyChainStats(state: GameState, steps: readonly Pick<ChainStep, 'chainIndex' | 'sparkleCount'>[]): void {
   let maxInAction = 0;
   for (const step of steps) {
     if (step.chainIndex > maxInAction) {
@@ -615,6 +634,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
     const allCleared: Position[] = [];
     let depthLevels = 1;
+    const sparklesBefore = countSparkles(newState);
 
     // まず周囲上下左右4マスを消去
     const adjTargets = getScopeAdjacentTargets(board, action.pos);
@@ -668,6 +688,8 @@ export function processAction(state: GameState, action: Action, collector?: Trac
       }
     }
 
+    addClearedSparkleCp(newState, sparklesBefore);
+
     // collector: 消去完了後の盤面スナップショット
     collector?.onBoardSnapshot?.('boardAfterClear', cloneBoard(board));
 
@@ -688,7 +710,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
 
-    updateMaxChain(newState, chainResult.steps);
+    applyChainStats(newState, chainResult.steps);
     finalizeMove(newState, collector);
     return newState;
   }
@@ -711,10 +733,12 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     }
 
     collector?.onBoardSnapshot?.('beforeItemActivation', cloneBoard(board));
+    const sparklesBefore = countSparkles(newState);
     const result = activateItem(board, action.pos, item, targetColor, 1, newState.rngState, undefined, collector);
     newState.score += result.score;
     newState.rngState = result.rngState;
     newState.moveCount++;
+    addClearedSparkleCp(newState, sparklesBefore);
 
     // collector: gravity 前に dropMoves を計算
     if (collector?.onDropData) {
@@ -732,7 +756,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     const chainResult = processChains(board, newState.rngState, chainStartAfterItems(result.depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
-    updateMaxChain(newState, chainResult.steps);
+    applyChainStats(newState, chainResult.steps);
 
   } else {
     // スワイプ
@@ -752,13 +776,15 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
         collector?.onBoardSnapshot?.('afterSwap', cloneBoard(board));
 
+        const sparklesBefore = countSparkles(newState);
         const synthResult = processSynthesis(
           board, action.pos, targetPos, cell1.item, cell2.item,
-          synthesis.effect, newState.rngState, newState.mode, nc, collector
+          synthesis.effect, newState.rngState, collector
         );
         newState.score += synthResult.score;
         newState.rngState = synthResult.rngState;
         newState.moveCount++;
+        addClearedSparkleCp(newState, sparklesBefore);
 
         // collector: gravity 前に dropMoves を計算
         if (collector?.onDropData) {
@@ -777,7 +803,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         newState.score += chainResult.score;
         newState.rngState = chainResult.rngState;
 
-        updateMaxChain(newState, chainResult.steps);
+        applyChainStats(newState, chainResult.steps);
         finalizeMove(newState, collector);
         return newState;
       }
@@ -840,7 +866,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         const chainResult = processChains(board, newState.rngState, chainStartAfterItems(1), newState.mode, false, nc, collector, newState.sparkleRngState);
         newState.score += chainResult.score;
         newState.rngState = chainResult.rngState;
-        updateMaxChain(newState, chainResult.steps);
+        applyChainStats(newState, chainResult.steps);
         finalizeMove(newState, collector);
         return newState;
       }
@@ -876,10 +902,12 @@ export function processAction(state: GameState, action: Action, collector?: Trac
       }
 
       collector?.onBoardSnapshot?.('beforeItemActivation', cloneBoard(board));
+      const sparklesBefore = countSparkles(newState);
       const result = activateItem(board, currentItemPos, itemCell.item!, targetColor, preChainResult.steps.length + 1, newState.rngState, undefined, collector);
       newState.score += result.score;
       newState.rngState = result.rngState;
       newState.moveCount++;
+      addClearedSparkleCp(newState, sparklesBefore);
 
       // collector: gravity 前に dropMoves を計算
       if (collector?.onDropData) {
@@ -898,8 +926,8 @@ export function processAction(state: GameState, action: Action, collector?: Trac
       newState.score += chainResult.score;
       newState.rngState = chainResult.rngState;
 
-      updateMaxChain(newState, preChainResult.steps);
-      updateMaxChain(newState, chainResult.steps);
+      // 入れ替えの連鎖とアイテムの後の連鎖を1回の操作としてまとめて集計する（lastChainCount は操作内の最大）
+      applyChainStats(newState, [...preChainResult.steps, ...chainResult.steps]);
       finalizeMove(newState, collector);
       return newState;
     }
@@ -930,7 +958,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
       if (board[pos.row][pos.col]?.sparkle) firstChainSparkle++;
       board[pos.row][pos.col] = null;
     }
-    // キラキラCP加算（1連鎖目は updateMaxChain を通らないため直接加算）
+    // キラキラCP加算（1連鎖目は applyChainStats を通らないため直接加算）
     if (newState.cascadePoints !== undefined && firstChainSparkle > 0) {
       newState.cascadePoints += firstChainSparkle;
     }
@@ -982,7 +1010,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     newState.rngState = chainResult.rngState;
 
     // maxChainIndex 更新 (cascade mode)
-    updateMaxChain(newState, chainResult.steps);
+    applyChainStats(newState, chainResult.steps);
   }
 
   finalizeMove(newState, collector);
@@ -1047,8 +1075,6 @@ function processSynthesis(
   item2: ItemType,
   effect: SynthesisEffect,
   rngState: number[],
-  mode: GameMode = 'sprint',
-  numColors: number = NUM_COLORS,
   collector?: TraceCollector,
 ): { score: number; rngState: number[]; clearedPositions: Position[]; depthLevels: number } {
   let rng = rngState;
@@ -1078,9 +1104,7 @@ function processSynthesis(
       effectType: effect, item1, item2, pos1, pos2,
       targets: allCleared, detonations: [], score: getFullClearBonus(),
     });
-
-    applyGravity(board, isPassThroughMode(mode));
-    rng = fillEmptyCells(board, rng, numColors);
+    // 落下・補充は呼び出し側で行う（他の合成と同じくキラキラ用の乱数を使い、落下のアニメーションも出る）
 
     return { score: totalScore, rngState: rng, clearedPositions: allCleared, depthLevels: 1 };
   }
@@ -1182,6 +1206,7 @@ export function processScopeSynthesis(
   board[pos1.row][pos1.col] = null;
   board[pos2.row][pos2.col] = null;
   newState.moveCount++;
+  const sparklesBefore = countSparkles(newState);
 
   const synthPos = pos2;
   const effect = synthesis.effect;
@@ -1253,6 +1278,8 @@ export function processScopeSynthesis(
     allCleared.push(...result.clearedPositions);
   }
 
+  addClearedSparkleCp(newState, sparklesBefore);
+
   // collector: 消去完了後の盤面スナップショット
   collector?.onBoardSnapshot?.('boardAfterClear', cloneBoard(board));
 
@@ -1274,7 +1301,7 @@ export function processScopeSynthesis(
   newState.score += chainResult.score;
   newState.rngState = chainResult.rngState;
 
-  updateMaxChain(newState, chainResult.steps);
+  applyChainStats(newState, chainResult.steps);
   finalizeMove(newState, collector);
   return newState;
 }
@@ -1284,39 +1311,53 @@ export function isScopeSwapPair(cell1: Cell, cell2: Cell): boolean {
   return (cell1.item === 'scope' || cell2.item === 'scope') && !(cell1.item && cell2.item);
 }
 
-/** #15: スプーンと野菜を入れ替え後、pre-chainsを処理してからscope発動 */
-export function processScopeSwap(
-  state: GameState, pos: Position, dir: Direction, targetCells: Position[],
-  collector?: TraceCollector,
-): GameState {
-  if (state.isGameOver) return state;
+/**
+ * スプーンと野菜の入れ替えと、それで起きた連鎖（スプーンの発動の前まで）を処理する。
+ * 入れ替えが成立しなければ null。scopePos は連鎖の後のスプーンの位置（連鎖で消えたときは null）。
+ * フロントはここで止めてスプーンの対象を選ばせる（trace.ts の computeScopeSwapPreChains）
+ */
+export function processScopeSwapPreChains(
+  state: GameState, pos: Position, dir: Direction, collector?: TraceCollector,
+): { state: GameState; scopePos: Position | null } | null {
+  if (state.isGameOver) return null;
 
   // 無効な操作は盤面を複製する前に弾く
   const targetPos = getAdjacentPos(pos, dir);
-  if (!isValidPosition(targetPos)) return state;
+  if (!isValidPosition(targetPos)) return null;
   const cell1 = getCell(state.board, pos);
   const cell2 = getCell(state.board, targetPos);
-  if (!cell1 || !cell2 || !isScopeSwapPair(cell1, cell2)) return state;
-  if (!isValidTargetCells(targetCells, 1)) return state;
+  if (!cell1 || !cell2 || !isScopeSwapPair(cell1, cell2)) return null;
 
   const newState = cloneGameState(state);
-  newState.lastChainCount = 0;
   const board = newState.board;
 
   // Swap cells (on the cloned board)
   [board[pos.row][pos.col], board[targetPos.row][targetPos.col]] =
     [board[targetPos.row][targetPos.col], board[pos.row][pos.col]];
+  collector?.onBoardSnapshot?.('afterSwap', cloneBoard(board));
 
   // Pre-chains: process matches created by the vegetable swap
   const nc = newState.numColors ?? NUM_COLORS;
   const preChainResult = processChains(board, newState.rngState, 1, newState.mode, false, nc, collector, newState.sparkleRngState);
   newState.score += preChainResult.score;
   newState.rngState = preChainResult.rngState;
-  updateMaxChain(newState, preChainResult.steps);
+  applyChainStats(newState, preChainResult.steps);
 
   // Re-find scope position after gravity
-  const origScopePos = cell1?.item === 'scope' ? targetPos : pos;
-  const scopePos = findItemPosition(board, 'scope', origScopePos);
+  const origScopePos = cell1.item === 'scope' ? targetPos : pos;
+  return { state: newState, scopePos: findItemPosition(board, 'scope', origScopePos) };
+}
+
+/** #15: スプーンと野菜を入れ替え後、pre-chainsを処理してからscope発動 */
+export function processScopeSwap(
+  state: GameState, pos: Position, dir: Direction, targetCells: Position[],
+  collector?: TraceCollector,
+): GameState {
+  if (!isValidTargetCells(targetCells, 1)) return state;
+  const pre = processScopeSwapPreChains(state, pos, dir, collector);
+  if (!pre) return state;
+
+  const { state: newState, scopePos } = pre;
   if (!scopePos) {
     // Scope was destroyed during pre-chains
     newState.moveCount++;
@@ -1325,7 +1366,10 @@ export function processScopeSwap(
   }
 
   // Now process scope action on the post-pre-chain state
-  return processAction(newState, { type: 'scope', pos: scopePos, targetCells }, collector);
+  const result = processAction(newState, { type: 'scope', pos: scopePos, targetCells }, collector);
+  // processAction は lastChainCount を0から数え直すので、入れ替えで起きた連鎖の分を引き継ぐ
+  result.lastChainCount = Math.max(result.lastChainCount ?? 0, newState.lastChainCount ?? 0);
+  return result;
 }
 
 /** リプレイログの 1 操作を適用する（リプレイ検証・再生で使う） */
@@ -1429,7 +1473,7 @@ function processChains(
         if (m.length === 0) break;
         const c = getUniquePositions(m);
         for (const p of c) board[p.row][p.col] = null;
-        rng = processDamage(board, c, rng, mode, numColors);
+        rng = processDamage(board, c, rng, mode, numColors, sparkleRngStates);
         applyGravity(board, passThrough);
         rng = fillEmptyCells(board, rng, numColors, sparkleRngStates);
       }

@@ -510,7 +510,7 @@ describe('computeScopeSwapPreChains', () => {
     expect(result.boardAfterSwap).toBeDefined();
     expect(result.scopePos).toBeDefined();
     expect(Array.isArray(result.preChains)).toBe(true);
-    expect(typeof result.preScore).toBe('number');
+    expect(typeof result.stateAfterPreChains.score).toBe('number');
   });
 
   it('scope以外のアイテムセルではnullを返す', () => {
@@ -1142,9 +1142,9 @@ describe('processAutoActivationStep', () => {
 });
 
 // ---------------------------------------------------------------------------
-// processScopeSwap - Cascade mode: updateMaxChain
+// processScopeSwap - Cascade mode: applyChainStats
 // ---------------------------------------------------------------------------
-describe('processScopeSwap - Cascade updateMaxChain', () => {
+describe('processScopeSwap - Cascade applyChainStats', () => {
   it('CascadeモードでprocessScopeSwapがcascadePointsとmaxChainIndexを更新する', () => {
     // 複数シードで試行して、pre-chainが発生するケースを探す
     let found = false;
@@ -1172,7 +1172,7 @@ describe('processScopeSwap - Cascade updateMaxChain', () => {
       }
       if (found) break;
     }
-    // updateMaxChain呼び出しの存在確認（エラーなく実行される）
+    // applyChainStats呼び出しの存在確認（エラーなく実行される）
     expect(true).toBe(true);
   });
 
@@ -1200,26 +1200,27 @@ describe('processScopeSwap - Cascade updateMaxChain', () => {
 // computeScopeSwapPreChains - Cascade sparkleRngState support
 // ---------------------------------------------------------------------------
 describe('computeScopeSwapPreChains - Cascade sparkleRngState', () => {
-  it('CascadeモードでpreSparkleRngが返却される', () => {
+  it('Cascadeモードで事前連鎖後の状態にsparkleRngStateが入る', () => {
     const state = initializeGame(42, 'cascade');
     state.board[3][3] = { color: 0 as Color, item: 'scope' };
     if (state.board[3][4]?.item) return;
 
     const result = computeScopeSwapPreChains(state, { row: 3, col: 3 }, 'right');
     if (!result) return;
-    expect(result.preSparkleRng).toBeDefined();
-    expect(Array.isArray(result.preSparkleRng)).toBe(true);
-    expect(result.preSparkleRng!.length).toBe(BOARD_SIZE);
+    const sparkleRng = result.stateAfterPreChains.sparkleRngState;
+    expect(sparkleRng).toBeDefined();
+    expect(Array.isArray(sparkleRng)).toBe(true);
+    expect(sparkleRng!.length).toBe(BOARD_SIZE);
   });
 
-  it('非CascadeモードではpreSparkleRngがundefined', () => {
+  it('非Cascadeモードでは事前連鎖後の状態のsparkleRngStateがundefined', () => {
     const state = initializeGame(42, 'sprint', { moveLimit: 30 });
     state.board[3][3] = { color: 0 as Color, item: 'scope' };
     if (state.board[3][4]?.item) return;
 
     const result = computeScopeSwapPreChains(state, { row: 3, col: 3 }, 'right');
     if (!result) return;
-    expect(result.preSparkleRng).toBeUndefined();
+    expect(result.stateAfterPreChains.sparkleRngState).toBeUndefined();
   });
 
   it('sparkleRngStateが元のstateから変更されない（クローンされている）', () => {
@@ -1258,7 +1259,7 @@ describe('computeScopeSwapPreChains - Cascade sparkleRngState', () => {
 
       const engineResult = processScopeSwap(state, { row: 3, col: 3 }, 'right', []);
       // engineResultのスコアにはpre-chain分が含まれている
-      expect(engineResult.score).toBeGreaterThanOrEqual(preChainResult.preScore);
+      expect(engineResult.score).toBeGreaterThanOrEqual(preChainResult.stateAfterPreChains.score);
     }
   });
 });

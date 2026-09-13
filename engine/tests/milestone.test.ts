@@ -102,7 +102,7 @@ describe('Cascadeマイルストーン: ボーナス加算ロジック', () => {
 
 describe('Cascadeマイルストーン: 上位直接達成で下位も同時解除', () => {
   it('maxInAction >= 7 で 3, 5, 7 全て解除される', () => {
-    // updateMaxChain の動作を間接検証:
+    // applyChainStats の動作を間接検証:
     // milestonesClaimed を手動で設定した state で processAction を呼ぶ
     const state = initializeGame(SEED, 'cascade');
     // milestonesClaimed が空の状態で高連鎖が出れば全マイルストーン解除
@@ -123,7 +123,7 @@ describe('Cascadeマイルストーン: 上位直接達成で下位も同時解�
 
 describe('Cascadeマイルストーン: エッジケース', () => {
   it('2連鎖ではマイルストーンが解除されない（境界値: chain=2 < 3）', () => {
-    // updateMaxChain で maxInAction=2 の場合、最小マイルストーン(chain=3)に未到達
+    // applyChainStats で maxInAction=2 の場合、最小マイルストーン(chain=3)に未到達
     const state = initializeGame(SEED, 'cascade');
     // 手動で milestonesClaimed と cascadePoints を検証するため直接チェック
     // 2連鎖が出るシードを探索
@@ -178,7 +178,7 @@ describe('Cascadeマイルストーン: エッジケース', () => {
     expect(count3).toBeLessThanOrEqual(1);
   });
 
-  it('非Cascadeモードでは updateMaxChain でマイルストーンが適用されない', () => {
+  it('非Cascadeモードでは applyChainStats でマイルストーンが適用されない', () => {
     for (const mode of ['sprint', 'clear', 'survival'] as const) {
       const opts = mode === 'clear' ? { obstacleCount: 5 } : undefined;
       const state = initializeGame(SEED, mode, opts);

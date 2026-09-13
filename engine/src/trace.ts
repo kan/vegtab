@@ -8,24 +8,14 @@
  */
 
 import {
-  type Cell, type Color, type Direction, type GameState,
+  type Cell, type Direction, type GameState,
   type ItemType, type Match, type Position, type SynthesisEffect,
-  BOARD_SIZE, NUM_COLORS,
+  BOARD_SIZE,
 } from './types.js';
+import { cloneBoard, isValidPosition } from './board.js';
+import { getSynthesisEffect } from './item.js';
 import {
-  cloneBoard, fillEmptyCells, findItemPosition, isValidPosition,
-} from './board.js';
-import { findMatches, getUniquePositions } from './match.js';
-import { applyGravity } from './gravity.js';
-import {
-  determineItemFromMatches, getSynthesisEffect,
-} from './item.js';
-import { calculateStepScore } from './score.js';
-import { damageObstacles } from './obstacle.js';
-import { computeDropMoves } from './dropMoves.js';
-import {
-  isPassThroughMode, isScopeSwapPair, processAction, processAutoActivationStep, processDamage, processScopeSynthesis,
-  MAX_STABILIZE_ITERATIONS,
+  processAction, processAutoActivationStep, processScopeSwapPreChains, processScopeSynthesis,
 } from './engine.js';
 import { SURVIVAL_WAVE_INTERVAL } from './survival.js';
 import type {
@@ -169,11 +159,9 @@ export interface ScopeSynthesisAnimPlan {
 
 export interface ScopeSwapPreChainResult {
   boardAfterSwap: (Cell | null)[][];
-  boardAfterPreChains: (Cell | null)[][];
   preChains: ChainAnimData[];
-  preScore: number;
-  preRng: number[];
-  preSparkleRng?: number[];
+  /** 事前連鎖の後の状態（盤面・スコア・RNG に加え、CP・最大連鎖・マイルストーンも反映済み） */
+  stateAfterPreChains: GameState;
   scopePos: Position;
 }
 
@@ -597,105 +585,21 @@ export function computeScopePlan(state: GameState, scopePos: Position, targetCel
 // ---------------------------------------------------------------------------
 
 /**
- * This function computes pre-chains for a scope+vegetable swap.
- * It cannot use processAction because it needs to stop partway
- * (after pre-chains, before scope activation) to find the scope position.
- * We replicate the chain logic inline (same algorithm as processChains in engine).
+ * スプーンと野菜の入れ替えの事前連鎖を計算する。
+ * スプーンの対象を選ぶ前で止める必要があるので processAction ではなく
+ * processScopeSwapPreChains（processScopeSwap の前半）を使う。
+ * スプーンが連鎖で消えた場合は null
  */
 export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: Direction): ScopeSwapPreChainResult | null {
-  const target = adjPos(pos, dir);
-  if (!isValidPosition(target)) return null;
-  const cell1 = state.board[pos.row]?.[pos.col];
-  const cell2 = state.board[target.row]?.[target.col];
-  if (!cell1 || !cell2 || !isScopeSwapPair(cell1, cell2)) return null;
-
-  const board = cloneBoard(state.board);
-  board[pos.row][pos.col] = { ...cell2 };
-  board[target.row][target.col] = { ...cell1 };
-  const boardAfterSwap = cloneBoard(board);
-  const origScopePos = cell1.item === 'scope' ? target : pos;
-
-  const passThrough = isPassThroughMode(state.mode);
-  const nc = state.numColors ?? NUM_COLORS;
-  let rng = [...state.rngState];
-  // Cascade: sparkleRngState をクローンして進める（fillEmptyCells がインプレースで変更するため）
-  const sparkleRng = state.sparkleRngState ? [...state.sparkleRngState] : undefined;
-  const chains: ChainAnimData[] = [];
-  const MAX_CHAIN_ITERATIONS = 20;
-  let chainIndex = 1;
-  let iterations = 0;
-  let totalScore = state.score;
-  let matches = findMatches(board);
-
-  while (matches.length > 0) {
-    iterations++;
-    if (iterations > MAX_CHAIN_ITERATIONS) {
-      let stabilize = 0;
-      while (stabilize++ < MAX_STABILIZE_ITERATIONS) {
-        const m = findMatches(board);
-        if (m.length === 0) break;
-        const c = getUniquePositions(m);
-        for (const p of c) board[p.row][p.col] = null;
-        rng = processDamage(board, c, rng, state.mode, nc);
-        applyGravity(board, passThrough);
-        rng = fillEmptyCells(board, rng, nc, sparkleRng);
-      }
-      break;
-    }
-
-    const clearedPositions = getUniquePositions(matches);
-    const itemGens = determineItemFromMatches(matches);
-    const stepScore = calculateStepScore(matches, chainIndex);
-    totalScore += stepScore;
-
-    // キラキラカウント
-    let sparkleCount = 0;
-    for (const p of clearedPositions) {
-      if (board[p.row][p.col]?.sparkle) sparkleCount++;
-      board[p.row][p.col] = null;
-    }
-    for (const ig of itemGens) {
-      board[ig.pos.row][ig.pos.col] = { color: 0 as Color, item: ig.item };
-    }
-
-    const destroyed = damageObstacles(board, clearedPositions);
-    if (destroyed.length > 0) {
-      applyGravity(board, passThrough);
-      rng = fillEmptyCells(board, rng, nc, sparkleRng);
-    }
-
-    const dm = computeDropMoves(board, passThrough);
-    applyGravity(board, passThrough);
-    rng = fillEmptyCells(board, rng, nc, sparkleRng);
-
-    chains.push({
-      matches,
-      clearedPositions,
-      destroyedObstacles: destroyed,
-      itemGens,
-      score: stepScore,
-      chainIndex,
-      sparkleCount: sparkleCount > 0 ? sparkleCount : undefined,
-      dropMoves: dm.moves,
-      newTileEntries: dm.newTileEntries,
-      boardAfterDrop: cloneBoard(board),
-    });
-
-    chainIndex++;
-    matches = findMatches(board);
-  }
-
-  const scopePos = findItemPosition(board, 'scope', origScopePos);
-  if (!scopePos) return null;
+  const cs = createCollectorState();
+  const pre = processScopeSwapPreChains(state, pos, dir, createCollector(cs));
+  if (!pre?.scopePos) return null;
 
   return {
-    boardAfterSwap,
-    boardAfterPreChains: cloneBoard(board),
-    preChains: chains,
-    preScore: totalScore,
-    preRng: rng,
-    preSparkleRng: sparkleRng,
-    scopePos,
+    boardAfterSwap: cs.boardAfterSwap!,
+    preChains: cs.chains,
+    stateAfterPreChains: pre.state,
+    scopePos: pre.scopePos,
   };
 }
 
