@@ -16,15 +16,20 @@ export function generateDailySeed(dateStr: string): number {
   return Math.abs(hash);
 }
 
-/** Check if a date string is valid for score submission.
- *  Accepts today ±1 day (timezone tolerance) and up to 60 days in the past (calendar plays). */
-export function isDateNearToday(dateStr: string): boolean {
-  const today = new Date(todayJST() + 'T00:00:00Z');
-  const target = new Date(dateStr + 'T00:00:00Z');
-  const diffDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
-  // Allow 1 day into the future (timezone) and up to 60 days in the past (calendar plays)
-  return diffDays >= -1 && diffDays <= 60;
+/** Parse a YYYY-MM-DD string as UTC midnight.
+ *  Returns null for impossible dates, which `Date` would otherwise roll over (2026-09-31 → 2026-10-01). */
+export function parseDateString(dateStr: string): Date | null {
+  const date = new Date(dateStr + 'T00:00:00Z');
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10) === dateStr ? date : null;
 }
 
-// Legacy alias for imports
-export const todayUTC = todayJST;
+/** Check if a date string is valid for score submission: today (JST) or up to 60 days in the past (calendar plays).
+ *  Scores for a day that has not started yet are rejected. */
+export function isDateNearToday(dateStr: string): boolean {
+  const target = parseDateString(dateStr);
+  if (!target) return false;
+  const today = parseDateString(todayJST())!;
+  const diffDays = (today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000);
+  return diffDays >= 0 && diffDays <= 60;
+}

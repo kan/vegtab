@@ -50,7 +50,7 @@ scoreRoutes.post('/', bodyLimit({
   const userId = c.get('userId');
   const data = c.req.valid('json');
 
-  // Validate date is near today (±1 day for timezone tolerance)
+  // Today (JST) or a past calendar play within 60 days
   if (!isDateNearToday(data.date)) {
     return c.json({ error: 'Invalid date' }, 400);
   }
