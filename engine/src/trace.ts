@@ -24,7 +24,7 @@ import { calculateStepScore } from './score.js';
 import { damageObstacles } from './obstacle.js';
 import { computeDropMoves } from './dropMoves.js';
 import {
-  isPassThroughMode, processAction, processAutoActivationStep, processDamage, processScopeSynthesis,
+  isPassThroughMode, isScopeSwapPair, processAction, processAutoActivationStep, processDamage, processScopeSynthesis,
   MAX_STABILIZE_ITERATIONS,
 } from './engine.js';
 import { SURVIVAL_WAVE_INTERVAL } from './survival.js';
@@ -607,10 +607,7 @@ export function computeScopeSwapPreChains(state: GameState, pos: Position, dir: 
   if (!isValidPosition(target)) return null;
   const cell1 = state.board[pos.row]?.[pos.col];
   const cell2 = state.board[target.row]?.[target.col];
-  if (!cell1 || !cell2) return null;
-  const scopeCell = cell1.item === 'scope' ? cell1 : cell2.item === 'scope' ? cell2 : null;
-  if (!scopeCell) return null;
-  if (cell1.item && cell2.item) return null;
+  if (!cell1 || !cell2 || !isScopeSwapPair(cell1, cell2)) return null;
 
   const board = cloneBoard(state.board);
   board[pos.row][pos.col] = { ...cell2 };

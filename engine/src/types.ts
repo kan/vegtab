@@ -30,6 +30,13 @@ export type Action =
   | { type: 'tap'; pos: Position }
   | { type: 'scope'; pos: Position; targetCells: Position[] };
 
+/** リプレイログに記録する操作（Action に、選択を伴うスプーン操作と終了時の自動発動を加えたもの） */
+export type ReplayAction =
+  | Action
+  | { type: 'scope_synthesis'; pos1: Position; pos2: Position; targetCells: Position[] }
+  | { type: 'scope_swap'; pos: Position; dir: Direction; targetCells: Position[] }
+  | { type: 'auto_activate' };
+
 /** マッチ情報 */
 export type Match = {
   positions: Position[];

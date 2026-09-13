@@ -1,5 +1,5 @@
 import {
-  Cell, Color, ItemType, Position, Direction, Action, SynthesisEffect,
+  Cell, Color, ItemType, Position, Direction, Action, ReplayAction, SynthesisEffect,
   Match, ChainStep, GameState, GameMode, GameInitParams, BOARD_SIZE, NUM_COLORS,
 } from './types.js';
 import { createRng, nextInt } from './rng.js';
@@ -60,6 +60,28 @@ function getAdjacentPos(pos: Position, dir: Direction): Position {
     case 'left': return { row: pos.row, col: pos.col - 1 };
     case 'right': return { row: pos.row, col: pos.col + 1 };
   }
+}
+
+/** ユーザーのマス選択を伴うスプーン合成（scope_synthesis アクションで処理する） */
+const SCOPE_SELECTION_EFFECTS: ReadonlySet<SynthesisEffect> = new Set([
+  'scope+scope', 'scope+v_cut', 'scope+h_cut', 'scope+burst',
+]);
+
+/** 盤面内の整数座標か。リプレイログ由来の値も受けるので型を信用しない */
+function isBoardPosition(pos: unknown): pos is Position {
+  const p = pos as Position | null;
+  return !!p && Number.isInteger(p.row) && Number.isInteger(p.col) && isValidPosition(p);
+}
+
+/** スプーンの選択マスが「盤面内・重複なし・指定個数ちょうど」か */
+function isValidTargetCells(targetCells: unknown, expected: number): targetCells is Position[] {
+  if (!Array.isArray(targetCells) || targetCells.length !== expected) return false;
+  const keys = new Set<string>();
+  for (const p of targetCells) {
+    if (!isBoardPosition(p)) return false;
+    keys.add(`${p.row},${p.col}`);
+  }
+  return keys.size === expected;
 }
 
 /** 初期盤面を生成（自動消去込み、スコア0・アイテムなし） */
@@ -561,6 +583,11 @@ function finalizeMove(state: GameState, collector?: TraceCollector): void {
 /** プレイヤーの操作を処理して新しいGameStateを返す */
 export function processAction(state: GameState, action: Action, collector?: TraceCollector): GameState {
   if (state.isGameOver) return state;
+  // 無効な scope 操作は盤面を複製する前に弾く
+  if (action.type === 'scope'
+    && (getCell(state.board, action.pos)?.item !== 'scope' || !isValidTargetCells(action.targetCells, 1))) {
+    return state;
+  }
 
   const newState = cloneGameState(state);
   newState.lastChainCount = 0;
@@ -569,9 +596,6 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
   if (action.type === 'scope') {
     // scope起動: タップで1手消費、周囲4マス消去 + ユーザー選択マスを消去
-    const cell = getCell(board, action.pos);
-    if (!cell?.item || cell.item !== 'scope') return state;
-
     board[action.pos.row][action.pos.col] = null;
     newState.moveCount++;
 
@@ -706,13 +730,8 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     if (cell1.item && cell2.item) {
       const synthesis = getSynthesisEffect(cell1.item, cell2.item);
       if (synthesis) {
-        // スプーン合成でユーザー選択が必要な場合は無効（別Actionで処理）
-        if (synthesis.effect === 'scope+scope' ||
-            synthesis.effect === 'scope+v_cut' ||
-            synthesis.effect === 'scope+h_cut' ||
-            synthesis.effect === 'scope+burst') {
-          return state; // フロントエンドが scope_synthesis アクションを送る
-        }
+        // スプーン合成でユーザー選択が必要な場合は無効（フロントエンドが scope_synthesis アクションを送る）
+        if (SCOPE_SELECTION_EFFECTS.has(synthesis.effect)) return state;
 
         collector?.onBoardSnapshot?.('afterSwap', cloneBoard(board));
 
@@ -1139,13 +1158,16 @@ export function processScopeSynthesis(
   collector?: TraceCollector,
 ): GameState {
   if (state.isGameOver) return state;
+  if (!isBoardPosition(pos1) || !isBoardPosition(pos2)) return state;
+  if (Math.abs(pos1.row - pos2.row) + Math.abs(pos1.col - pos2.col) !== 1) return state;
 
   const cell1 = getCell(state.board, pos1);
   const cell2 = getCell(state.board, pos2);
   if (!cell1?.item || !cell2?.item) return state;
 
   const synthesis = getSynthesisEffect(cell1.item, cell2.item);
-  if (!synthesis) return state;
+  if (!synthesis || !SCOPE_SELECTION_EFFECTS.has(synthesis.effect)) return state;
+  if (!isValidTargetCells(targetCells, synthesis.effect === 'scope+scope' ? 3 : 1)) return state;
 
   const newState = cloneGameState(state);
   newState.lastChainCount = 0;
@@ -1247,6 +1269,11 @@ export function processScopeSynthesis(
   return newState;
 }
 
+/** スプーンと「アイテム以外」のセルの入れ替えか（scope_swap の成立条件） */
+export function isScopeSwapPair(cell1: Cell, cell2: Cell): boolean {
+  return (cell1.item === 'scope' || cell2.item === 'scope') && !(cell1.item && cell2.item);
+}
+
 /** #15: スプーンと野菜を入れ替え後、pre-chainsを処理してからscope発動 */
 export function processScopeSwap(
   state: GameState, pos: Position, dir: Direction, targetCells: Position[],
@@ -1254,20 +1281,21 @@ export function processScopeSwap(
 ): GameState {
   if (state.isGameOver) return state;
 
+  // 無効な操作は盤面を複製する前に弾く
+  const targetPos = getAdjacentPos(pos, dir);
+  if (!isValidPosition(targetPos)) return state;
+  const cell1 = getCell(state.board, pos);
+  const cell2 = getCell(state.board, targetPos);
+  if (!cell1 || !cell2 || !isScopeSwapPair(cell1, cell2)) return state;
+  if (!isValidTargetCells(targetCells, 1)) return state;
+
   const newState = cloneGameState(state);
   newState.lastChainCount = 0;
   const board = newState.board;
 
-  const targetPos = getAdjacentPos(pos, dir);
-  if (!isValidPosition(targetPos)) return state;
-
-  const cell1 = getCell(board, pos);
-  const cell2 = getCell(board, targetPos);
-  if (!cell1 || !cell2) return state;
-
-  // Swap cells
-  board[pos.row][pos.col] = cell2;
-  board[targetPos.row][targetPos.col] = cell1;
+  // Swap cells (on the cloned board)
+  [board[pos.row][pos.col], board[targetPos.row][targetPos.col]] =
+    [board[targetPos.row][targetPos.col], board[pos.row][pos.col]];
 
   // Pre-chains: process matches created by the vegetable swap
   const nc = newState.numColors ?? NUM_COLORS;
@@ -1288,6 +1316,16 @@ export function processScopeSwap(
 
   // Now process scope action on the post-pre-chain state
   return processAction(newState, { type: 'scope', pos: scopePos, targetCells }, collector);
+}
+
+/** リプレイログの 1 操作を適用する（リプレイ検証・再生で使う） */
+export function applyReplayAction(state: GameState, action: ReplayAction): GameState {
+  switch (action.type) {
+    case 'scope_synthesis': return processScopeSynthesis(state, action.pos1, action.pos2, action.targetCells);
+    case 'scope_swap': return processScopeSwap(state, action.pos, action.dir, action.targetCells);
+    case 'auto_activate': return processAutoActivation(state);
+    default: return processAction(state, action);
+  }
 }
 
 /** Sprint終了時の残存アイテム自動発動（1アイテムのみ）。moveCountを増やさず、連鎖なし。

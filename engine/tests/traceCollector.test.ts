@@ -337,10 +337,11 @@ describe('collector 指定時の processScopeSynthesis', () => {
       state,
       { row: 4, col: 4 },
       { row: 4, col: 5 },
-      [{ row: 6, col: 6 }],
+      [{ row: 6, col: 6 }, { row: 0, col: 0 }, { row: 7, col: 7 }],
       collector,
     );
 
+    expect(result).not.toBe(state);
     // scopeの周囲消去が呼ばれる
     expect(events.scopeAdjacentCalls.length).toBeGreaterThanOrEqual(1);
   });
@@ -351,8 +352,11 @@ describe('collector 指定時の processScopeSynthesis', () => {
     state.board[4][5] = { color: 0 as Color, item: 'burst' };
 
     const { collector } = createTestCollector();
-    const with_ = processScopeSynthesis(state, { row: 4, col: 4 }, { row: 4, col: 5 }, [], collector);
-    const without_ = processScopeSynthesis(state, { row: 4, col: 4 }, { row: 4, col: 5 }, []);
+    const targets = [{ row: 1, col: 1 }];
+    const with_ = processScopeSynthesis(state, { row: 4, col: 4 }, { row: 4, col: 5 }, targets, collector);
+    const without_ = processScopeSynthesis(state, { row: 4, col: 4 }, { row: 4, col: 5 }, targets);
+
+    expect(with_).not.toBe(state);
 
     expect(with_.score).toBe(without_.score);
     expect(with_.moveCount).toBe(without_.moveCount);
