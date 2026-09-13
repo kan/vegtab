@@ -1,23 +1,23 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
+import { zValidator } from '@hono/zod-validator';
 import type { Bindings, Variables } from '../types';
 import { ACHIEVEMENT_DEFS } from '../lib/achievement-defs';
 
-/** Client-unlockable achievement types (not tied to score submission) */
-const CLIENT_UNLOCKABLE: ReadonlySet<string> = new Set(['tutorial_complete']);
+const unlockSchema = z.object({
+  /** Client-unlockable achievement types (not tied to score submission) */
+  type: z.enum(['tutorial_complete']),
+});
 
 export const achievementRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // POST /api/achievements/unlock - Unlock a client-triggered achievement
-achievementRoutes.post('/unlock', async (c) => {
+achievementRoutes.post('/unlock', zValidator('json', unlockSchema), async (c) => {
   const userId = c.get('userId');
-  const body = await c.req.json<{ type: string }>();
-
-  if (!body.type || !CLIENT_UNLOCKABLE.has(body.type)) {
-    return c.json({ error: 'Invalid achievement type' }, 400);
-  }
+  const { type } = c.req.valid('json');
 
   // Defense-in-depth: ensure type exists in defs even if CLIENT_UNLOCKABLE drifts
-  const def = ACHIEVEMENT_DEFS.find(d => d.type === body.type);
+  const def = ACHIEVEMENT_DEFS.find(d => d.type === type);
   if (!def) return c.json({ error: 'Unknown achievement' }, 400);
 
   await c.env.DB.prepare(`
@@ -26,7 +26,7 @@ achievementRoutes.post('/unlock', async (c) => {
     ON CONFLICT (user_id, achievement_type) DO UPDATE SET
       is_unlocked = 1,
       unlocked_at = COALESCE(achievements.unlocked_at, datetime('now'))
-  `).bind(crypto.randomUUID(), userId, body.type, def.threshold).run();
+  `).bind(crypto.randomUUID(), userId, type, def.threshold).run();
 
   return c.json({ ok: true });
 });

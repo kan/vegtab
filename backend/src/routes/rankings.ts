@@ -24,7 +24,9 @@ async function fetchRanking(
   const seedInfo = await db.prepare(
     'SELECT daily_date FROM puzzle_seeds WHERE id = ?'
   ).bind(seedId).first<{ daily_date: string | null }>();
-  const isPastDate = seedInfo?.daily_date != null && seedInfo.daily_date < todayJST();
+  // Unknown seed: nothing to rank, and arbitrary ids must not create KV cache entries
+  if (!seedInfo) return { ranking: [], userRank: null };
+  const isPastDate = seedInfo.daily_date != null && seedInfo.daily_date < todayJST();
 
   const cacheKey = `ranking:${seedId}:${mode}`;
   const cached = await kv.get(cacheKey, 'json') as RankingData | null;

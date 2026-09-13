@@ -3,8 +3,13 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Bindings, Variables } from '../types';
 
+/** Control characters and bidi overrides/isolates that can break or spoof how names render */
+const FORBIDDEN_NAME_CHARS = /[\p{Cc}\u{202A}-\u{202E}\u{2066}-\u{2069}]/u;
+
 const updateProfileSchema = z.object({
-  displayName: z.string().max(20).nullable(),
+  displayName: z.string().trim().min(1).max(20)
+    .refine((name) => !FORBIDDEN_NAME_CHARS.test(name), 'Invalid characters')
+    .nullable(),
 });
 
 export const userRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
