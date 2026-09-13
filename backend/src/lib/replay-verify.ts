@@ -1,12 +1,7 @@
 import {
-  initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation,
-  type GameState, type GameMode, type Action, type Position, type Direction, type GameInitParams,
+  initializeGame, applyReplayAction, processAutoActivation,
+  type GameState, type GameMode, type GameInitParams, type ReplayAction,
 } from '@vegtab/engine';
-
-type ReplayAction = Action
-  | { type: 'scope_synthesis'; pos1: Position; pos2: Position; targetCells: Position[] }
-  | { type: 'scope_swap'; pos: Position; dir: Direction; targetCells: Position[] }
-  | { type: 'auto_activate' };
 
 export interface VerifyResult {
   valid: boolean;
@@ -20,11 +15,12 @@ export interface VerifyResult {
 
 /**
  * Replay a game from seed + actions and return the verified final state.
+ * The replay log is expected to be schema-validated already (see routes/scores.ts).
  */
 export function verifyReplay(
   seed: number,
   mode: GameMode,
-  replayLog: unknown[],
+  replayLog: ReplayAction[],
   params?: GameInitParams,
 ): VerifyResult {
   let state: GameState;
@@ -35,23 +31,8 @@ export function verifyReplay(
   }
 
   for (let i = 0; i < replayLog.length; i++) {
-    const raw = replayLog[i] as Record<string, unknown>;
-    if (!raw || typeof raw.type !== 'string') {
-      return { valid: false, score: state.score, moveCount: state.moveCount, isCleared: false, maxChain: 0, cascadePoints: 0, error: `invalid action at index ${i}` };
-    }
-
     try {
-      const action = raw as unknown as ReplayAction;
-
-      if (action.type === 'scope_synthesis') {
-        state = processScopeSynthesis(state, action.pos1, action.pos2, action.targetCells);
-      } else if (action.type === 'scope_swap') {
-        state = processScopeSwap(state, action.pos, action.dir, action.targetCells);
-      } else if (action.type === 'auto_activate') {
-        state = processAutoActivation(state);
-      } else {
-        state = processAction(state, action as Action);
-      }
+      state = applyReplayAction(state, replayLog[i]);
     } catch {
       return { valid: false, score: state.score, moveCount: state.moveCount, isCleared: false, maxChain: 0, cascadePoints: 0, error: `action failed at index ${i}` };
     }

@@ -1,7 +1,15 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
 
 export default defineConfig({
+  resolve: {
+    // Use the engine source like `wrangler deploy` does (via tsconfig paths),
+    // instead of the package's possibly stale dist build
+    alias: {
+      '@vegtab/engine': fileURLToPath(new URL('../engine/src/index.ts', import.meta.url)),
+    },
+  },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: './wrangler.toml' },

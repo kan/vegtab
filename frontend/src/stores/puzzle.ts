@@ -17,7 +17,6 @@ import {
   computeSynthesisPlan as engineComputeSynthesisPlan,
   type GameState, type GameMode, type Position, type Direction,
   type Cell, type Color, type ItemType,
-  type Action,
   type ChainAnimData, type SwapAnimPlan, type ItemEffectStep,
   type ItemAnimPlan, type WaveAnimStep, type WaveAnimPlan,
   type SynthesisAnimPlan, type ScopeAnimPlan, type ScopeSynthesisAnimPlan,
@@ -34,11 +33,8 @@ export type {
   SynthesisAnimPlan, ScopeAnimPlan, ScopeSynthesisAnimPlan,
 };
 
-/** Replay action — extends engine Action with scope synthesis and scope swap */
-export type ReplayAction = Action
-  | { type: 'scope_synthesis'; pos1: Position; pos2: Position; targetCells: Position[] }
-  | { type: 'scope_swap'; pos: Position; dir: Direction; targetCells: Position[] }
-  | { type: 'auto_activate' };
+/** Replay action — defined in the engine so the backend verifies the same shape */
+export type ReplayAction = import('@vegtab/engine').ReplayAction;
 
 // --- Store ---
 
@@ -172,30 +168,22 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     replayLog.value.push(action);
   }
 
-  function swap(pos: Position, dir: Direction) {
-    if (!gameState.value) return;
-    const newState = processAction(gameState.value, { type: 'swap', pos, dir });
-    if (newState !== gameState.value) gameState.value = newState;
+  /** Apply a scope activation; returns whether the board changed */
+  function activateScope(pos: Position, targetCells: Position[]): boolean {
+    return applyIfChanged(state => processAction(state, { type: 'scope', pos, targetCells }));
   }
 
-  function tap(pos: Position) {
-    if (!gameState.value) return;
-    const newState = processAction(gameState.value, { type: 'tap', pos });
-    if (newState !== gameState.value) gameState.value = newState;
+  /** Apply a scope synthesis; returns whether the board changed */
+  function applyScopeSynthesis(pos1: Position, pos2: Position, targetCells: Position[]): boolean {
+    return applyIfChanged(state => processScopeSynthesis(state, pos1, pos2, targetCells));
   }
 
-  function activateScope(pos: Position, targetCells: Position[]) {
-    if (!gameState.value) return;
-    const newState = processAction(gameState.value, {
-      type: 'scope', pos, targetCells,
-    });
-    if (newState !== gameState.value) gameState.value = newState;
-  }
-
-  function applyScopeSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
-    if (!gameState.value) return;
-    const newState = processScopeSynthesis(gameState.value, pos1, pos2, targetCells);
-    if (newState !== gameState.value) gameState.value = newState;
+  function applyIfChanged(step: (state: GameState) => GameState): boolean {
+    if (!gameState.value) return false;
+    const newState = step(gameState.value);
+    if (newState === gameState.value) return false;
+    gameState.value = newState;
+    return true;
   }
 
   function computeScopePlan(scopePos: Position, targetCells: Position[]): ScopeAnimPlan | null {
@@ -290,7 +278,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     obstacleCount,
     waveNumber, movesUntilWave, nextWaveNumber, nextWaveObstacleCount,
     wavePreviewNumber, wavePreviewPositions, wavePreviewKeySet, wavePreviewLethalKeySet,
-    startGame, restoreState, recordAction, swap, tap,
+    startGame, restoreState, recordAction,
     activateScope, applyScopeSynthesis,
     computeScopePlan, computeScopeSwapPreChains, computeScopeSynthesisPlan,
     computeSwapPlan, computeItemTapPlan, computeItemSwapPlan, computeSynthesisPlan,

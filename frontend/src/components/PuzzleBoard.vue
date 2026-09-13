@@ -235,7 +235,8 @@ async function handleTap(pos: Position) {
   }
 
   const plan = store.computeItemTapPlan(pos);
-  if (!plan) { store.recordAction({ type: 'tap', pos }); store.tap(pos); return; }
+  // No plan means the tap changes nothing (no item, or an item with no effect): don't log it
+  if (!plan) return;
 
   store.recordAction({ type: 'tap', pos });
   drag.setLocked(true);
@@ -287,15 +288,14 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   if (store.milestonesClaimed.length === 0) { milestoneShown.clear(); prevMaxChainIndex = 0; }
   const plan = store.computeScopePlan(scopePos, targetCells);
   if (!plan) {
-    // Fallback: apply instantly
-    if (pendingScopeSwap) {
-      store.recordAction({ type: 'scope_swap', pos: pendingScopeSwap.pos, dir: pendingScopeSwap.dir, targetCells });
-      pendingScopeSwap = null;
-    } else {
-      store.recordAction({ type: 'scope', pos: scopePos, targetCells });
-    }
+    // Fallback: apply instantly, logging the action only if it changed the board
+    const swap = pendingScopeSwap;
+    pendingScopeSwap = null;
     if (originalState) store.applyState(originalState);
-    store.activateScope(scopePos, targetCells);
+    if (!store.activateScope(scopePos, targetCells)) return;
+    store.recordAction(swap
+      ? { type: 'scope_swap', pos: swap.pos, dir: swap.dir, targetCells }
+      : { type: 'scope', pos: scopePos, targetCells });
     return;
   }
 
@@ -376,9 +376,10 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
 async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
   const plan = store.computeScopeSynthesisPlan(pos1, pos2, targetCells);
   if (!plan) {
-    // Fallback: apply instantly
-    store.recordAction({ type: 'scope_synthesis', pos1, pos2, targetCells });
-    store.applyScopeSynthesis(pos1, pos2, targetCells);
+    // Fallback: apply instantly, logging the action only if it changed the board
+    if (store.applyScopeSynthesis(pos1, pos2, targetCells)) {
+      store.recordAction({ type: 'scope_synthesis', pos1, pos2, targetCells });
+    }
     return;
   }
 

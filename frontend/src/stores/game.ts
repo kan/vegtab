@@ -185,19 +185,20 @@ export const useGameStore = defineStore('game', () => {
     submitScoreToBackend(record);
   }
 
+  /** The server re-simulates every result from the replay log, so only inputs are sent */
   function buildScorePayload(record: Omit<PlayRecord, 'playedAt' | 'playerName'>, date: string) {
     return {
       date,
       mode: record.mode,
       moveLimit: record.moveLimit ?? null,
-      moveCount: record.moves,
-      score: record.score,
-      isCleared: record.isCleared ?? false,
-      maxChain: record.maxChain ?? 0,
-      cascadePoints: record.cascadePoints ?? 0,
       generatedItemTypes: record.generatedItemTypes ?? [],
-      replayLog: record.replayLog ?? [],
+      replayLog: record.replayLog,
     };
+  }
+
+  /** Legacy records without a replay log are rejected by the server */
+  function hasReplayLog(record: Omit<PlayRecord, 'playedAt' | 'playerName'>): boolean {
+    return !!record.replayLog?.length;
   }
 
   function handleScoreResponse(res: { shareCode: string }, seed: number) {
@@ -209,7 +210,7 @@ export const useGameStore = defineStore('game', () => {
 
   async function submitScoreToBackend(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
     const date = findDailyDate(record.seed);
-    if (!date) return;
+    if (!date || !hasReplayLog(record)) return;
     try {
       const res = await api<{ scoreId: string | null; shareCode: string; newAchievements: string[]; pastDate?: boolean; verifiedScore?: number; verifiedMoveCount?: number }>('/api/scores', {
         method: 'POST',
@@ -242,7 +243,7 @@ export const useGameStore = defineStore('game', () => {
   /** Re-submit local scores that are missing from the server (e.g., due to past findDailyDate bug). */
   async function resubmitUnsentScores() {
     const pending = playRecords.value.filter(r => {
-      if (serverScoreKeys.has(`${r.seed}:${r.mode}`)) return false;
+      if (serverScoreKeys.has(`${r.seed}:${r.mode}`) || !hasReplayLog(r)) return false;
       return findDailyDate(r.seed) !== null;
     });
     if (pending.length === 0) return;

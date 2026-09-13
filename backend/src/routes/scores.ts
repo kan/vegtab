@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
+import { BOARD_SIZE, type ReplayAction } from '@vegtab/engine';
 import type { Bindings, Variables } from '../types';
 import { generateId } from '../lib/id';
 import { isDateNearToday, todayJST } from '../lib/date';
@@ -8,23 +10,43 @@ import { findOrCreateDailySeed } from '../lib/seed';
 import { evaluateAchievements } from '../lib/achievements';
 import { verifyReplay } from '../lib/replay-verify';
 
+/** Upper bound on replay length; generous enough for long Survival runs */
+const MAX_REPLAY_ACTIONS = 1000;
+const MAX_SCORE_BODY_BYTES = 256 * 1024;
+
+const positionSchema = z.object({
+  row: z.number().int().min(0).max(BOARD_SIZE - 1),
+  col: z.number().int().min(0).max(BOARD_SIZE - 1),
+});
+const directionSchema = z.enum(['up', 'down', 'left', 'right']);
+const targetCellsSchema = z.array(positionSchema).max(3);
+
+const replayActionSchema: z.ZodType<ReplayAction> = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('swap'), pos: positionSchema, dir: directionSchema }),
+  z.object({ type: z.literal('tap'), pos: positionSchema }),
+  z.object({ type: z.literal('scope'), pos: positionSchema, targetCells: targetCellsSchema }),
+  z.object({ type: z.literal('scope_synthesis'), pos1: positionSchema, pos2: positionSchema, targetCells: targetCellsSchema }),
+  z.object({ type: z.literal('scope_swap'), pos: positionSchema, dir: directionSchema, targetCells: targetCellsSchema }),
+  z.object({ type: z.literal('auto_activate') }),
+]);
+
+// Client-reported score/moveCount/etc. are intentionally not part of the schema:
+// every result is re-simulated from the replay log.
 const submitScoreSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   mode: z.enum(['sprint', 'clear', 'survival', 'cascade']),
   moveLimit: z.number().int().nullable().optional(),
-  moveCount: z.number().int(),
-  score: z.number().int(),
-  isCleared: z.boolean(),
-  maxChain: z.number().int().optional().default(0),
-  cascadePoints: z.number().int().optional().default(0),
-  generatedItemTypes: z.array(z.string()).optional().default([]),
-  replayLog: z.array(z.unknown()),
+  generatedItemTypes: z.array(z.string().max(20)).max(10).optional().default([]),
+  replayLog: z.array(replayActionSchema).min(1).max(MAX_REPLAY_ACTIONS),
 });
 
 export const scoreRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // POST /api/scores - Submit a score
-scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
+scoreRoutes.post('/', bodyLimit({
+  maxSize: MAX_SCORE_BODY_BYTES,
+  onError: (c) => c.json({ error: 'Payload too large' }, 413),
+}), zValidator('json', submitScoreSchema), async (c) => {
   const userId = c.get('userId');
   const data = c.req.valid('json');
 
@@ -42,22 +64,18 @@ scoreRoutes.post('/', zValidator('json', submitScoreSchema), async (c) => {
     return c.json({ scoreId: null, shareCode: seed.share_code, newAchievements: [], pastDate: true }, 200);
   }
 
-  // Replay verification: re-simulate the game and use verified score
-  let verifiedScore = data.score;
-  let verifiedMoveCount = data.moveCount;
-  let verifiedIsCleared = data.isCleared;
-  let verifiedMaxChain = data.maxChain;
-  let verifiedCascadePoints = data.cascadePoints;
-  if (data.replayLog.length > 0) {
-    const seedValue = Number(seed.seed_value);
-    const verified = verifyReplay(seedValue, data.mode, data.replayLog);
-    // Always use server-verified values
-    verifiedScore = verified.score;
-    verifiedMoveCount = verified.moveCount;
-    verifiedIsCleared = verified.isCleared;
-    verifiedMaxChain = verified.maxChain;
-    verifiedCascadePoints = verified.cascadePoints;
+  // Replay verification: the result is always re-simulated from the replay log
+  const verified = verifyReplay(Number(seed.seed_value), data.mode, data.replayLog);
+  if (!verified.valid) {
+    return c.json({ error: 'Invalid replay' }, 400);
   }
+  const {
+    score: verifiedScore,
+    moveCount: verifiedMoveCount,
+    isCleared: verifiedIsCleared,
+    maxChain: verifiedMaxChain,
+    cascadePoints: verifiedCascadePoints,
+  } = verified;
 
   // Check for existing score
   const existing = await c.env.DB.prepare(

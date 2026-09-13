@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SELF, env } from 'cloudflare:test';
-import { applyMigrations, registerUser, authHeader } from './helpers';
-import { todayJST } from '../src/lib/date';
+import { SELF } from 'cloudflare:test';
+import {
+  applyMigrations, registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
+} from './helpers';
 
 describe('Seeds & Ranking API', () => {
   let accessToken: string;
@@ -26,11 +27,7 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('seed info returns best scores', async () => {
-    // Create seed via daily endpoint
-    const dailyRes = await SELF.fetch('http://localhost/api/seeds/daily', {
-      headers: authHeader(accessToken),
-    });
-    const { seedId } = await dailyRes.json() as { seedId: string };
+    const seedId = await getTodaySeedId(accessToken);
 
     const infoRes = await SELF.fetch(`http://localhost/api/seeds/${seedId}`, {
       headers: authHeader(accessToken),
@@ -41,20 +38,7 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('score submission creates seed and returns shareCode', async () => {
-    const today = todayJST();
-    const res = await SELF.fetch('http://localhost/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
-      body: JSON.stringify({
-        date: today,
-        mode: 'sprint',
-        moveLimit: 15,
-        moveCount: 15,
-        score: 5000,
-        isCleared: true,
-        replayLog: [],
-      }),
-    });
+    const { res } = await submitReplay(accessToken, 'sprint', 1);
     expect(res.status).toBe(201);
     const data = await res.json() as { scoreId: string; shareCode: string };
     expect(data.scoreId).toBeTruthy();
@@ -62,47 +46,15 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('rejects score for invalid date', async () => {
-    const res = await SELF.fetch('http://localhost/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
-      body: JSON.stringify({
-        date: '2020-01-01',
-        mode: 'sprint',
-        moveLimit: 15,
-        moveCount: 15,
-        score: 5000,
-        isCleared: true,
-        replayLog: [],
-      }),
-    });
+    const { res } = await submitReplay(accessToken, 'sprint', 1, { date: '2020-01-01' });
     expect(res.status).toBe(400);
   });
 
   it('sprint ranking returns correct data', async () => {
-    const today = todayJST();
-
     // Submit a score (auto-creates daily seed)
-    await SELF.fetch('http://localhost/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
-      body: JSON.stringify({
-        date: today,
-        mode: 'sprint',
-        moveLimit: 15,
-        moveCount: 15,
-        score: 5000,
-        isCleared: true,
-        replayLog: [],
-      }),
-    });
+    const { state } = await submitReplay(accessToken, 'sprint', 2);
+    const seedId = await getTodaySeedId(accessToken);
 
-    // Get seedId from daily endpoint
-    const dailyRes = await SELF.fetch('http://localhost/api/seeds/daily', {
-      headers: authHeader(accessToken),
-    });
-    const { seedId } = await dailyRes.json() as { seedId: string };
-
-    // Check ranking
     const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=sprint`, {
       headers: authHeader(accessToken),
     });
@@ -112,63 +64,18 @@ describe('Seeds & Ranking API', () => {
       userRank: { rank: number; score: number } | null;
     };
     expect(rankData.ranking).toHaveLength(1);
-    expect(rankData.ranking[0].score).toBe(5000);
+    expect(rankData.ranking[0].score).toBe(state.score);
     expect(rankData.userRank?.rank).toBe(1);
-    expect(rankData.userRank?.score).toBe(5000);
+    expect(rankData.userRank?.score).toBe(state.score);
   });
 
-  it('clear mode ranking sorted by move_count ASC', async () => {
-    const today = todayJST();
+  it('clear mode ranking uses the fewest moves among cleared plays', async () => {
+    // Cleared plays cannot be produced by short replays, so the rows are inserted directly
+    const seedId = await getTodaySeedId(accessToken);
+    await insertPlayScore({ userId, seedId, mode: 'clear', moveCount: 20, score: 3000, isCleared: true });
+    await insertPlayScore({ userId, seedId, mode: 'clear', moveCount: 12, score: 2000, isCleared: true });
+    await insertPlayScore({ userId, seedId, mode: 'clear', moveCount: 5, score: 500, isCleared: false });
 
-    // Submit clear score (auto-creates daily seed)
-    await SELF.fetch('http://localhost/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
-      body: JSON.stringify({
-        date: today,
-        mode: 'clear',
-        moveCount: 20,
-        score: 3000,
-        isCleared: true,
-        replayLog: [],
-      }),
-    });
-
-    // Submit better clear score (fewer moves — should replace)
-    await SELF.fetch('http://localhost/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
-      body: JSON.stringify({
-        date: today,
-        mode: 'clear',
-        moveCount: 12,
-        score: 2000,
-        isCleared: true,
-        replayLog: [],
-      }),
-    });
-
-    // Submit a non-cleared score (should NOT replace cleared record)
-    await SELF.fetch('http://localhost/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
-      body: JSON.stringify({
-        date: today,
-        mode: 'clear',
-        moveCount: 5,
-        score: 500,
-        isCleared: false,
-        replayLog: [],
-      }),
-    });
-
-    // Get seedId
-    const dailyRes = await SELF.fetch('http://localhost/api/seeds/daily', {
-      headers: authHeader(accessToken),
-    });
-    const { seedId } = await dailyRes.json() as { seedId: string };
-
-    // Check ranking — should use best (lowest) move_count of cleared plays
     const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=clear`, {
       headers: authHeader(accessToken),
     });
@@ -186,46 +93,13 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('survival mode ranking sorted by move_count DESC then score DESC', async () => {
-    const today = todayJST();
-
-    // Submit score for user 1 (auto-creates daily seed)
-    await SELF.fetch('http://localhost/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(accessToken) },
-      body: JSON.stringify({
-        date: today,
-        mode: 'survival',
-        moveCount: 30,
-        score: 8000,
-        isCleared: false,
-        replayLog: [],
-      }),
-    });
-
-    // Register a second user
+    const seedId = await getTodaySeedId(accessToken);
     const reg2 = await registerUser('550e8400-e29b-41d4-a716-446655440021');
 
-    // User 2: survives 25 moves, score 9000 (fewer moves, so ranked lower)
-    await SELF.fetch('http://localhost/api/scores', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeader(reg2.accessToken) },
-      body: JSON.stringify({
-        date: today,
-        mode: 'survival',
-        moveCount: 25,
-        score: 9000,
-        isCleared: false,
-        replayLog: [],
-      }),
-    });
+    // User 1 survives 30 moves; user 2 survives 25 moves with a higher score (ranked lower)
+    await insertPlayScore({ userId, seedId, mode: 'survival', moveCount: 30, score: 8000 });
+    await insertPlayScore({ userId: reg2.userId, seedId, mode: 'survival', moveCount: 25, score: 9000 });
 
-    // Get seedId
-    const dailyRes = await SELF.fetch('http://localhost/api/seeds/daily', {
-      headers: authHeader(accessToken),
-    });
-    const { seedId } = await dailyRes.json() as { seedId: string };
-
-    // Check ranking
     const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=survival`, {
       headers: authHeader(accessToken),
     });
@@ -235,12 +109,10 @@ describe('Seeds & Ranking API', () => {
       userRank: { rank: number; score: number; moveCount: number } | null;
     };
     expect(rankData.ranking).toHaveLength(2);
-    // User 1 (30 moves) should be ranked #1 over User 2 (25 moves)
     expect(rankData.ranking[0].moveCount).toBe(30);
     expect(rankData.ranking[0].score).toBe(8000);
     expect(rankData.ranking[1].moveCount).toBe(25);
     expect(rankData.ranking[1].score).toBe(9000);
-    // User 1's rank
     expect(rankData.userRank?.rank).toBe(1);
     expect(rankData.userRank?.moveCount).toBe(30);
   });
