@@ -193,12 +193,13 @@ function activateItem(
   rngState: number[],
   targetCells?: Position[],
   collector?: TraceCollector,
-): { score: number; rngState: number[]; chainSteps: ChainStep[]; clearedPositions: Position[] } {
+): { score: number; rngState: number[]; clearedPositions: Position[]; depthLevels: number } {
   const activated = new Set<string>();
-  const chainSteps: ChainStep[] = [];
   let totalScore = 0;
   const rng = rngState; // アイテム発動中はRNG不使用（補充なし）
   const allCleared: Position[] = [];
+  // タイルを消した発動のうち最も深い段（起動したアイテム自身が1段目）。後続の連鎖の開始値に使う
+  let depthLevels = 0;
 
   // 再帰的に誘爆を処理するキュー（depth 追跡付き）
   const queue: { pos: Position; item: ItemType; targetColor?: number; targetCells?: Position[]; depth: number }[] = [
@@ -249,13 +250,7 @@ function activateItem(
     const score = 10 * cleared.length * chainIndex;
     if (cleared.length > 0) {
       totalScore += score;
-      chainSteps.push({
-        chainIndex,
-        matches: [],
-        clearedPositions: cleared,
-        generatedItems: [],
-        score,
-      });
+      depthLevels = Math.max(depthLevels, current.depth + 1);
     }
 
     // collector: アイテム効果を通知
@@ -271,10 +266,13 @@ function activateItem(
     }
   }
 
-  return { score: totalScore, rngState: rng, chainSteps, clearedPositions: allCleared };
+  return { score: totalScore, rngState: rng, clearedPositions: allCleared, depthLevels };
 }
 
-/** サラダボウル+アイテム合成: 対象色の全タイルからアイテム効果を発動 */
+/**
+ * サラダボウル+アイテム合成: 対象色の全タイルからアイテム効果を発動
+ * @returns depthLevels: 合成の効果で誘爆したアイテムのうち、タイルを消した発動の最も深い段
+ */
 function activateCoffeeSynthesis(
   board: (Cell | null)[][],
   pos: Position,
@@ -284,7 +282,7 @@ function activateCoffeeSynthesis(
   chainIndex: number,
   rngState: number[],
   collector?: TraceCollector,
-): { score: number; rngState: number[]; chainSteps: ChainStep[]; clearedPositions: Position[] } {
+): { score: number; rngState: number[]; clearedPositions: Position[]; depthLevels: number } {
   // まず両方のアイテムを消去
   board[pos.row][pos.col] = null;
   board[coffeePos.row][coffeePos.col] = null;
@@ -294,7 +292,7 @@ function activateCoffeeSynthesis(
 
   let totalScore = 0;
   let rng = rngState;
-  const allSteps: ChainStep[] = [];
+  let depthLevels = 0;
   const activated = new Set<string>();
   const allCleared: Position[] = [];
 
@@ -341,7 +339,7 @@ function activateCoffeeSynthesis(
           const result = activateItem(board, t, cell.item, preColor, chainIndex, rng, undefined, collector);
           totalScore += result.score;
           rng = result.rngState;
-          allSteps.push(...result.chainSteps);
+          depthLevels = Math.max(depthLevels, result.depthLevels);
           allCleared.push(...result.clearedPositions);
         }
       } else {
@@ -356,7 +354,7 @@ function activateCoffeeSynthesis(
     }
   }
 
-  return { score: totalScore, rngState: rng, chainSteps: allSteps, clearedPositions: allCleared };
+  return { score: totalScore, rngState: rng, clearedPositions: allCleared, depthLevels };
 }
 
 /** おじゃまタイルへのダメージ処理（消去位置に基づく）
@@ -371,6 +369,17 @@ export function processDamage(board: (Cell | null)[][], clearedPositions: Positi
     rng = fillEmptyCells(board, rng, numColors);
   }
   return rng;
+}
+
+/**
+ * アイテム効果の後に続く連鎖の chainIndex の開始値（SPEC §3.6.1: 操作で直接消えるのが1連鎖目、
+ * 誘爆・落下で消えるのが2連鎖目以降）。
+ * @param depthLevels タイルを消した発動の最も深い段。起動したアイテム・スプーン・合成の効果そのものを
+ *   1段目とし、誘爆の深さごとに1段ずつ増える（同じ深さで同時に誘爆したアイテムは何個でも1段）
+ * @param preChains アイテム発動より前に入れ替えで起きた連鎖の数
+ */
+function chainStartAfterItems(depthLevels: number, preChains = 0): number {
+  return Math.max(2, depthLevels + preChains + 1);
 }
 
 /** cascade モードの maxChainIndex と cascadePoints を更新 */
@@ -482,6 +491,8 @@ export function applyWave(
     // おじゃまタイルを一時的に除去してアイテムを発動
     board[pos.row][pos.col] = null;
     let stepScore = 0;
+    // 強制発動の効果の段数（スプーンは消去そのものを1段目とする）
+    let depthLevels = item === 'scope' ? 1 : 0;
 
     if (item === 'scope') {
       const adjTargets = getScopeAdjacentTargets(board, pos);
@@ -500,6 +511,7 @@ export function applyWave(
           const r = activateItem(board, t, adjCell.item, tc, 1, rng, undefined, collector);
           stepScore += r.score;
           rng = r.rngState;
+          depthLevels = Math.max(depthLevels, 1 + r.depthLevels);
         } else {
           board[t.row][t.col] = null;
           stepScore += 10;
@@ -511,11 +523,13 @@ export function applyWave(
         const result = activateItem(board, pos, item, targetColor, 1, rng, undefined, collector);
         stepScore += result.score;
         rng = result.rngState;
+        depthLevels = result.depthLevels;
       }
     } else {
       const result = activateItem(board, pos, item, undefined, 1, rng, undefined, collector);
       stepScore += result.score;
       rng = result.rngState;
+      depthLevels = result.depthLevels;
     }
 
     totalScore += stepScore;
@@ -528,7 +542,7 @@ export function applyWave(
     // 落下 → 補充 → 連鎖（Survivalは Clearと同じく passThrough）
     applyGravity(board, true);
     rng = fillEmptyCells(board, rng, numColors);
-    const chainResult = processChains(board, rng, 2, 'survival', false, numColors, collector);
+    const chainResult = processChains(board, rng, chainStartAfterItems(depthLevels), 'survival', false, numColors, collector);
     totalScore += chainResult.score;
     rng = chainResult.rngState;
 
@@ -600,6 +614,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     newState.moveCount++;
 
     const allCleared: Position[] = [];
+    let depthLevels = 1;
 
     // まず周囲上下左右4マスを消去
     const adjTargets = getScopeAdjacentTargets(board, action.pos);
@@ -619,6 +634,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         const result = activateItem(board, t, adjCell.item, tc, 1, newState.rngState, undefined, collector);
         newState.score += result.score;
         newState.rngState = result.rngState;
+        depthLevels = Math.max(depthLevels, 1 + result.depthLevels);
         allCleared.push(...result.clearedPositions);
       } else {
         board[t.row][t.col] = null;
@@ -643,6 +659,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         const result = activateItem(board, target, targetCell.item, targetColor, 1, newState.rngState, undefined, collector);
         newState.score += result.score;
         newState.rngState = result.rngState;
+        depthLevels = Math.max(depthLevels, 1 + result.depthLevels);
         allCleared.push(...result.clearedPositions);
       } else {
         board[target.row][target.col] = null;
@@ -667,7 +684,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     // collector: gravity + fill 後の盤面スナップショット
     collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
 
-    const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc, collector, newState.sparkleRngState);
+    const chainResult = processChains(board, newState.rngState, chainStartAfterItems(depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
 
@@ -712,7 +729,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     // collector: gravity + fill 後の盤面スナップショット
     collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
 
-    const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc, collector, newState.sparkleRngState);
+    const chainResult = processChains(board, newState.rngState, chainStartAfterItems(result.depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
     updateMaxChain(newState, chainResult.steps);
@@ -756,7 +773,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         // collector: gravity + fill 後の盤面スナップショット
         collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
 
-        const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc, collector, newState.sparkleRngState);
+        const chainResult = processChains(board, newState.rngState, chainStartAfterItems(synthResult.depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
         newState.score += chainResult.score;
         newState.rngState = chainResult.rngState;
 
@@ -820,7 +837,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
         collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
 
-        const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc, collector, newState.sparkleRngState);
+        const chainResult = processChains(board, newState.rngState, chainStartAfterItems(1), newState.mode, false, nc, collector, newState.sparkleRngState);
         newState.score += chainResult.score;
         newState.rngState = chainResult.rngState;
         updateMaxChain(newState, chainResult.steps);
@@ -877,7 +894,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
       // collector: gravity + fill 後の盤面スナップショット
       collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
 
-      const chainResult = processChains(board, newState.rngState, result.chainSteps.length + preChainResult.steps.length + 1, newState.mode, false, nc, collector, newState.sparkleRngState);
+      const chainResult = processChains(board, newState.rngState, chainStartAfterItems(result.depthLevels, preChainResult.steps.length), newState.mode, false, nc, collector, newState.sparkleRngState);
       newState.score += chainResult.score;
       newState.rngState = chainResult.rngState;
 
@@ -980,10 +997,11 @@ function clearTargets(
   rngState: number[],
   excludePositions?: Set<string>,
   collector?: TraceCollector,
-): { score: number; rngState: number[]; clearedPositions: Position[] } {
+): { score: number; rngState: number[]; clearedPositions: Position[]; depthLevels: number } {
   let rng = rngState;
   let score = 0;
   let cleared = 0;
+  let depthLevels = 1;
   const activated = excludePositions ?? new Set<string>();
   const allCleared: Position[] = [];
 
@@ -1004,6 +1022,7 @@ function clearTargets(
         const result = activateItem(board, t, cell.item, preColor, 1, rng, undefined, collector);
         score += result.score;
         rng = result.rngState;
+        depthLevels = Math.max(depthLevels, 1 + result.depthLevels);
         allCleared.push(...result.clearedPositions);
       }
     } else {
@@ -1014,9 +1033,12 @@ function clearTargets(
   }
 
   score += 10 * cleared;
-  return { score, rngState: rng, clearedPositions: allCleared };
+  return { score, rngState: rng, clearedPositions: allCleared, depthLevels };
 }
 
+/**
+ * @returns depthLevels: 合成の効果を1段目とした誘爆の段数（chainStartAfterItems に渡す）
+ */
 function processSynthesis(
   board: (Cell | null)[][],
   pos1: Position,
@@ -1028,13 +1050,13 @@ function processSynthesis(
   mode: GameMode = 'sprint',
   numColors: number = NUM_COLORS,
   collector?: TraceCollector,
-): { score: number; rngState: number[]; clearedPositions: Position[] } {
+): { score: number; rngState: number[]; clearedPositions: Position[]; depthLevels: number } {
   let rng = rngState;
   let totalScore = 0;
   const allCleared: Position[] = [];
 
   if (effect === 'flush+flush') {
-    // 全消し: アイテムは残留
+    // 全消し: アイテムは残留（誘爆なし）
     board[pos1.row][pos1.col] = null;
     board[pos2.row][pos2.col] = null;
 
@@ -1060,7 +1082,7 @@ function processSynthesis(
     applyGravity(board, isPassThroughMode(mode));
     rng = fillEmptyCells(board, rng, numColors);
 
-    return { score: totalScore, rngState: rng, clearedPositions: allCleared };
+    return { score: totalScore, rngState: rng, clearedPositions: allCleared, depthLevels: 1 };
   }
 
   if (effect === 'scope+flush') {
@@ -1070,7 +1092,7 @@ function processSynthesis(
 
     const targetColor = findFlushTargetColor(board, coffeePos);
     if (targetColor === null) {
-      return { score: 0, rngState: rng, clearedPositions: [] };
+      return { score: 0, rngState: rng, clearedPositions: [], depthLevels: 1 };
     }
 
     // Flush targets are plain tiles only (no items, no obstacles), so there is nothing to detonate
@@ -1084,7 +1106,7 @@ function processSynthesis(
       targets: allCleared, detonations: [], score: totalScore,
     });
 
-    return { score: totalScore, rngState: rng, clearedPositions: allCleared };
+    return { score: totalScore, rngState: rng, clearedPositions: allCleared, depthLevels: 1 };
   }
 
   if (effect.startsWith('flush+')) {
@@ -1096,7 +1118,7 @@ function processSynthesis(
     if (targetColor === null) {
       board[pos1.row][pos1.col] = null;
       board[pos2.row][pos2.col] = null;
-      return { score: 0, rngState: rng, clearedPositions: [] };
+      return { score: 0, rngState: rng, clearedPositions: [], depthLevels: 1 };
     }
 
     const result = activateCoffeeSynthesis(
@@ -1111,7 +1133,7 @@ function processSynthesis(
       targets: allCleared, detonations: [], score: totalScore,
     });
 
-    return { score: totalScore, rngState: rng, clearedPositions: allCleared };
+    return { score: totalScore, rngState: rng, clearedPositions: allCleared, depthLevels: 1 + result.depthLevels };
   }
 
   // 非サラダボウル合成
@@ -1130,7 +1152,7 @@ function processSynthesis(
     targets: allCleared, detonations: [], score: totalScore,
   });
 
-  return { score: totalScore, rngState: rng, clearedPositions: allCleared };
+  return { score: totalScore, rngState: rng, clearedPositions: allCleared, depthLevels: result.depthLevels };
 }
 
 /** スプーン合成を処理（ユーザー選択後に呼ばれる） */
@@ -1164,6 +1186,7 @@ export function processScopeSynthesis(
   const synthPos = pos2;
   const effect = synthesis.effect;
   const allCleared: Position[] = [];
+  let depthLevels = 1;
 
   // 合成時: 元の位置(pos1, pos2)で周囲4マス消去を追加発動
   for (const sPos of [pos1, pos2]) {
@@ -1184,6 +1207,7 @@ export function processScopeSynthesis(
         const result = activateItem(board, t, adjCell.item, tc, 1, newState.rngState, undefined, collector);
         newState.score += result.score;
         newState.rngState = result.rngState;
+        depthLevels = Math.max(depthLevels, 1 + result.depthLevels);
         allCleared.push(...result.clearedPositions);
       } else {
         board[t.row][t.col] = null;
@@ -1210,6 +1234,7 @@ export function processScopeSynthesis(
         const result = activateItem(board, target, cell.item, targetColor, 1, newState.rngState, undefined, collector);
         newState.score += result.score;
         newState.rngState = result.rngState;
+        depthLevels = Math.max(depthLevels, 1 + result.depthLevels);
         allCleared.push(...result.clearedPositions);
       } else {
         board[target.row][target.col] = null;
@@ -1224,6 +1249,7 @@ export function processScopeSynthesis(
     const result = clearTargets(board, targets, newState.rngState, excluded, collector);
     newState.score += result.score;
     newState.rngState = result.rngState;
+    depthLevels = Math.max(depthLevels, result.depthLevels);
     allCleared.push(...result.clearedPositions);
   }
 
@@ -1244,7 +1270,7 @@ export function processScopeSynthesis(
   // collector: gravity + fill 後の盤面スナップショット
   collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
 
-  const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc, collector, newState.sparkleRngState);
+  const chainResult = processChains(board, newState.rngState, chainStartAfterItems(depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
   newState.score += chainResult.score;
   newState.rngState = chainResult.rngState;
 
