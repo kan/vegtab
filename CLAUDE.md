@@ -56,9 +56,9 @@ npm install                    # ルートで全 workspace の依存をインス
 ### Cloudflare リソース（初回のみ）
 ```bash
 cd backend
-wrangler d1 create vegtab-db                    # D1 データベース
+wrangler d1 create tomado-db                    # D1 データベース
 wrangler kv namespace create KV                 # KV namespace
-wrangler r2 bucket create vegtab-replay-logs    # R2 バケット
+wrangler r2 bucket create tomado-replay-logs    # R2 バケット
 wrangler secret put JWT_SECRET                  # JWT シークレット（リモート用）
 ```
 各コマンドの出力にある ID を `backend/wrangler.toml` に反映する。
@@ -67,7 +67,7 @@ wrangler secret put JWT_SECRET                  # JWT シークレット（リ�
 - `backend/.dev.vars` に `JWT_SECRET=<任意の値>` を設定（`.gitignore` 済み）
 - ローカル D1 のマイグレーション適用:
   ```bash
-  cd backend && npx wrangler d1 migrations apply vegtab-db --local
+  cd backend && npm run db:migrate
   ```
 
 ### アプリアイコン・スプラッシュの再生成
@@ -99,12 +99,17 @@ cd frontend && npm run dev
 npm run deploy
 
 # 個別デプロイ
-npm run deploy:backend    # Workers API (--env production)
+npm run deploy:backend    # 本番 D1 マイグレーション → Workers API (--env production)
 npm run deploy:frontend   # Pages SPA (vue-tsc → vite build → pages deploy)
 
-# DBマイグレーション（新しいマイグレーション追加時、デプロイ前に実行）
+# DBマイグレーションだけを適用する場合
 npm run db:migrate:prod -w backend
 ```
+
+`deploy:backend` は未適用のマイグレーションを先に適用してから Worker をデプロイする。
+マイグレーションを追加するときは、先に適用してもデプロイ前の Worker が壊れない形
+（テーブル・カラムの追加など）にすること。削除や名前の変更は、コードの対応をデプロイした後の
+別マイグレーションで行う。
 
 ## テスト
 

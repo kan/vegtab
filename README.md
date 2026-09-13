@@ -32,7 +32,7 @@ npm install
 cd backend
 
 # D1 データベース
-wrangler d1 create vegtab-db
+wrangler d1 create tomado-db
 # → 出力の database_id を wrangler.toml に反映
 
 # KV namespace
@@ -40,7 +40,7 @@ wrangler kv namespace create KV
 # → 出力の id を wrangler.toml に反映
 
 # R2 バケット（リプレイログ保存用）
-wrangler r2 bucket create vegtab-replay-logs
+wrangler r2 bucket create tomado-replay-logs
 
 # JWT シークレット（リモートデプロイ用）
 wrangler secret put JWT_SECRET
@@ -50,7 +50,7 @@ wrangler secret put JWT_SECRET
 echo 'JWT_SECRET=local-dev-secret' > .dev.vars
 
 # ローカル D1 マイグレーション適用
-npx wrangler d1 migrations apply vegtab-db --local
+npm run db:migrate
 ```
 
 ## 開発
@@ -105,15 +105,13 @@ npx wrangler pages project create vegtab
 npm run deploy
 
 # 個別デプロイ
-npm run deploy:backend    # Workers API (--env production)
+npm run deploy:backend    # 本番 D1 マイグレーション → Workers API (--env production)
 npm run deploy:frontend   # Pages SPA (vue-tsc → vite build → pages deploy)
 ```
 
-新しいマイグレーションがある場合は、デプロイ前に実行:
-
-```bash
-npm run db:migrate:prod -w backend
-```
+`deploy:backend` は未適用の D1 マイグレーションを先に適用してから Worker をデプロイする（適用前に確認を求められる）。
+そのため、マイグレーションは「先に適用しても、デプロイ前の Worker が壊れないもの」（テーブル・カラムの追加など）にすること。
+カラムの削除や名前の変更が必要な場合は、コードの対応をデプロイしてから別のマイグレーションで行う。
 
 ### 環境変数
 
