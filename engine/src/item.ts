@@ -308,7 +308,8 @@ export function getFlushTargets(board: (Cell | null)[][], targetColor: number): 
   for (let row = 0; row < BOARD_SIZE; row++) {
     for (let col = 0; col < BOARD_SIZE; col++) {
       const cell = board[row][col];
-      if (cell && !cell.item && cell.color === targetColor) {
+      // おじゃまタイルは配置前の色を内部に保持しているが、画面には見えないので対象外
+      if (cell && !cell.item && !cell.obstacle && cell.color === targetColor) {
         targets.push({ row, col });
       }
     }
@@ -334,12 +335,12 @@ export function getScopeAdjacentTargets(board: (Cell | null)[][], pos: Position)
 }
 
 export function findFlushTargetColor(board: (Cell | null)[][], pos: Position): number | null {
-  // 上隣から時計回り: 上, 右上, 右, 右下, 下, 左下, 左, 左上
+  // 上隣から時計回り: 上, 右上, 右, 右下, 下, 左下, 左, 左上（おじゃまタイルの見えない色は使わない）
   for (const [dr, dc] of CLOCKWISE_8) {
     const p = { row: pos.row + dr, col: pos.col + dc };
     if (isValidPosition(p)) {
       const cell = board[p.row][p.col];
-      if (cell && !cell.item) {
+      if (cell && !cell.item && !cell.obstacle) {
         return cell.color;
       }
     }

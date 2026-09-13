@@ -1073,26 +1073,10 @@ function processSynthesis(
       return { score: 0, rngState: rng, clearedPositions: [] };
     }
 
+    // Flush targets are plain tiles only (no items, no obstacles), so there is nothing to detonate
     const targets = getFlushTargets(board, targetColor);
-    const flushColors = snapshotFlushColors(board, targets);
-    for (const t of targets) {
-      const cell = board[t.row]?.[t.col];
-      if (cell === null) continue;
-      if (cell.obstacle) {
-        if (damageObstacleAt(board, t)) allCleared.push(t);
-        continue;
-      }
-      if (cell.item) {
-        const preColor = cell.item === 'flush' ? flushColors.get(`${t.row},${t.col}`) : undefined;
-        const result = activateItem(board, t, cell.item, preColor, 1, rng, undefined, collector);
-        totalScore += result.score;
-        rng = result.rngState;
-        allCleared.push(...result.clearedPositions);
-      } else {
-        board[t.row][t.col] = null;
-        allCleared.push(t);
-      }
-    }
+    for (const t of targets) board[t.row][t.col] = null;
+    allCleared.push(...targets);
     totalScore += 10 * targets.length;
 
     collector?.onSynthesisEffect?.({
