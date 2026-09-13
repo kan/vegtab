@@ -26,6 +26,8 @@ describe('Ranking cache invalidation', () => {
     await env.DB.exec('DELETE FROM play_scores');
     await env.DB.exec('DELETE FROM puzzle_seeds');
     await env.DB.exec('DELETE FROM user_devices');
+    await env.DB.exec('DELETE FROM refresh_token_families');
+    await env.DB.exec('DELETE FROM transfer_codes');
     await env.DB.exec('DELETE FROM users');
     const reg = await registerUser('550e8400-e29b-41d4-a716-446655440050');
     accessToken = reg.accessToken;

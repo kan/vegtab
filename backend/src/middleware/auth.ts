@@ -1,6 +1,6 @@
 import { createMiddleware } from 'hono/factory';
 import type { Bindings, Variables } from '../types';
-import { verifyToken } from '../lib/jwt';
+import { verifyAccessToken } from '../lib/jwt';
 
 export const authMiddleware = createMiddleware<{
   Bindings: Bindings;
@@ -12,7 +12,7 @@ export const authMiddleware = createMiddleware<{
   }
 
   const token = authHeader.slice(7);
-  const userId = await verifyToken(token, c.env.JWT_SECRET, 'access');
+  const userId = await verifyAccessToken(token, c.env.JWT_SECRET);
   if (!userId) {
     return c.json({ error: 'Invalid or expired token' }, 401);
   }

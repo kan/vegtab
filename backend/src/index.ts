@@ -12,6 +12,7 @@ import { pushRoutes } from './routes/push';
 import { shareRoutes } from './routes/share';
 import { authMiddleware } from './middleware/auth';
 import { sendDailyPushNotifications } from './lib/push-cron';
+import { purgeExpiredRefreshTokens } from './lib/refresh-tokens';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -60,5 +61,6 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
     ctx.waitUntil(sendDailyPushNotifications(env));
+    ctx.waitUntil(purgeExpiredRefreshTokens(env.DB));
   },
 };

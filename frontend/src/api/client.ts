@@ -44,21 +44,76 @@ export function isAuthenticated(): boolean {
   return !!accessToken;
 }
 
-async function refreshAccessToken(): Promise<boolean> {
-  if (!refreshToken) return false;
+// --- Recovering from 401 ---
+
+/** Whether a JWT stays valid for at least another minute (payload decoded locally, not verified) */
+function isFresh(token: string): boolean {
   try {
-    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: number };
+    return (payload.exp ?? 0) * 1000 > Date.now() + 60_000;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * - refreshed: new tokens are in place
+ * - rejected: the server refused the refresh token (401/403); only then is re-registering appropriate
+ * - unavailable: network error or 5xx; the account must be kept and the request retried later
+ */
+type RefreshOutcome = 'refreshed' | 'rejected' | 'unavailable';
+
+async function requestRefresh(): Promise<RefreshOutcome> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
     });
-    if (!res.ok) return false;
-    const data = await res.json() as { accessToken: string; refreshToken: string };
-    saveTokens(data.accessToken, data.refreshToken);
-    return true;
   } catch {
-    return false;
+    return 'unavailable';
   }
+  if (res.status === 401 || res.status === 403) return 'rejected';
+  if (!res.ok) return 'unavailable';
+  const data = await res.json() as { accessToken: string; refreshToken: string };
+  saveTokens(data.accessToken, data.refreshToken);
+  return 'refreshed';
+}
+
+async function recover(failedAccessToken: string | null): Promise<boolean> {
+  // Another tab (or an earlier recovery) may have renewed the tokens while we waited for the lock
+  const storedAccess = getItemSync(TOKEN_KEY);
+  if (storedAccess && storedAccess !== failedAccessToken && isFresh(storedAccess)) {
+    accessToken = storedAccess;
+    refreshToken = getItemSync(REFRESH_KEY) ?? refreshToken;
+    return true;
+  }
+
+  // Refresh tokens are single-use: always send the latest stored one
+  refreshToken = getItemSync(REFRESH_KEY) ?? refreshToken;
+  const outcome = await requestRefresh();
+  if (outcome === 'unavailable') return false;
+  if (outcome === 'rejected') {
+    showToast('info', 'toast.authRetry');
+    await register();
+  }
+  return true;
+}
+
+let recoveryInFlight: Promise<boolean> | null = null;
+
+/**
+ * Recover from a 401 by refreshing the tokens, or by re-registering when the server rejected the
+ * refresh token. Returns false when the server is unreachable, so the caller keeps the account and
+ * retries later. Concurrent calls share one recovery, and Web Locks serialize it across tabs.
+ */
+function recoverAuth(failedAccessToken: string | null): Promise<boolean> {
+  recoveryInFlight ??= (typeof navigator !== 'undefined' && navigator.locks
+    ? navigator.locks.request('vegtab-auth-recovery', () => recover(failedAccessToken))
+    : recover(failedAccessToken)
+  ).finally(() => { recoveryInFlight = null; });
+  return recoveryInFlight;
 }
 
 export async function register(): Promise<{ userId: string }> {
@@ -104,11 +159,14 @@ export async function api<T = unknown>(
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
   const { offlineQueue: shouldQueue, ...fetchOptions } = options;
+  const queueableBody = shouldQueue && typeof fetchOptions.body === 'string' ? fetchOptions.body : null;
+  let sentAccessToken = accessToken;
 
   const doFetch = async () => {
     const headers: Record<string, string> = {
       ...(fetchOptions.headers as Record<string, string> ?? {}),
     };
+    sentAccessToken = accessToken;
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
@@ -118,35 +176,32 @@ export async function api<T = unknown>(
     return fetch(url, { ...fetchOptions, headers });
   };
 
-  let res: Response;
-  try {
-    res = await doFetch();
-  } catch (e) {
-    // Network error
-    if (shouldQueue && fetchOptions.body && typeof fetchOptions.body === 'string') {
-      enqueue(path, fetchOptions.method ?? 'POST', fetchOptions.body);
+  // Network failure (also when auth recovery is unreachable): queue the request if allowed
+  const failOffline = (error: unknown): never => {
+    if (queueableBody) {
+      enqueue(path, fetchOptions.method ?? 'POST', queueableBody);
       showToast('info', 'toast.scoreSavedOffline');
       throw new ApiError(0, 'Network error — queued for retry');
     }
     showToast('error', 'toast.networkError');
-    throw e;
+    throw error;
+  };
+
+  let res: Response;
+  try {
+    res = await doFetch();
+  } catch (e) {
+    return failOffline(e);
   }
 
-  // Auto-refresh on 401
   if (res.status === 401 && refreshToken) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      res = await doFetch();
-    } else {
-      showToast('info', 'toast.authRetry');
-      await register();
-      res = await doFetch();
-    }
+    if (!(await recoverAuth(sentAccessToken))) return failOffline(new ApiError(0, 'Auth recovery unavailable'));
+    res = await doFetch();
   }
 
   if (!res.ok) {
-    if (shouldQueue && res.status >= 500 && fetchOptions.body && typeof fetchOptions.body === 'string') {
-      enqueue(path, fetchOptions.method ?? 'POST', fetchOptions.body);
+    if (queueableBody && res.status >= 500) {
+      enqueue(path, fetchOptions.method ?? 'POST', queueableBody);
       showToast('info', 'toast.scoreSavedOffline');
       throw new ApiError(res.status, 'Server error — queued for retry');
     }
@@ -157,22 +212,17 @@ export async function api<T = unknown>(
   return res.json() as Promise<T>;
 }
 
-// --- Shared authenticated fetch (used by api() and offline queue) ---
+// --- Shared authenticated fetch (used by the offline queue) ---
 async function authedFetch(path: string, method: string, body?: string): Promise<Response> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const sentAccessToken = accessToken;
   if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
   let res = await fetch(`${API_BASE}${path}`, { method, headers, body });
-  // Handle 401 with token refresh
   if (res.status === 401 && refreshToken) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      headers['Authorization'] = `Bearer ${accessToken}`;
-      res = await fetch(`${API_BASE}${path}`, { method, headers, body });
-    } else {
-      await register();
-      headers['Authorization'] = `Bearer ${accessToken}`;
-      res = await fetch(`${API_BASE}${path}`, { method, headers, body });
-    }
+    // Throwing keeps the entry queued: processQueue retries on exceptions
+    if (!(await recoverAuth(sentAccessToken))) throw new Error('Auth recovery unavailable');
+    headers['Authorization'] = `Bearer ${accessToken}`;
+    res = await fetch(`${API_BASE}${path}`, { method, headers, body });
   }
   return res;
 }
