@@ -11,16 +11,23 @@ interface SeedRow {
   id: string; seed_value: string; share_code: string; is_daily: number; daily_date: string | null;
 }
 
+/** モードごとのトップ記録（ランキングの 1 位と同じ基準） */
 interface SeedWithScoreRow extends SeedRow {
   mode: string | null;
   best_score: number | null;
-  best_moves: number | null;
+  most_moves: number | null;
+  fewest_cleared_moves: number | null;
+  best_cascade_points: number | null;
 }
+
+type TopScores = Partial<Record<'sprint' | 'clear' | 'survival' | 'cascade', number>>;
 
 async function lookupSeedWithTopScores(db: D1Database, seedId: string) {
   const rows = await db.prepare(
     `SELECT s.id, s.seed_value, s.share_code, s.is_daily, s.daily_date,
-            p.mode, MAX(p.score) as best_score, MAX(p.move_count) as best_moves
+            p.mode, MAX(p.score) as best_score, MAX(p.move_count) as most_moves,
+            MIN(CASE WHEN p.is_cleared = 1 THEN p.move_count END) as fewest_cleared_moves,
+            MAX(p.cascade_points) as best_cascade_points
      FROM puzzle_seeds s
      LEFT JOIN play_scores p ON p.seed_id = s.id
      WHERE s.id = ? OR s.share_code = ?
@@ -35,22 +42,25 @@ async function lookupSeedWithTopScores(db: D1Database, seedId: string) {
     is_daily: first.is_daily, daily_date: first.daily_date,
   };
 
-  const topScores: Record<string, { score: number; moves: number }> = {};
+  const topScores: TopScores = {};
   for (const row of rows.results) {
-    if (row.mode && row.best_score !== null) {
-      topScores[row.mode] = { score: row.best_score, moves: row.best_moves ?? 0 };
-    }
+    const value = row.mode === 'sprint' ? row.best_score
+      : row.mode === 'clear' ? row.fewest_cleared_moves
+      : row.mode === 'survival' ? row.most_moves
+      : row.mode === 'cascade' ? row.best_cascade_points
+      : null;
+    if (value != null) topScores[row.mode as keyof TopScores] = value;
   }
 
   return { seed, topScores };
 }
 
-function buildDescription(topScores: Record<string, { score: number; moves: number }>): string {
+function buildDescription(topScores: TopScores): string {
   const parts: string[] = [];
-  if (topScores.sprint) parts.push(`Sprint: ${topScores.sprint.score} pts`);
-  if (topScores.clear) parts.push(`Clear: ${topScores.clear.moves} moves`);
-  if (topScores.survival) parts.push(`Survival: ${topScores.survival.moves} moves`);
-  if (topScores.cascade) parts.push(`Cascade: ${topScores.cascade.score} chain`);
+  if (topScores.sprint != null) parts.push(`Sprint: ${topScores.sprint} pts`);
+  if (topScores.clear != null) parts.push(`Clear: ${topScores.clear} moves`);
+  if (topScores.survival != null) parts.push(`Survival: ${topScores.survival} moves`);
+  if (topScores.cascade != null) parts.push(`Cascade: ${topScores.cascade} CP`);
   return parts.length > 0 ? parts.join(' | ') : 'Try this puzzle!';
 }
 

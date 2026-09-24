@@ -377,7 +377,7 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
             </div>
           </template>
           <template v-else-if="rankingPreview.length > 0">
-            <div v-for="entry in rankingPreview" :key="entry.rank" class="ranking-preview-row">
+            <div v-for="(entry, i) in rankingPreview" :key="i" class="ranking-preview-row">
               <span class="ranking-preview-rank">{{ entry.rank }}</span>
               <span class="ranking-preview-name">{{ entry.playerName }}</span>
               <span class="ranking-preview-score">{{ rankingDisplayValue(entry) }}</span>

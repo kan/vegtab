@@ -79,21 +79,6 @@ rankingRoutes.get('/:seedId', async (c) => {
   return c.json(result);
 });
 
-function cascadeRankingSQL(): string {
-  return `SELECT r.user_id, u.display_name, r.best_cascade_points, ps2.score, ps2.move_count, ps2.max_chain, ps2.id as score_id
-     FROM (
-       SELECT user_id, MAX(cascade_points) as best_cascade_points
-       FROM play_scores
-       WHERE seed_id = ? AND mode = ?
-       GROUP BY user_id
-     ) r
-     JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.cascade_points = r.best_cascade_points
-       AND ps2.seed_id = ? AND ps2.mode = ?
-     JOIN users u ON u.id = r.user_id
-     ORDER BY r.best_cascade_points DESC, ps2.score DESC
-     LIMIT ?`;
-}
-
 interface RankingEntry {
   rank: number;
   userId: string;
@@ -112,107 +97,64 @@ interface RankingData {
   entries: RankingEntry[];
 }
 
-// --- Mode-specific ranking queries ---
-
-function sprintRankingSQL(): string {
-  return `SELECT r.user_id, u.display_name, r.best_score, ps2.move_count, ps2.id as score_id
-     FROM (
-       SELECT user_id, MAX(score) as best_score
-       FROM play_scores
-       WHERE seed_id = ? AND mode = ?
-       GROUP BY user_id
-     ) r
-     JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.score = r.best_score
-       AND ps2.seed_id = ? AND ps2.mode = ?
-     JOIN users u ON u.id = r.user_id
-     ORDER BY r.best_score DESC
-     LIMIT ?`;
+interface RankedRow {
+  id: string;
+  user_id: string;
+  score: number;
+  move_count: number;
+  max_chain: number | null;
+  cascade_points: number;
+  rank: number;
 }
 
-function clearRankingSQL(): string {
-  return `SELECT r.user_id, u.display_name, r.best_move_count, ps2.score, ps2.is_cleared, ps2.id as score_id
-     FROM (
-       SELECT user_id, MIN(move_count) as best_move_count
-       FROM play_scores
-       WHERE seed_id = ? AND mode = ? AND is_cleared = 1
-       GROUP BY user_id
-     ) r
-     JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.move_count = r.best_move_count
-       AND ps2.seed_id = ? AND ps2.mode = ? AND ps2.is_cleared = 1
-     JOIN users u ON u.id = r.user_id
-     ORDER BY r.best_move_count ASC, ps2.score DESC
-     LIMIT ?`;
-}
+/**
+ * モードごとの順位の基準。一覧・「あなたの順位」の両方がここから作る SQL を使うので、食い違わない。
+ * - filter: ランキングに載る記録の条件
+ * - order: 良い順。すべての項目が同じなら同順位
+ */
+const RANKING_RULES: Record<GameMode, { filter: string; order: string }> = {
+  sprint: { filter: '', order: 'score DESC' },
+  clear: { filter: 'AND is_cleared = 1', order: 'move_count ASC, score DESC' },
+  survival: { filter: '', order: 'move_count DESC, score DESC' },
+  cascade: { filter: '', order: 'cascade_points DESC, score DESC' },
+};
 
-function survivalRankingSQL(): string {
-  return `SELECT r.user_id, u.display_name, r.best_move_count, ps2.score, ps2.id as score_id
-     FROM (
-       SELECT user_id, MAX(move_count) as best_move_count
+/**
+ * ユーザーごとのベスト 1 件に絞り、同点を同順位にした順位（1, 1, 3, ...）を付ける CTE。
+ * created_at はその seed×mode に初めて送った時刻（ベスト更新では変わらない）で、同順位の中の並びと、
+ * 同じ記録が複数行あるときの代表を決めるのに使う。バインド: seed_id, mode
+ */
+function rankedCte(mode: GameMode): string {
+  const { filter, order } = RANKING_RULES[mode];
+  return `WITH best AS (
+       SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY ${order}, created_at, id) AS rn
        FROM play_scores
-       WHERE seed_id = ? AND mode = ?
-       GROUP BY user_id
-     ) r
-     JOIN play_scores ps2 ON ps2.user_id = r.user_id AND ps2.move_count = r.best_move_count
-       AND ps2.seed_id = ? AND ps2.mode = ?
-     JOIN users u ON u.id = r.user_id
-     ORDER BY r.best_move_count DESC, ps2.score DESC
-     LIMIT ?`;
-}
-
-function mapBaseEntry(
-  e: { user_id: string; display_name: string | null; score_id: string },
-  i: number, userId: string, extra: Partial<RankingEntry>,
-  isPastDate = false,
-): RankingEntry {
-  return {
-    rank: i + 1,
-    userId: e.user_id,
-    displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
-    score: 0,
-    moveCount: 0,
-    scoreId: (isPastDate || e.user_id === userId) ? e.score_id : undefined,
-    ...extra,
-  };
+       WHERE seed_id = ? AND mode = ? ${filter}
+     ), ranked AS (
+       SELECT *, RANK() OVER (ORDER BY ${order}) AS rank FROM best WHERE rn = 1
+     )`;
 }
 
 async function queryRanking(db: D1Database, seedId: string, mode: GameMode, userId: string, isPastDate = false): Promise<RankingEntry[]> {
-  if (mode === 'sprint') {
-    const entries = await db.prepare(sprintRankingSQL())
-      .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
-      .all<{ user_id: string; display_name: string | null; best_score: number; move_count: number; score_id: string }>();
-    return (entries.results ?? []).map((e, i) =>
-      mapBaseEntry(e, i, userId, { score: e.best_score, moveCount: e.move_count }, isPastDate),
-    );
-  }
+  const { results } = await db.prepare(
+    `${rankedCte(mode)}
+     SELECT r.*, u.display_name FROM ranked r
+     JOIN users u ON u.id = r.user_id
+     ORDER BY r.rank, r.created_at, r.id
+     LIMIT ?`
+  ).bind(seedId, mode, RANKING_LIMIT).all<RankedRow & { display_name: string | null }>();
 
-  if (mode === 'clear') {
-    const entries = await db.prepare(clearRankingSQL())
-      .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
-      .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; is_cleared: number; score_id: string }>();
-    return (entries.results ?? []).map((e, i) =>
-      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.best_move_count, isCleared: true }, isPastDate),
-    );
-  }
-
-  if (mode === 'cascade') {
-    const entries = await db.prepare(cascadeRankingSQL())
-      .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
-      .all<{ user_id: string; display_name: string | null; best_cascade_points: number; score: number; move_count: number; max_chain: number; score_id: string }>();
-    return (entries.results ?? []).map((e, i) =>
-      mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.move_count, maxChain: e.max_chain, cascadePoints: e.best_cascade_points }, isPastDate),
-    );
-  }
-
-  // survival
-  const entries = await db.prepare(survivalRankingSQL())
-    .bind(seedId, mode, seedId, mode, RANKING_LIMIT)
-    .all<{ user_id: string; display_name: string | null; best_move_count: number; score: number; score_id: string }>();
-  return (entries.results ?? []).map((e, i) =>
-    mapBaseEntry(e, i, userId, { score: e.score, moveCount: e.best_move_count }, isPastDate),
-  );
+  return (results ?? []).map(e => ({
+    rank: e.rank,
+    userId: e.user_id,
+    displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
+    score: e.score,
+    moveCount: e.move_count,
+    scoreId: (isPastDate || e.user_id === userId) ? e.id : undefined,
+    ...(mode === 'clear' && { isCleared: true }),
+    ...(mode === 'cascade' && { maxChain: e.max_chain ?? 0, cascadePoints: e.cascade_points }),
+  }));
 }
-
-// --- Mode-specific user rank ---
 
 async function getUserRank(
   db: D1Database,
@@ -220,99 +162,16 @@ async function getUserRank(
   seedId: string,
   mode: GameMode
 ): Promise<{ rank: number; score: number; moveCount?: number; maxChain?: number; cascadePoints?: number } | null> {
-  if (mode === 'sprint') {
-    return getSprintUserRank(db, userId, seedId);
-  }
-  if (mode === 'clear') {
-    return getClearUserRank(db, userId, seedId);
-  }
-  if (mode === 'cascade') {
-    return getCascadeUserRank(db, userId, seedId);
-  }
-  return getSurvivalUserRank(db, userId, seedId);
-}
+  const row = await db.prepare(
+    `${rankedCte(mode)}
+     SELECT * FROM ranked WHERE user_id = ?`
+  ).bind(seedId, mode, userId).first<RankedRow>();
+  if (!row) return null;
 
-async function getSprintUserRank(
-  db: D1Database, userId: string, seedId: string
-): Promise<{ rank: number; score: number } | null> {
-  const userBest = await db.prepare(
-    `SELECT MAX(score) as best_score FROM play_scores
-     WHERE user_id = ? AND seed_id = ? AND mode = 'sprint'`
-  ).bind(userId, seedId).first<{ best_score: number | null }>();
-
-  if (!userBest?.best_score) return null;
-
-  const rankResult = await db.prepare(
-    `SELECT COUNT(DISTINCT user_id) + 1 as rank FROM play_scores
-     WHERE seed_id = ? AND mode = 'sprint'
-     AND score > ?`
-  ).bind(seedId, userBest.best_score).first<{ rank: number }>();
-  if (!rankResult) return null;
-
-  return { rank: rankResult.rank, score: userBest.best_score };
-}
-
-async function getClearUserRank(
-  db: D1Database, userId: string, seedId: string
-): Promise<{ rank: number; score: number; moveCount: number } | null> {
-  const userBest = await db.prepare(
-    `SELECT MIN(move_count) as best_move_count, score FROM play_scores
-     WHERE user_id = ? AND seed_id = ? AND mode = 'clear' AND is_cleared = 1
-     ORDER BY move_count ASC, score DESC LIMIT 1`
-  ).bind(userId, seedId).first<{ best_move_count: number | null; score: number | null }>();
-
-  if (!userBest?.best_move_count) return null;
-
-  // Count users with strictly better results (fewer moves, or same moves but higher score)
-  const rankResult = await db.prepare(
-    `SELECT COUNT(DISTINCT user_id) + 1 as rank FROM play_scores
-     WHERE seed_id = ? AND mode = 'clear' AND is_cleared = 1
-     AND (move_count < ? OR (move_count = ? AND score > ?))`
-  ).bind(seedId, userBest.best_move_count, userBest.best_move_count, userBest.score ?? 0).first<{ rank: number }>();
-  if (!rankResult) return null;
-
-  return { rank: rankResult.rank, score: userBest.score ?? 0, moveCount: userBest.best_move_count };
-}
-
-async function getSurvivalUserRank(
-  db: D1Database, userId: string, seedId: string
-): Promise<{ rank: number; score: number; moveCount: number } | null> {
-  const userBest = await db.prepare(
-    `SELECT MAX(move_count) as best_move_count, score FROM play_scores
-     WHERE user_id = ? AND seed_id = ? AND mode = 'survival'
-     ORDER BY move_count DESC, score DESC LIMIT 1`
-  ).bind(userId, seedId).first<{ best_move_count: number | null; score: number | null }>();
-
-  if (!userBest?.best_move_count) return null;
-
-  // Count users with strictly better results (more moves, or same moves but higher score)
-  const rankResult = await db.prepare(
-    `SELECT COUNT(DISTINCT user_id) + 1 as rank FROM play_scores
-     WHERE seed_id = ? AND mode = 'survival'
-     AND (move_count > ? OR (move_count = ? AND score > ?))`
-  ).bind(seedId, userBest.best_move_count, userBest.best_move_count, userBest.score ?? 0).first<{ rank: number }>();
-  if (!rankResult) return null;
-
-  return { rank: rankResult.rank, score: userBest.score ?? 0, moveCount: userBest.best_move_count };
-}
-
-async function getCascadeUserRank(
-  db: D1Database, userId: string, seedId: string
-): Promise<{ rank: number; score: number; maxChain: number; cascadePoints: number } | null> {
-  const userBest = await db.prepare(
-    `SELECT cascade_points as best_cp, max_chain, score FROM play_scores
-     WHERE user_id = ? AND seed_id = ? AND mode = 'cascade'
-     ORDER BY cascade_points DESC, score DESC LIMIT 1`
-  ).bind(userId, seedId).first<{ best_cp: number | null; max_chain: number | null; score: number | null }>();
-
-  if (userBest?.best_cp == null) return null;
-
-  const rankResult = await db.prepare(
-    `SELECT COUNT(DISTINCT user_id) + 1 as rank FROM play_scores
-     WHERE seed_id = ? AND mode = 'cascade'
-     AND (cascade_points > ? OR (cascade_points = ? AND score > ?))`
-  ).bind(seedId, userBest.best_cp, userBest.best_cp, userBest.score ?? 0).first<{ rank: number }>();
-  if (!rankResult) return null;
-
-  return { rank: rankResult.rank, score: userBest.score ?? 0, maxChain: userBest.max_chain ?? 0, cascadePoints: userBest.best_cp };
+  return {
+    rank: row.rank,
+    score: row.score,
+    ...((mode === 'clear' || mode === 'survival') && { moveCount: row.move_count }),
+    ...(mode === 'cascade' && { maxChain: row.max_chain ?? 0, cascadePoints: row.cascade_points }),
+  };
 }

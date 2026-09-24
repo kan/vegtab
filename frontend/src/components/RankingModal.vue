@@ -199,8 +199,8 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
         <!-- Ranking list -->
         <div v-if="rankings.length > 0" class="ranking-list">
           <div
-            v-for="entry in rankings"
-            :key="entry.rank"
+            v-for="(entry, i) in rankings"
+            :key="i"
             :class="['ranking-row', { me: entry.isMe }]"
           >
             <span class="rank-num"><img v-if="rankMedalIcon(entry.rank)" :src="rankMedalIcon(entry.rank)!" class="rank-medal" alt="" /><template v-else>#{{ entry.rank }}</template></span>

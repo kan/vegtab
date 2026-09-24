@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF, env } from 'cloudflare:test';
 import {
-  applyMigrations, registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
+  resetDb, registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
 } from './helpers';
 
 /**
@@ -20,15 +20,8 @@ describe('Ranking cache invalidation', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await applyMigrations();
     // Clear data from previous tests to ensure isolation
-    await env.DB.exec('DELETE FROM achievements');
-    await env.DB.exec('DELETE FROM play_scores');
-    await env.DB.exec('DELETE FROM puzzle_seeds');
-    await env.DB.exec('DELETE FROM user_devices');
-    await env.DB.exec('DELETE FROM refresh_token_families');
-    await env.DB.exec('DELETE FROM transfer_codes');
-    await env.DB.exec('DELETE FROM users');
+    await resetDb();
     const reg = await registerUser('550e8400-e29b-41d4-a716-446655440050');
     accessToken = reg.accessToken;
     userId = reg.userId;

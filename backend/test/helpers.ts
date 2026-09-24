@@ -102,6 +102,15 @@ export async function applyMigrations() {
   }
 }
 
+/** Apply the schema, then empty every table and the ranking cache so each test starts clean */
+export async function resetDb() {
+  await applyMigrations();
+  for (const table of ['achievements', 'play_scores', 'puzzle_seeds', 'user_devices', 'push_subscriptions', 'refresh_token_families', 'transfer_codes', 'users']) {
+    await env.DB.exec(`DELETE FROM ${table}`);
+  }
+  for (const { name } of (await env.KV.list({ prefix: 'ranking:' })).keys) await env.KV.delete(name);
+}
+
 export async function registerUser(deviceId: string) {
   const res = await SELF.fetch('http://localhost/api/auth/register', {
     method: 'POST',
@@ -181,9 +190,13 @@ export async function getTodaySeedId(token: string): Promise<string> {
 /** Insert a play_scores row directly, for results a short replay cannot produce (e.g. cleared Clear runs) */
 export async function insertPlayScore(row: {
   userId: string; seedId: string; mode: GameMode; moveCount: number; score: number; isCleared?: boolean;
+  maxChain?: number; cascadePoints?: number;
 }) {
   await env.DB.prepare(
-    `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, is_cleared)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).bind(crypto.randomUUID(), row.userId, row.seedId, row.mode, row.moveCount, row.score, row.isCleared ? 1 : 0).run();
+    `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, is_cleared, max_chain, cascade_points)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    crypto.randomUUID(), row.userId, row.seedId, row.mode, row.moveCount, row.score, row.isCleared ? 1 : 0,
+    row.maxChain ?? 0, row.cascadePoints ?? 0,
+  ).run();
 }
