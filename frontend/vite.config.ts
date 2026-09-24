@@ -25,6 +25,19 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // チュートリアルの画像（約 1.9MB）は初回訪問で precache せず、表示したときにキャッシュする。
+        // ファイル名にハッシュがなく、同じ URL のまま撮り直すことがあるので、裏で取り直して更新する
+        globIgnores: ['**/tutorial/**'],
+        runtimeCaching: [
+          {
+            urlPattern: /\/tutorial\/[^/]+\.png$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'tutorial-images',
+              expiration: { maxEntries: 20 },
+            },
+          },
+        ],
         importScripts: ['/push-sw.js'],
         // API の応答はキャッシュしない。/api/* はすべて認証付きでユーザーごとに内容が変わる（ランキングも
         // 自分の順位を含む）のに、キャッシュキーに Authorization が入らず、引き継ぎ後に旧アカウントの応答が返っていた

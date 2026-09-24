@@ -3,6 +3,8 @@ import { ref, computed } from 'vue';
 import { formatDateJST, todayJST } from '@/utils/date';
 import { api, register, isAuthenticated, showToast } from '@/api/client';
 import { setLocalItem } from '@/lib/storage';
+// 静的に import する（遅延 import だと、デプロイ後の旧バンドルのタブで旧チャンクが取れず実績の通知が消える）
+import { useAchievementStore } from '@/stores/achievements';
 import { generateDailySeed } from '@vegtab/engine';
 import { type ReplayAction } from '@/stores/puzzle';
 import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
@@ -44,7 +46,6 @@ export const useGameStore = defineStore('game', () => {
       if (!isAuthenticated()) {
         await register();
       }
-      const { useAchievementStore } = await import('@/stores/achievements');
       await Promise.all([syncProfile(), syncScoresFromServer(), useAchievementStore().fetchAchievements()]);
       initialized.value = true;
       // After sync, try to submit any local scores that were never sent to backend
@@ -238,7 +239,6 @@ export const useGameStore = defineStore('game', () => {
         return;
       }
       if (res.newAchievements?.length > 0) {
-        const { useAchievementStore } = await import('@/stores/achievements');
         useAchievementStore().handleNewAchievements(res.newAchievements);
       }
     } catch {
