@@ -71,10 +71,13 @@ describe('Seeds & Ranking API', () => {
 
   it('clear mode ranking uses the fewest moves among cleared plays', async () => {
     // Cleared plays cannot be produced by short replays, so the rows are inserted directly
+    // (one row per user and seed×mode, so the other results belong to other users)
     const seedId = await getTodaySeedId(accessToken);
-    await insertPlayScore({ userId, seedId, mode: 'clear', moveCount: 20, score: 3000, isCleared: true });
+    const slower = await registerUser(crypto.randomUUID());
+    const notCleared = await registerUser(crypto.randomUUID());
+    await insertPlayScore({ userId: slower.userId, seedId, mode: 'clear', moveCount: 20, score: 3000, isCleared: true });
     await insertPlayScore({ userId, seedId, mode: 'clear', moveCount: 12, score: 2000, isCleared: true });
-    await insertPlayScore({ userId, seedId, mode: 'clear', moveCount: 5, score: 500, isCleared: false });
+    await insertPlayScore({ userId: notCleared.userId, seedId, mode: 'clear', moveCount: 5, score: 500, isCleared: false });
 
     const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=clear`, {
       headers: authHeader(accessToken),
@@ -84,9 +87,8 @@ describe('Seeds & Ranking API', () => {
       ranking: Array<{ rank: number; score: number; moveCount: number; isCleared: boolean }>;
       userRank: { rank: number; score: number; moveCount: number } | null;
     };
-    expect(rankData.ranking).toHaveLength(1);
-    // Best cleared play is 12 moves
-    expect(rankData.ranking[0].moveCount).toBe(12);
+    // Uncleared plays are not ranked; fewest moves first
+    expect(rankData.ranking.map(e => e.moveCount)).toEqual([12, 20]);
     expect(rankData.ranking[0].isCleared).toBe(true);
     expect(rankData.userRank?.rank).toBe(1);
     expect(rankData.userRank?.moveCount).toBe(12);

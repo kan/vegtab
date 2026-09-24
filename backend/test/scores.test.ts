@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { BOARD_SIZE } from '@vegtab/engine';
-import { applyMigrations, registerUser, buildReplay, submitScore } from './helpers';
+import { applyMigrations, resetDb, registerUser, buildReplay, submitScore, submitReplay } from './helpers';
 import { todayJST } from '../src/lib/date';
 
 /** Legacy client payload: reported score fields are still sent but must be ignored */
@@ -81,6 +81,58 @@ describe('POST /api/scores replay verification', () => {
 
     const stored = await env.R2.get(row!.replay_log_key);
     expect(JSON.parse(await stored!.text())).toEqual([action]);
+  });
+});
+
+describe('POST /api/scores: ベスト記録の upsert', () => {
+  let token: string;
+  let userId: string;
+
+  beforeEach(async () => {
+    await resetDb();
+    ({ accessToken: token, userId } = await registerUser(crypto.randomUUID()));
+  });
+
+  async function storedRows() {
+    const { results } = await env.DB.prepare(
+      'SELECT id, score, replay_log_key FROM play_scores WHERE user_id = ?'
+    ).bind(userId).all<{ id: string; score: number; replay_log_key: string }>();
+    return results;
+  }
+
+  async function replayObjectKeys() {
+    return (await env.R2.list({ prefix: `replays/${userId}/` })).objects.map(o => o.key);
+  }
+
+  it('同じ seed×mode の初回送信が同時に届いても 1 行にまとまる', async () => {
+    const [r1, r2] = await Promise.all([submitReplay(token, 'sprint', 2), submitReplay(token, 'sprint', 3)]);
+    expect([r1.res.status, r2.res.status]).toEqual([201, 201]);
+    const rows = await storedRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].score).toBe(Math.max(r1.state.score, r2.state.score));
+  });
+
+  it('良くなった記録は同じ行を更新し、R2 には新しいリプレイだけが残る', async () => {
+    const first = await submitReplay(token, 'sprint', 1);
+    const firstId = (await first.res.json() as { scoreId: string }).scoreId;
+    const better = await submitReplay(token, 'sprint', 3);
+    expect((await better.res.json() as { scoreId: string }).scoreId).toBe(firstId);
+
+    const [row] = await storedRows();
+    expect(row).toMatchObject({ id: firstId, score: better.state.score });
+    expect(await replayObjectKeys()).toEqual([row.replay_log_key]);
+  });
+
+  it('悪い記録は保存せず、そのリプレイも R2 に残さない', async () => {
+    const best = await submitReplay(token, 'sprint', 3);
+    const bestId = (await best.res.json() as { scoreId: string }).scoreId;
+    const keysBefore = await replayObjectKeys();
+
+    const worse = await submitReplay(token, 'sprint', 1);
+    expect(worse.res.status).toBe(201);
+    expect((await worse.res.json() as { scoreId: string }).scoreId).toBe(bestId);
+    expect((await storedRows())[0].score).toBe(best.state.score);
+    expect(await replayObjectKeys()).toEqual(keysBefore);
   });
 });
 

@@ -43,7 +43,8 @@ CREATE INDEX IF NOT EXISTS idx_play_scores_seed_mode ON play_scores(seed_id, mod
 CREATE INDEX IF NOT EXISTS idx_play_scores_sprint ON play_scores(seed_id, mode, score DESC);
 CREATE INDEX IF NOT EXISTS idx_play_scores_clear ON play_scores(seed_id, mode, is_cleared, move_count ASC);
 CREATE INDEX IF NOT EXISTS idx_play_scores_survival ON play_scores(seed_id, mode, move_count DESC, score DESC);
-CREATE INDEX IF NOT EXISTS idx_scores_cascade ON play_scores(seed_id, mode, max_chain DESC, score DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_play_scores_user_seed_mode ON play_scores(user_id, seed_id, mode);
+CREATE INDEX IF NOT EXISTS idx_play_scores_cascade ON play_scores(seed_id, mode, cascade_points DESC, score DESC);
 
 CREATE TABLE IF NOT EXISTS achievements (
   id TEXT PRIMARY KEY,

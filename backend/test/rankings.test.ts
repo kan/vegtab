@@ -70,14 +70,6 @@ describe('Rankings: 同点の順位と、スコア 0 のユーザー', () => {
     await expectRanks('cascade', { [a.userId]: 1, [b.userId]: 1, [c.userId]: 3 });
   });
 
-  it('同じベスト記録が複数行あっても、ユーザーは 1 回だけ載る', async () => {
-    const [a, b] = users;
-    await insertPlayScore({ userId: a.userId, seedId, mode: 'sprint', moveCount: 15, score: 500 });
-    await insertPlayScore({ userId: a.userId, seedId, mode: 'sprint', moveCount: 15, score: 500 });
-    await insertPlayScore({ userId: b.userId, seedId, mode: 'sprint', moveCount: 15, score: 300 });
-    await expectRanks('sprint', { [a.userId]: 1, [b.userId]: 2 });
-  });
-
   it('スコア 0 のユーザーにも userRank を返す', async () => {
     const [a, b] = users;
     await insertPlayScore({ userId: a.userId, seedId, mode: 'sprint', moveCount: 15, score: 100 });

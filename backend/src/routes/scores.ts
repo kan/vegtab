@@ -40,6 +40,22 @@ const submitScoreSchema = z.object({
   replayLog: z.array(replayActionSchema).min(1).max(MAX_REPLAY_ACTIONS),
 });
 
+/**
+ * upsert の DO UPDATE の条件: 新しい記録（excluded）が保存済みのベスト（play_scores）より良いか。
+ * Clear はクリアした記録を優先し、どちらもクリアなら少ない手数、同じ手数なら高いスコアを良いとする
+ */
+const BETTER_THAN_STORED: Record<z.infer<typeof submitScoreSchema>['mode'], string> = {
+  sprint: 'excluded.score > play_scores.score',
+  clear: `excluded.is_cleared > play_scores.is_cleared
+    OR (excluded.is_cleared = 1 AND play_scores.is_cleared = 1
+      AND (excluded.move_count < play_scores.move_count
+        OR (excluded.move_count = play_scores.move_count AND excluded.score > play_scores.score)))`,
+  survival: `excluded.move_count > play_scores.move_count
+    OR (excluded.move_count = play_scores.move_count AND excluded.score > play_scores.score)`,
+  cascade: `excluded.cascade_points > play_scores.cascade_points
+    OR (excluded.cascade_points = play_scores.cascade_points AND excluded.score > play_scores.score)`,
+};
+
 export const scoreRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // POST /api/scores - Submit a score
@@ -76,79 +92,62 @@ scoreRoutes.post('/', bodyLimit({
     cascadePoints: verifiedCascadePoints,
   } = verified;
 
-  // Check for existing score
-  const existing = await c.env.DB.prepare(
-    `SELECT id, score, move_count, is_cleared, max_chain, cascade_points, replay_log_key FROM play_scores
-     WHERE user_id = ? AND seed_id = ? AND mode = ?`
-  ).bind(userId, seed.id, data.mode).first<{
-    id: string; score: number; move_count: number; is_cleared: number; max_chain: number; cascade_points: number; replay_log_key: string | null;
-  }>();
+  const betterThanStored = BETTER_THAN_STORED[data.mode];
+  const isCleared = verifiedIsCleared ? 1 : 0;
 
-  // Determine if new score is better (using verified values)
-  let isBetter = true;
-  if (existing) {
-    if (data.mode === 'sprint') {
-      isBetter = verifiedScore > existing.score;
-    } else if (data.mode === 'clear') {
-      if (verifiedIsCleared && !existing.is_cleared) {
-        isBetter = true;
-      } else if (!verifiedIsCleared && existing.is_cleared) {
-        isBetter = false;
-      } else if (verifiedIsCleared && existing.is_cleared) {
-        isBetter = verifiedMoveCount < existing.move_count
-          || (verifiedMoveCount === existing.move_count && verifiedScore > existing.score);
-      } else {
-        isBetter = false;
-      }
-    } else if (data.mode === 'cascade') {
-      isBetter = verifiedCascadePoints > (existing.cascade_points ?? 0)
-        || (verifiedCascadePoints === (existing.cascade_points ?? 0) && verifiedScore > existing.score);
-    } else {
-      isBetter = verifiedMoveCount > existing.move_count
-        || (verifiedMoveCount === existing.move_count && verifiedScore > existing.score);
-    }
-  }
+  // Most submissions do not beat the stored best; those are answered without touching R2
+  const stored = await c.env.DB.prepare(
+    `SELECT play_scores.id, play_scores.replay_log_key, (${betterThanStored}) AS better
+     FROM play_scores, (SELECT ? AS score, ? AS move_count, ? AS is_cleared, ? AS cascade_points) AS excluded
+     WHERE play_scores.user_id = ? AND play_scores.seed_id = ? AND play_scores.mode = ?`
+  ).bind(
+    verifiedScore, verifiedMoveCount, isCleared, verifiedCascadePoints, userId, seed.id, data.mode,
+  ).first<{ id: string; replay_log_key: string | null; better: number }>();
 
-  // Only write replay log to R2 if this score will be stored
   let scoreId: string;
-  let dbModified = false;
-  if (!existing) {
-    const replayLogKey = `replays/${userId}/${seed.id}/${generateId()}.json`;
-    scoreId = generateId();
-    await Promise.all([
-      c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog)),
-      c.env.DB.prepare(
-        `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, max_chain, cascade_points, replay_log_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).bind(
-        scoreId, userId, seed.id, data.mode,
-        data.moveLimit ?? null, verifiedMoveCount, verifiedScore,
-        verifiedIsCleared ? 1 : 0, verifiedMaxChain, verifiedCascadePoints, replayLogKey
-      ).run(),
-    ]);
-    dbModified = true;
-  } else if (isBetter) {
-    const replayLogKey = `replays/${userId}/${seed.id}/${generateId()}.json`;
-    scoreId = existing.id;
-    await Promise.all([
-      c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog)),
-      c.env.DB.prepare(
-        `UPDATE play_scores SET move_limit = ?, move_count = ?, score = ?, is_cleared = ?, max_chain = ?, cascade_points = ?, replay_log_key = ?
-         WHERE id = ?`
-      ).bind(
-        data.moveLimit ?? null, verifiedMoveCount, verifiedScore,
-        verifiedIsCleared ? 1 : 0, verifiedMaxChain, verifiedCascadePoints, replayLogKey,
-        scoreId
-      ).run(),
-    ]);
-    dbModified = true;
+  if (stored && !stored.better) {
+    scoreId = stored.id;
   } else {
-    scoreId = existing.id;
-  }
+    // Write the replay log first so a stored row never points at a missing object
+    const replayLogKey = `replays/${userId}/${seed.id}/${generateId()}.json`;
+    await c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog));
 
-  // Invalidate ranking cache only when DB was modified (ensures DB write is committed first)
-  if (dbModified) {
-    await c.env.KV.delete(`ranking:${seed.id}:${data.mode}`);
+    // One statement keeps concurrent first submissions from creating duplicate rows:
+    // insert, or replace the stored best only when the new result is still better
+    const upserted = await c.env.DB.prepare(
+      `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, max_chain, cascade_points, replay_log_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, seed_id, mode) DO UPDATE SET
+         move_limit = excluded.move_limit, move_count = excluded.move_count, score = excluded.score,
+         is_cleared = excluded.is_cleared, max_chain = excluded.max_chain, cascade_points = excluded.cascade_points,
+         replay_log_key = excluded.replay_log_key
+       WHERE ${betterThanStored}
+       RETURNING id`
+    ).bind(
+      generateId(), userId, seed.id, data.mode,
+      data.moveLimit ?? null, verifiedMoveCount, verifiedScore,
+      isCleared, verifiedMaxChain, verifiedCascadePoints, replayLogKey
+    ).first<{ id: string }>().catch(async (e) => {
+      await c.env.R2.delete(replayLogKey);
+      throw e;
+    });
+
+    if (upserted) {
+      scoreId = upserted.id;
+      await Promise.all([
+        // Invalidate the ranking cache only after the DB write has committed
+        c.env.KV.delete(`ranking:${seed.id}:${data.mode}`),
+        // The row now points at the new object, so the replaced best's replay is unreferenced
+        stored?.replay_log_key ? c.env.R2.delete(stored.replay_log_key) : undefined,
+      ]);
+    } else {
+      // A concurrent submission stored a better result in between: keep it and drop ours
+      await c.env.R2.delete(replayLogKey);
+      const current = await c.env.DB.prepare(
+        'SELECT id FROM play_scores WHERE user_id = ? AND seed_id = ? AND mode = ?'
+      ).bind(userId, seed.id, data.mode).first<{ id: string }>();
+      scoreId = current!.id;
+    }
   }
 
   // Evaluate achievements separately so failure doesn't affect cache invalidation
