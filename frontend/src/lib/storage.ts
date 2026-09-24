@@ -41,6 +41,18 @@ export function getItemSync(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
+/**
+ * localStorage への同期書き込み（ネイティブでも localStorage に書く）。
+ * 容量超過や Safari のプライベートモードで setItem が例外を投げても、呼び出し元の処理は続ける。
+ */
+export function setLocalItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn(`Failed to save ${key} to localStorage`, e);
+  }
+}
+
 export function setItemSync(key: string, value: string): void {
   if (isNative) return;
   try { localStorage.setItem(key, value); } catch { /* */ }

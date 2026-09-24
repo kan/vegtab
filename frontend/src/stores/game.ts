@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { formatDateJST, todayJST } from '@/utils/date';
 import { api, register, isAuthenticated, showToast } from '@/api/client';
+import { setLocalItem } from '@/lib/storage';
 import { generateDailySeed } from '@vegtab/engine';
 import { type ReplayAction } from '@/stores/puzzle';
 import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
@@ -105,6 +106,12 @@ export const useGameStore = defineStore('game', () => {
           playerName: effectiveName.value,
         });
       }
+      // サーバーに記録のある seed×mode と、再送の期間を過ぎた日の記録は再送しないので、容量を食う replayLog はもう要らない
+      for (const r of playRecords.value) {
+        if (r.replayLog && (serverScoreKeys.has(`${r.seed}:${r.mode}`) || findDailyDate(r.seed) === null)) {
+          delete r.replayLog;
+        }
+      }
       saveRecords();
     } catch {
       // Silently fail — local data still usable
@@ -114,7 +121,7 @@ export const useGameStore = defineStore('game', () => {
   async function setDisplayName(name: string) {
     const oldName = effectiveName.value;
     displayName.value = name.slice(0, 20);
-    localStorage.setItem('vegtab_display_name', displayName.value);
+    setLocalItem('vegtab_display_name', displayName.value);
 
     // Update playerName on existing local records that had the old name
     const newName = effectiveName.value;
@@ -175,14 +182,14 @@ export const useGameStore = defineStore('game', () => {
   // --- Play records ---
 
   function addPlayRecord(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
-    playRecords.value.push({
+    const index = playRecords.value.push({
       ...record,
       playedAt: Date.now(),
       playerName: effectiveName.value,
-    });
+    }) - 1;
     saveRecords();
     // Submit score to backend (fire-and-forget with offline queue)
-    submitScoreToBackend(record);
+    submitScoreToBackend(playRecords.value[index]);
   }
 
   /** The server re-simulates every result from the replay log, so only inputs are sent */
@@ -208,7 +215,7 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  async function submitScoreToBackend(record: Omit<PlayRecord, 'playedAt' | 'playerName'>) {
+  async function submitScoreToBackend(record: PlayRecord) {
     const date = findDailyDate(record.seed);
     if (!date || !hasReplayLog(record)) return;
     try {
@@ -218,15 +225,14 @@ export const useGameStore = defineStore('game', () => {
         offlineQueue: true,
       });
       handleScoreResponse(res, record.seed);
+      // サーバーが受け付けた記録は再送しないので、容量を食う replayLog を落とす
+      delete record.replayLog;
       // Update local record with server-verified score
-      if (res.verifiedScore !== undefined && res.verifiedScore !== record.score) {
-        const localRecord = playRecords.value.find(r => r.seed === record.seed && r.mode === record.mode);
-        if (localRecord) {
-          localRecord.score = res.verifiedScore;
-          if (res.verifiedMoveCount !== undefined) localRecord.moves = res.verifiedMoveCount;
-          saveRecords();
-        }
+      if (res.verifiedScore !== undefined) {
+        record.score = res.verifiedScore;
+        if (res.verifiedMoveCount !== undefined) record.moves = res.verifiedMoveCount;
       }
+      saveRecords();
       if (res.pastDate) {
         showToast('info', 'toast.pastDateNoRanking');
         return;
@@ -256,9 +262,10 @@ export const useGameStore = defineStore('game', () => {
       });
       serverScoreKeys.add(`${record.seed}:${record.mode}`);
       handleScoreResponse(res, record.seed);
+      delete record.replayLog;
     }));
     // Silently ignore failures — will retry on next init
-    void results;
+    if (results.some(r => r.status === 'fulfilled')) saveRecords();
   }
 
   function getRecordsForSeed(seed: number, mode?: GameMode): PlayRecord[] {
@@ -329,17 +336,17 @@ export const useGameStore = defineStore('game', () => {
   // --- Persistence ---
 
   function saveRecords() {
-    localStorage.setItem('vegtab_play_records', JSON.stringify(playRecords.value));
+    setLocalItem('vegtab_play_records', JSON.stringify(playRecords.value));
   }
 
   function saveShareCodeCache() {
-    localStorage.setItem('vegtab_share_codes_v2', JSON.stringify(shareCodeCache.value));
+    setLocalItem('vegtab_share_codes_v2', JSON.stringify(shareCodeCache.value));
   }
 
   /** Reset local state after account transfer, then resync from server */
   async function resetAfterTransfer(newDisplayName: string | null) {
     displayName.value = newDisplayName ?? '';
-    localStorage.setItem('vegtab_display_name', displayName.value);
+    setLocalItem('vegtab_display_name', displayName.value);
     playRecords.value = [];
     saveRecords();
     shareCodeCache.value = {};

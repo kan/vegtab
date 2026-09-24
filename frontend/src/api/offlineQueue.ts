@@ -1,3 +1,5 @@
+import { setLocalItem } from '@/lib/storage';
+
 const QUEUE_KEY = 'offline_queue';
 const MAX_RETRIES = 3;
 const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -24,8 +26,9 @@ function loadQueue(): QueueEntry[] {
   }
 }
 
+/** 保存できなくても、ローカルの記録が残っていれば次回起動時の再送で回復する */
 function saveQueue(queue: QueueEntry[]) {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  setLocalItem(QUEUE_KEY, JSON.stringify(queue));
 }
 
 export function enqueue(url: string, method: string, body: string) {
@@ -57,18 +60,20 @@ export async function processQueue(
 
   let succeeded = 0;
   let failed = 0;
-  const remaining: QueueEntry[] = [];
+  /** 処理した項目の id → 残す項目（null なら取り除く） */
+  const processed = new Map<string, QueueEntry | null>();
 
   function retryOrFail(entry: QueueEntry) {
     entry.retries++;
     if (entry.retries < MAX_RETRIES) {
-      remaining.push(entry);
+      processed.set(entry.id, entry);
     } else {
       failed++;
     }
   }
 
   for (const entry of queue) {
+    processed.set(entry.id, null); // 既定は取り除く。再試行する項目は retryOrFail が差し替える
     try {
       const res = await doFetch(entry.url, entry.method, entry.body);
       if (res.ok || res.status === 409) {
@@ -83,6 +88,10 @@ export async function processQueue(
     }
   }
 
+  // 送信中に enqueue された項目を消さないよう、キューを読み直して処理した項目だけを差し替える
+  const remaining = loadQueue()
+    .map(e => processed.has(e.id) ? processed.get(e.id) : e)
+    .filter((e): e is QueueEntry => e != null);
   saveQueue(remaining);
   return { succeeded, failed, remaining: remaining.length };
 }
