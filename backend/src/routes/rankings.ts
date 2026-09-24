@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
-import { todayJST } from '../lib/date';
+import { isRankingClosed } from '../lib/date';
 
 const DEFAULT_DISPLAY_NAME = 'NO NAME';
 
@@ -26,13 +26,13 @@ async function fetchRanking(
   ).bind(seedId).first<{ daily_date: string | null }>();
   // Unknown seed: nothing to rank, and arbitrary ids must not create KV cache entries
   if (!seedInfo) return { ranking: [], userRank: null };
-  const isPastDate = seedInfo.daily_date != null && seedInfo.daily_date < todayJST();
+  const rankingClosed = seedInfo.daily_date != null && isRankingClosed(seedInfo.daily_date);
 
   const cacheKey = `ranking:${seedId}:${mode}`;
   const cached = await kv.get(cacheKey, 'json') as RankingData | null;
   if (cached) {
-    // For past dates, expose scoreId on all entries
-    const entries = isPastDate
+    // Once the ranking is closed, expose scoreId on all entries
+    const entries = rankingClosed
       ? cached.entries.map(e => ({ ...e, scoreId: e.scoreId ?? e._scoreId }))
       : cached.entries.map(e => ({ ...e, scoreId: e.userId === userId ? (e.scoreId ?? e._scoreId) : undefined }));
     const cachedEntry = cached.entries.find(e => e.userId === userId);
@@ -43,7 +43,7 @@ async function fetchRanking(
   }
 
   const [rankingEntries, userRank] = await Promise.all([
-    queryRanking(db, seedId, mode as GameMode, userId, isPastDate),
+    queryRanking(db, seedId, mode as GameMode, userId, rankingClosed),
     getUserRank(db, userId, seedId, mode as GameMode),
   ]);
 
@@ -135,7 +135,7 @@ function rankedCte(mode: GameMode): string {
      )`;
 }
 
-async function queryRanking(db: D1Database, seedId: string, mode: GameMode, userId: string, isPastDate = false): Promise<RankingEntry[]> {
+async function queryRanking(db: D1Database, seedId: string, mode: GameMode, userId: string, rankingClosed = false): Promise<RankingEntry[]> {
   const { results } = await db.prepare(
     `${rankedCte(mode)}
      SELECT r.*, u.display_name FROM ranked r
@@ -150,7 +150,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode, user
     displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
     score: e.score,
     moveCount: e.move_count,
-    scoreId: (isPastDate || e.user_id === userId) ? e.id : undefined,
+    scoreId: (rankingClosed || e.user_id === userId) ? e.id : undefined,
     ...(mode === 'clear' && { isCleared: true }),
     ...(mode === 'cascade' && { maxChain: e.max_chain ?? 0, cascadePoints: e.cascade_points }),
   }));

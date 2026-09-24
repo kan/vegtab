@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDateNearToday, parseDateString, todayJST } from '../src/lib/date';
+import { isDateNearToday, isRankingClosed, parseDateString, todayJST } from '../src/lib/date';
 
 /** YYYY-MM-DD for today (JST) shifted by `days` */
 function shiftToday(days: number): string {
@@ -35,5 +35,31 @@ describe('isDateNearToday', () => {
 
   it('rejects dates older than 60 days', () => {
     expect(isDateNearToday(shiftToday(-61))).toBe(false);
+  });
+});
+
+describe('isRankingClosed', () => {
+  /** JST の日時を epoch ms にする */
+  const jst = (iso: string) => new Date(`${iso}+09:00`).getTime();
+
+  it('当日のランキングは開いている', () => {
+    expect(isRankingClosed('2026-09-24', jst('2026-09-24T12:00:00'))).toBe(false);
+  });
+
+  it('0 時を過ぎて 30 分以内なら、前日のランキングもまだ開いている', () => {
+    expect(isRankingClosed('2026-09-23', jst('2026-09-24T00:00:00'))).toBe(false);
+    expect(isRankingClosed('2026-09-23', jst('2026-09-24T00:29:59'))).toBe(false);
+  });
+
+  it('猶予を過ぎると前日のランキングは閉じる', () => {
+    expect(isRankingClosed('2026-09-23', jst('2026-09-24T00:30:00'))).toBe(true);
+  });
+
+  it('2 日以上前は猶予の間でも閉じている', () => {
+    expect(isRankingClosed('2026-09-22', jst('2026-09-24T00:10:00'))).toBe(true);
+  });
+
+  it('まだ始まっていない日は閉じていない（過去日扱いにしない）', () => {
+    expect(isRankingClosed('2026-09-25', jst('2026-09-24T12:00:00'))).toBe(false);
   });
 });

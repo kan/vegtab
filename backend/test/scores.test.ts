@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { BOARD_SIZE } from '@vegtab/engine';
 import { applyMigrations, registerUser, buildReplay, submitScore } from './helpers';
@@ -81,5 +81,35 @@ describe('POST /api/scores replay verification', () => {
 
     const stored = await env.R2.get(row!.replay_log_key);
     expect(JSON.parse(await stored!.text())).toEqual([action]);
+  });
+});
+
+describe('POST /api/scores: 0 時をまたいだプレイ', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** サーバーの時刻を JST の iso に固定し、ユーザー登録と前日（2026-09-23）分の送信をする */
+  async function submitYesterdayAt(iso: string) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(`${iso}+09:00`));
+    await applyMigrations();
+    const { accessToken } = await registerUser(crypto.randomUUID());
+    const { replayLog } = buildReplay('sprint', 2, '2026-09-23');
+    const res = await submitScore(accessToken, { date: '2026-09-23', mode: 'sprint', moveLimit: 15, replayLog });
+    return { status: res.status, body: await res.json() as { scoreId: string | null; pastDate?: boolean } };
+  }
+
+  it('0 時を過ぎて 30 分以内なら、前日分もランキングに記録する', async () => {
+    const { status, body } = await submitYesterdayAt('2026-09-24T00:10:00');
+    expect(status).toBe(201);
+    expect(body.pastDate).toBeUndefined();
+    expect(body.scoreId).not.toBeNull();
+  });
+
+  it('猶予を過ぎたら前日分は記録しない', async () => {
+    const { status, body } = await submitYesterdayAt('2026-09-24T00:40:00');
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ scoreId: null, pastDate: true });
   });
 });

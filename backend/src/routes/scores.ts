@@ -5,7 +5,7 @@ import { zValidator } from '@hono/zod-validator';
 import { BOARD_SIZE, type ReplayAction } from '@vegtab/engine';
 import type { Bindings, Variables } from '../types';
 import { generateId } from '../lib/id';
-import { isDateNearToday, todayJST } from '../lib/date';
+import { isDateNearToday, isRankingClosed } from '../lib/date';
 import { findOrCreateDailySeed } from '../lib/seed';
 import { evaluateAchievements } from '../lib/achievements';
 import { verifyReplay } from '../lib/replay-verify';
@@ -58,9 +58,8 @@ scoreRoutes.post('/', bodyLimit({
   // Find or create the daily seed
   const seed = await findOrCreateDailySeed(c.env.DB, data.date);
 
-  // Past dates: allow play but don't record to ranking
-  const isPastDate = data.date < todayJST();
-  if (isPastDate) {
+  // Past dates: allow play but don't record to ranking (yesterday is still recorded shortly after midnight)
+  if (isRankingClosed(data.date)) {
     return c.json({ scoreId: null, shareCode: seed.share_code, newAchievements: [], pastDate: true }, 200);
   }
 
@@ -211,7 +210,7 @@ scoreRoutes.get('/my', async (c) => {
 });
 
 // GET /api/scores/:scoreId/replay - Get replay data for a score
-// Past daily puzzles: public (any user can view). Today's puzzles: own scores only.
+// Daily puzzles whose ranking is closed: public (any user can view). Open rankings: own scores only.
 scoreRoutes.get('/:scoreId/replay', async (c) => {
   const userId = c.get('userId');
   const scoreId = c.req.param('scoreId');
@@ -231,9 +230,9 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
 
   if (!score) return c.json({ error: 'Not found' }, 404);
 
-  // Access control: past dates are public, today is own-only
-  const isPast = score.daily_date != null && score.daily_date < todayJST();
-  if (!isPast && score.user_id !== userId) {
+  // Access control: closed rankings are public, open ones are own-only
+  const rankingClosed = score.daily_date != null && isRankingClosed(score.daily_date);
+  if (!rankingClosed && score.user_id !== userId) {
     return c.json({ error: 'Not found' }, 404);
   }
 

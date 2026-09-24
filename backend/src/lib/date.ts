@@ -1,9 +1,23 @@
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 /** Get today's date as YYYY-MM-DD in JST (UTC+9) */
-export function todayJST(): string {
-  const jst = new Date(Date.now() + JST_OFFSET_MS);
+export function todayJST(now = Date.now()): string {
+  const jst = new Date(now + JST_OFFSET_MS);
   return jst.toISOString().slice(0, 10);
+}
+
+/**
+ * 0 時を過ぎてからこの時間内は、前日分のスコアもランキングに記録する（23:55 に始めて 0:05 に終えたプレイの救済）。
+ * クライアントが送る開始時刻はごまかせるので、サーバーの時刻だけで判定する
+ */
+const PREVIOUS_DAY_GRACE_MS = 30 * 60 * 1000;
+
+/**
+ * その日のランキングが締め切られたか。締め切り後はスコアを記録せず、リプレイを全員に公開する。
+ * 猶予の間はまだ締め切らない（公開したリプレイを写して前日分として送れないように）
+ */
+export function isRankingClosed(dateStr: string, now = Date.now()): boolean {
+  return dateStr < todayJST(now) && dateStr !== todayJST(now - PREVIOUS_DAY_GRACE_MS);
 }
 
 /** Derive a deterministic engine seed number from a YYYY-MM-DD date string.
