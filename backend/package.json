@@ -5,6 +5,7 @@
   "description": "Cloudflare Workers API backend",
   "type": "module",
   "scripts": {
+    "predev": "node -e \"require('fs').mkdirSync('../frontend/dist', { recursive: true })\"",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "deploy:prod": "npm run db:migrate:prod && wrangler deploy --env production",

@@ -94,19 +94,18 @@ cd frontend && npm run dev
 
 ## デプロイ
 
-```bash
-# 全体デプロイ（バックエンド → フロントエンド）
-npm run deploy
+SPA と API は 1 つの Worker（`vegtab-api`）で配信する。SPA は Workers の Static Assets
+（`backend/wrangler.toml` の `[assets]`、`frontend/dist`）で、`/api/*` `/s/*` `/download/*` だけが Worker のコードに回る。
 
-# 個別デプロイ
-npm run deploy:backend    # 本番 D1 マイグレーション → Workers API (--env production)
-npm run deploy:frontend   # Pages SPA (vue-tsc → vite build → pages deploy)
+```bash
+# frontend build（vue-tsc → vite build）→ 本番 D1 マイグレーション → Worker デプロイ（--env production）
+npm run deploy
 
 # DBマイグレーションだけを適用する場合
 npm run db:migrate:prod -w backend
 ```
 
-`deploy:backend` は未適用のマイグレーションを先に適用してから Worker をデプロイする。
+`deploy` は未適用のマイグレーションを先に適用してから Worker をデプロイする。
 マイグレーションを追加するときは、先に適用してもデプロイ前の Worker が壊れない形
 （テーブル・カラムの追加など）にすること。削除や名前の変更は、コードの対応をデプロイした後の
 別マイグレーションで行う。

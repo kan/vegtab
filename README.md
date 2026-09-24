@@ -93,23 +93,20 @@ npm run db:migrate:prod -w backend
 
 # 2. JWT シークレットを設定（対話式）
 npx -w backend wrangler secret put JWT_SECRET --env production
-
-# 3. Cloudflare Pages プロジェクト作成
-npx wrangler pages project create vegtab
 ```
 
 ### リリース手順
 
-```bash
-# 全体デプロイ（バックエンド → フロントエンド）
-npm run deploy
+SPA と API は 1 つの Worker（`vegtab-api`）で配信する。SPA は Workers の Static Assets（`frontend/dist`）で、
+`/api/*` `/s/*` `/download/*` だけが Worker のコードに回る（`backend/wrangler.toml` の `[assets]`）。
 
-# 個別デプロイ
-npm run deploy:backend    # 本番 D1 マイグレーション → Workers API (--env production)
-npm run deploy:frontend   # Pages SPA (vue-tsc → vite build → pages deploy)
+```bash
+# frontend build → 本番 D1 マイグレーション → Worker デプロイ（--env production）
+npm run deploy
 ```
 
-`deploy:backend` は未適用の D1 マイグレーションを先に適用してから Worker をデプロイする（適用前に確認を求められる）。
+フロントとバックが 1 回のデプロイで同時に切り替わる。
+未適用の D1 マイグレーションは Worker のデプロイより先に適用される（適用前に確認を求められる）。
 そのため、マイグレーションは「先に適用しても、デプロイ前の Worker が壊れないもの」（テーブル・カラムの追加など）にすること。
 カラムの削除や名前の変更が必要な場合は、コードの対応をデプロイしてから別のマイグレーションで行う。
 
@@ -133,53 +130,29 @@ npm run deploy:frontend   # Pages SPA (vue-tsc → vite build → pages deploy)
 3. レジストラのネームサーバーを Cloudflare 指定のものに変更
 4. DNS 反映を待つ（通常 数分〜数時間）
 
-### 2. フロントエンド — Cloudflare Pages にカスタムドメイン
+### 2. Worker のルーティング
 
-1. Cloudflare ダッシュボード → **Workers & Pages** → `vegtab` プロジェクト
-2. **Custom domains** タブ → **Set up a custom domain**
-3. `vegtab.app` を入力 → **Activate domain**
-4. DNS CNAME が自動追加され、SSL証明書も自動発行される
-
-### 3. バックエンド — Workers ルーティング
-
-APIとフロントエンドを同一ドメインで運用する場合と、サブドメイン分離する場合の2パターン。
-
-**方法A: 同一ドメイン（推奨）**
-
-Workers が `/api/*` と `/s/*` を処理し、それ以外は Pages がSPAを配信。
-
-`backend/wrangler.toml` の `[env.production]` に追加:
+`backend/wrangler.toml` の `[env.production]` の `routes` で、`vegtab.app/*` を Worker に向ける。
+SPA と API は同じ Worker が同一オリジンで配信する。
+Pages からの移行期間は、ロールバック用に旧 route（`/api/*` `/s/*` `/download/*`）も残している（`wrangler.toml` のコメントを参照）。
 
 ```toml
 routes = [
-  { pattern = "vegtab.app/api/*", zone_name = "vegtab.app" },
-  { pattern = "vegtab.app/s/*", zone_name = "vegtab.app" },
+  { pattern = "vegtab.app/*", zone_name = "vegtab.app" },
 ]
 ```
 
-`frontend/.env.production`:
+同一オリジンでも、ネイティブ版は API の絶対 URL が必要なので `frontend/.env.production` に設定する。
+
 ```
 VITE_API_BASE=https://vegtab.app
 ```
 
-**方法B: サブドメイン分離 `api.vegtab.app`**
-
-```toml
-routes = [
-  { pattern = "api.vegtab.app/*", zone_name = "vegtab.app" },
-]
-```
-
-`frontend/.env.production`:
-```
-VITE_API_BASE=https://api.vegtab.app
-```
-
-### 4. 設定ファイル更新チェックリスト
+### 3. 設定ファイル更新チェックリスト
 
 | ファイル | 更新内容 |
 |----------|----------|
-| `backend/wrangler.toml` | `[env.production]` に `routes` 追加、`FRONTEND_URL` をカスタムドメインに |
+| `backend/wrangler.toml` | `[env.production]` に `routes` 追加、`FRONTEND_URL` をカスタムドメインに（Capacitor 用のオリジンも残す） |
 | `frontend/.env.production` | `VITE_API_BASE` を本番URLに変更 |
 
 ```bash
@@ -187,7 +160,7 @@ VITE_API_BASE=https://api.vegtab.app
 npm run deploy
 ```
 
-### 5. 動作確認
+### 4. 動作確認
 
 ```bash
 # ヘルスチェック
