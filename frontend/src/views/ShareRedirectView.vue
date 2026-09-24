@@ -27,7 +27,7 @@ onMounted(async () => {
   try {
     const [, res] = await Promise.all([
       gameStore.init(),
-      api<{ seedId: string; seedValue: string; shareCode: string }>(`/api/seeds/by-code/${code}`),
+      api<{ seedId: string; seedValue: string; shareCode: string }>(`/api/seeds/by-code/${encodeURIComponent(code)}`),
     ]);
     seedInfo.value = { seedValue: res.seedValue, shareCode: res.shareCode };
 

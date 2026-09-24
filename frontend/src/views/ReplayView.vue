@@ -42,7 +42,7 @@ onMounted(async () => {
       finalScore?: number;
       cascadePoints?: number;
       displayName?: string;
-    }>(`/api/scores/${scoreId}/replay`);
+    }>(`/api/scores/${encodeURIComponent(scoreId)}/replay`);
 
     replayMode.value = data.mode;
     replaySeed.value = data.seed;
