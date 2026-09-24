@@ -14,6 +14,7 @@ import SurvivalWaveInfo from '@/components/SurvivalWaveInfo.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
 import SettingsModal from '@/components/SettingsModal.vue';
 import { shareIcon as shareIconUrl, trophyIcon } from '@/assets/icons';
+import { buildShareUrl } from '@/utils/shareUrl';
 
 const isDev = import.meta.env.DEV;
 const { t } = useI18n();
@@ -217,7 +218,7 @@ function skipNamePrompt() {
 // --- Share ---
 const shareToast = ref(false);
 const shareCode = ref<string | null>(null);
-const shareUrl = computed(() => shareCode.value ? `${location.origin}/s/${shareCode.value}` : null);
+const shareUrl = computed(() => shareCode.value ? buildShareUrl(shareCode.value) : null);
 
 async function shareScore() {
   if (store.seed === undefined) return;

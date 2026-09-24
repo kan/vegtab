@@ -3,6 +3,9 @@ import { Preferences } from '@capacitor/preferences';
 
 const isNative = Capacitor.isNativePlatform();
 
+/** Native keeps a copy of what it read or wrote so that getItemSync works after hydrate() */
+const nativeCache = new Map<string, string | null>();
+
 /**
  * Platform-aware key-value storage.
  * - Native (iOS/Android): Capacitor Preferences (Keychain/Keystore-backed)
@@ -11,6 +14,7 @@ const isNative = Capacitor.isNativePlatform();
 export async function getItem(key: string): Promise<string | null> {
   if (isNative) {
     const { value } = await Preferences.get({ key });
+    nativeCache.set(key, value);
     return value;
   }
   try { return localStorage.getItem(key); } catch { return null; }
@@ -18,6 +22,7 @@ export async function getItem(key: string): Promise<string | null> {
 
 export async function setItem(key: string, value: string): Promise<void> {
   if (isNative) {
+    nativeCache.set(key, value);
     await Preferences.set({ key, value });
     return;
   }
@@ -26,6 +31,7 @@ export async function setItem(key: string, value: string): Promise<void> {
 
 export async function removeItem(key: string): Promise<void> {
   if (isNative) {
+    nativeCache.set(key, null);
     await Preferences.remove({ key });
     return;
   }
@@ -33,11 +39,19 @@ export async function removeItem(key: string): Promise<void> {
 }
 
 /**
- * Synchronous get for Web only (used during module initialization).
- * On native, returns null — call getItem() async instead.
+ * Load keys into the native cache. Native can only read asynchronously, so call this before any
+ * getItemSync() of those keys (on web it does nothing that getItemSync needs).
+ */
+export async function hydrate(keys: string[]): Promise<void> {
+  await Promise.all(keys.map(getItem));
+}
+
+/**
+ * Synchronous get. Web reads localStorage (so other tabs' changes are seen); native reads the cache
+ * filled by hydrate() / getItem() / setItem().
  */
 export function getItemSync(key: string): string | null {
-  if (isNative) return null;
+  if (isNative) return nativeCache.get(key) ?? null;
   try { return localStorage.getItem(key); } catch { return null; }
 }
 
@@ -51,9 +65,4 @@ export function setLocalItem(key: string, value: string): void {
   } catch (e) {
     console.warn(`Failed to save ${key} to localStorage`, e);
   }
-}
-
-export function setItemSync(key: string, value: string): void {
-  if (isNative) return;
-  try { localStorage.setItem(key, value); } catch { /* */ }
 }

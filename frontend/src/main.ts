@@ -12,7 +12,6 @@ import App from './App.vue';
 initTheme();
 initSound();
 initAnim();
-initTokens();
 
 // 旧版の Service Worker が認証付きの API 応答をユーザーに関係なくキャッシュしていた。今は使わないので消す
 if ('caches' in window) caches.delete('api-cache').catch(() => {});
@@ -35,4 +34,7 @@ const app = createApp(App);
 app.use(createPinia());
 app.use(i18n);
 app.use(router);
-app.mount('#app');
+// ネイティブでは認証情報を非同期でしか読めないので、読み終えてからマウントする（App の init が未認証と誤判定しないように）
+initTokens()
+  .catch(e => console.warn('Failed to load credentials', e))
+  .finally(() => app.mount('#app'));

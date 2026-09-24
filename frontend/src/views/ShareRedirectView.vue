@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { api } from '@/api/client';
 import { useGameStore } from '@/stores/game';
 import QrCode from '@/components/QrCode.vue';
+import { buildShareUrl } from '@/utils/shareUrl';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -14,7 +15,7 @@ const error = ref(false);
 const seedInfo = ref<{ seedValue: string; shareCode: string } | null>(null);
 
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-const shareUrl = computed(() => seedInfo.value ? `${location.origin}/s/${seedInfo.value.shareCode}` : '');
+const shareUrl = computed(() => seedInfo.value ? buildShareUrl(seedInfo.value.shareCode) : '');
 
 function goToPuzzle() {
   if (seedInfo.value) {

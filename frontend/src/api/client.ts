@@ -1,5 +1,5 @@
 import { enqueue, processQueue, clearQueue } from './offlineQueue';
-import { getItem, setItem, getItemSync, setItemSync } from '@/lib/storage';
+import { hydrate, setItem, getItemSync } from '@/lib/storage';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787';
 
@@ -8,22 +8,25 @@ const REFRESH_KEY = 'vegtab_refresh_token';
 const DEVICE_KEY = 'vegtab_device_id';
 const USER_ID_KEY = 'vegtab_user_id';
 
-// Sync init for Web; native loads async via initTokens()
-let accessToken: string | null = getItemSync(TOKEN_KEY);
-let refreshToken: string | null = getItemSync(REFRESH_KEY);
+// Filled by initTokens()
+let accessToken: string | null = null;
+let refreshToken: string | null = null;
 
-/** Load tokens from secure storage (call on app startup for native) */
+/**
+ * Load credentials from secure storage. Native can only read them asynchronously, so the app must
+ * await this before mounting; otherwise it looks unauthenticated and registers a new account.
+ */
 export async function initTokens(): Promise<void> {
-  accessToken = await getItem(TOKEN_KEY);
-  refreshToken = await getItem(REFRESH_KEY);
+  await hydrate([TOKEN_KEY, REFRESH_KEY, DEVICE_KEY, USER_ID_KEY]);
+  accessToken = getItemSync(TOKEN_KEY);
+  refreshToken = getItemSync(REFRESH_KEY);
 }
 
 export function getDeviceId(): string {
   let id = getItemSync(DEVICE_KEY);
   if (!id) {
     id = crypto.randomUUID();
-    setItemSync(DEVICE_KEY, id);
-    setItem(DEVICE_KEY, id); // also persist to secure storage
+    setItem(DEVICE_KEY, id);
   }
   return id;
 }
