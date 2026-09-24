@@ -11,6 +11,8 @@ export interface QueueEntry {
   body: string;
   createdAt: number;
   retries: number;
+  /** 追加したときのユーザー。送信時のトークンで送られるので、別のアカウントに切り替わっていたら送らない */
+  userId?: string | null;
 }
 
 function loadQueue(): QueueEntry[] {
@@ -31,7 +33,7 @@ function saveQueue(queue: QueueEntry[]) {
   setLocalItem(QUEUE_KEY, JSON.stringify(queue));
 }
 
-export function enqueue(url: string, method: string, body: string) {
+export function enqueue(url: string, method: string, body: string, userId: string | null) {
   const queue = loadQueue();
   queue.push({
     id: crypto.randomUUID(),
@@ -40,8 +42,13 @@ export function enqueue(url: string, method: string, body: string) {
     body,
     createdAt: Date.now(),
     retries: 0,
+    userId,
   });
   saveQueue(queue);
+}
+
+export function clearQueue() {
+  saveQueue([]);
 }
 
 export function getQueueSize(): number {
@@ -54,6 +61,7 @@ export function getQueueSize(): number {
  */
 export async function processQueue(
   doFetch: (url: string, method: string, body: string) => Promise<Response>,
+  getCurrentUserId: () => string | null,
 ): Promise<{ succeeded: number; failed: number; remaining: number }> {
   const queue = loadQueue();
   if (queue.length === 0) return { succeeded: 0, failed: 0, remaining: 0 };
@@ -74,6 +82,9 @@ export async function processQueue(
 
   for (const entry of queue) {
     processed.set(entry.id, null); // 既定は取り除く。再試行する項目は retryOrFail が差し替える
+    // 処理の途中で引き継ぎが起きても旧アカウントの項目を送らないよう、1 件ごとに確かめる
+    const currentUserId = getCurrentUserId();
+    if (entry.userId && currentUserId && entry.userId !== currentUserId) continue;
     try {
       const res = await doFetch(entry.url, entry.method, entry.body);
       if (res.ok || res.status === 409) {

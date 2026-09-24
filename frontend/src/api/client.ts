@@ -1,4 +1,4 @@
-import { enqueue, processQueue } from './offlineQueue';
+import { enqueue, processQueue, clearQueue } from './offlineQueue';
 import { getItem, setItem, getItemSync, setItemSync } from '@/lib/storage';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787';
@@ -179,9 +179,9 @@ export async function api<T = unknown>(
   // Network failure (also when auth recovery is unreachable): queue the request if allowed
   const failOffline = (error: unknown): never => {
     if (queueableBody) {
-      enqueue(path, fetchOptions.method ?? 'POST', queueableBody);
+      enqueue(path, fetchOptions.method ?? 'POST', queueableBody, getUserId());
       showToast('info', 'toast.scoreSavedOffline');
-      throw new ApiError(0, 'Network error — queued for retry');
+      throw new ApiError(0,'Network error — queued for retry');
     }
     showToast('error', 'toast.networkError');
     throw error;
@@ -201,9 +201,9 @@ export async function api<T = unknown>(
 
   if (!res.ok) {
     if (queueableBody && res.status >= 500) {
-      enqueue(path, fetchOptions.method ?? 'POST', queueableBody);
+      enqueue(path, fetchOptions.method ?? 'POST', queueableBody, getUserId());
       showToast('info', 'toast.scoreSavedOffline');
-      throw new ApiError(res.status, 'Server error — queued for retry');
+      throw new ApiError(res.status,'Server error — queued for retry');
     }
     const body = await res.text();
     throw new ApiError(res.status, body);
@@ -234,7 +234,7 @@ export async function flushOfflineQueue(): Promise<{ succeeded: number; failed: 
   if (flushing) return { succeeded: 0, failed: 0, remaining: 0 };
   flushing = true;
   try {
-    const result = await processQueue((url, method, body) => authedFetch(url, method, body));
+    const result = await processQueue((url, method, body) => authedFetch(url, method, body), getUserId);
     if (result.succeeded > 0) {
       showToast('success', 'toast.offlineQueueSent');
     }
@@ -312,6 +312,9 @@ export async function redeemTransferCode(code: string): Promise<{
     accessToken: string;
     refreshToken: string;
   };
+  // キューの項目は送信時のトークンで送られるので、旧アカウントのスコアを新アカウントに混ぜないよう捨てる
+  // （userId を持たない旧形式の項目もあるため、処理時の userId の照合だけに頼らない）
+  clearQueue();
   saveTokens(data.accessToken, data.refreshToken, data.userId);
   return data;
 }

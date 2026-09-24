@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
+import { useAchievementStore } from '@/stores/achievements';
 import { generateTransferCode, redeemTransferCode, showToast, api, ApiError } from '@/api/client';
 import { useSound } from '@/sound';
 import { useCalendar } from '@/composables/useCalendar';
@@ -21,6 +22,7 @@ import {
 const { t, locale } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
+const achievementStore = useAchievementStore();
 const { soundPromptNeeded, acceptSound, declineSound } = useSound();
 
 // Title vegetable icons (random pair, different left/right)
@@ -102,7 +104,12 @@ async function doRedeem() {
   redeemLoading.value = true;
   try {
     const result = await redeemTransferCode(code);
-    await gameStore.resetAfterTransfer(result.displayName);
+    // アカウントごとの状態を持つストアをすべて引き継ぎ先のものに入れ替える
+    achievementStore.reset();
+    await Promise.all([
+      gameStore.resetAfterTransfer(result.displayName),
+      achievementStore.fetchAchievements(),
+    ]);
     showRedeemInput.value = false;
     showToast('success', 'transfer.success');
   } catch (e) {

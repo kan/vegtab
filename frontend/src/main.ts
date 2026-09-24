@@ -14,6 +14,9 @@ initSound();
 initAnim();
 initTokens();
 
+// 旧版の Service Worker が認証付きの API 応答をユーザーに関係なくキャッシュしていた。今は使わないので消す
+if ('caches' in window) caches.delete('api-cache').catch(() => {});
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
