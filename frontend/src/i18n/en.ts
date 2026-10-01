@@ -276,7 +276,7 @@ export default {
     step14_title: 'Salad Bowl + Item',
     step14_body: 'Combine a Salad Bowl with another item: all tiles of the same color transform into that item and activate! Salad Bowl + Salad Bowl clears the entire board.',
     step15_title: 'Sprint Mode',
-    step15_body: 'Score as high as you can in 15 moves. Use items and chains to maximize points. Remaining items at the end give bonus points.',
+    step15_body: 'Score as high as you can in 15 moves. Use items and chains to maximize points. Items left at the end activate automatically and score for the tiles they clear.',
     step16_title: 'Clear Mode',
     step16_body: 'Remove all "obstacle tiles" from the board. Obstacles lose durability when adjacent tiles match. Tap them with a Spoon to deal damage directly!',
     step17_title: 'Survival Mode',
