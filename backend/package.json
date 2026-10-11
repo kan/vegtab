@@ -16,15 +16,15 @@
   "dependencies": {
     "@block65/webcrypto-web-push": "^1.0.2",
     "@hono/zod-validator": "^0.9.1",
-    "hono": "^4.13.5",
-    "jose": "^6.2.10",
-    "zod": "^4.5.4"
+    "hono": "^4.13.13",
+    "jose": "^6.2.12",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/workers-types": "^5.20260728.1",
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "@cloudflare/workers-types": "^5.20261008.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
-    "wrangler": "^4.114.0"
+    "wrangler": "^4.148.0"
   }
 }
