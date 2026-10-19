@@ -98,7 +98,7 @@ npx -w backend wrangler secret put JWT_SECRET --env production
 ### リリース手順
 
 SPA と API は 1 つの Worker（`vegtab-api`）で配信する。SPA は Workers の Static Assets（`frontend/dist`）で、
-`/api/*` `/s/*` `/download/*` だけが Worker のコードに回る（`backend/wrangler.jsonc` の `assets`）。
+`/api/*` `/s/*` だけが Worker のコードに回る（`backend/wrangler.jsonc` の `assets`）。
 
 ```bash
 # frontend build → 本番 D1 マイグレーション → Worker デプロイ（--env production）
@@ -134,7 +134,7 @@ npm run deploy
 
 `backend/wrangler.jsonc` の `env.production` の `routes` で、`vegtab.app/*` を Worker に向ける。
 SPA と API は同じ Worker が同一オリジンで配信する。
-Pages からの移行期間は、ロールバック用に旧 route（`/api/*` `/s/*` `/download/*`）も残している（`wrangler.jsonc` のコメントを参照）。
+Pages からの移行期間は、ロールバック用に旧 route（`/api/*` `/s/*`）も残している（`wrangler.jsonc` のコメントを参照）。
 
 ```jsonc
 "routes": [
@@ -142,7 +142,7 @@ Pages からの移行期間は、ロールバック用に旧 route（`/api/*` `/
 ],
 ```
 
-同一オリジンでも、ネイティブ版は API の絶対 URL が必要なので `frontend/.env.production` に設定する。
+API のベース URL は `frontend/.env.production` に設定する。
 
 ```
 VITE_API_BASE=https://vegtab.app
@@ -152,7 +152,7 @@ VITE_API_BASE=https://vegtab.app
 
 | ファイル | 更新内容 |
 |----------|----------|
-| `backend/wrangler.jsonc` | `env.production` に `routes` 追加、`FRONTEND_URL` をカスタムドメインに（Capacitor 用のオリジンも残す） |
+| `backend/wrangler.jsonc` | `env.production` に `routes` 追加、`FRONTEND_URL` をカスタムドメインに |
 | `frontend/.env.production` | `VITE_API_BASE` を本番URLに変更 |
 
 ```bash

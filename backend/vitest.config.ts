@@ -21,7 +21,7 @@ export default defineConfig(async () => {
         wrangler: { configPath: fileURLToPath(new URL('./wrangler.jsonc', import.meta.url)) },
         miniflare: {
           kvNamespaces: ['KV'],
-          r2Buckets: ['R2', 'DOWNLOADS'],
+          r2Buckets: ['R2'],
           d1Databases: ['DB'],
           bindings: {
             JWT_SECRET: 'test-secret-key-for-vitest',

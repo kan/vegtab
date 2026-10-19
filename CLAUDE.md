@@ -29,7 +29,7 @@ Phase 1 → 2 → 3 → 4 の順で段階的に実装する。各Phaseの詳細�
 - Phase 3.9 (チュートリアル): 完了。21ステップ紙芝居チュートリアル・準備完了実績・アイテム名リネーム。
 - Phase 3.11 (Cascade改善Phase1): 完了。連鎖ポテンシャル表示・連鎖メーター・マイルストーンボーナス・NEW BEST演出。
 - Phase 3.12 (Cascade改善Phase2): 完了。キラキラ野菜（初期配置+補充+キラキラCP加算+ネクスト表示反映）。
-- Phase 4 (Native & Monetization): Capacitor の Android / iOS プロジェクト（`frontend/android` `frontend/ios`）と CI ビルドは導入済み。課金は将来検討。
+- Phase 4 (Native & Monetization): 中止。ネイティブアプリ（Capacitor の Android / iOS）は作らず、Web と PWA だけにする。
 
 ## 技術スタック
 - **言語:** TypeScript (全パッケージ共通)
@@ -49,7 +49,7 @@ npm install                    # ルートで全 workspace の依存をインス
 **`package-lock.json` を削除してから作り直さないこと。** npm がその時点の
 プラットフォーム向けの optional な native binding（`@rolldown/binding-*` /
 `@rollup/rollup-*` / `@esbuild/*`）しか lockfile に残さないため、Linux で
-作り直すと macOS ランナーの iOS ビルドが `Cannot find native binding` で
+作り直すと macOS や Windows での `npm ci` 後のビルドが `Cannot find native binding` で
 失敗する。既存の lockfile を残したまま `npm install` / `npm audit fix` /
 `npm i <pkg>@<ver>` で更新する。
 
@@ -70,15 +70,9 @@ wrangler secret put JWT_SECRET                  # JWT シークレット（リ�
   cd backend && npm run db:migrate
   ```
 
-### アプリアイコン・スプラッシュの再生成
-`frontend/assets/` の元画像から Android / iOS 用リソースを生成する。
-`@capacitor/assets`（アプリアイコン）と `sharp-cli`（PWA アイコン）は依存ツリーに
-脆弱性を持ち込むわりに手動実行しかしないため devDependencies には入れず、
-必要なときだけ `npx` で実行する。
-
-```bash
-cd frontend && npx @capacitor/assets generate
-```
+### PWA アイコン
+`frontend/icons/` の PWA アイコンは、`frontend/assets/` の元画像から `@capacitor/assets` で
+生成したもの。アイコンは描き直す予定（#104）で、生成の手順はそのときに決め直す。
 
 ## ローカル開発の起動
 
@@ -95,7 +89,7 @@ cd frontend && npm run dev
 ## デプロイ
 
 SPA と API は 1 つの Worker（`vegtab-api`）で配信する。SPA は Workers の Static Assets
-（`backend/wrangler.jsonc` の `assets`、`frontend/dist`）で、`/api/*` `/s/*` `/download/*` だけが Worker のコードに回る。
+（`backend/wrangler.jsonc` の `assets`、`frontend/dist`）で、`/api/*` `/s/*` だけが Worker のコードに回る。
 
 ```bash
 # frontend build（vue-tsc → vite build）→ 本番 D1 マイグレーション → Worker デプロイ（--env production）

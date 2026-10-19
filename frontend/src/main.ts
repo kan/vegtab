@@ -43,7 +43,6 @@ const app = createApp(App);
 app.use(createPinia());
 app.use(i18n);
 app.use(router);
-// ネイティブでは認証情報を非同期でしか読めないので、読み終えてからマウントする（App の init が未認証と誤判定しないように）
-initTokens()
-  .catch(e => console.warn('Failed to load credentials', e))
-  .finally(() => app.mount('#app'));
+// 認証情報を読んでからマウントする（App の init が未認証と誤判定しないように）
+initTokens();
+app.mount('#app');

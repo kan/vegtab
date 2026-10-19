@@ -1,5 +1,5 @@
 import { enqueue, processQueue, clearQueue } from './offlineQueue';
-import { hydrate, setItem, getItemSync } from '@/lib/storage';
+import { setLocalItem, getItemSync } from '@/lib/storage';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787';
 
@@ -12,12 +12,8 @@ const USER_ID_KEY = 'vegtab_user_id';
 let accessToken: string | null = null;
 let refreshToken: string | null = null;
 
-/**
- * Load credentials from secure storage. Native can only read them asynchronously, so the app must
- * await this before mounting; otherwise it looks unauthenticated and registers a new account.
- */
-export async function initTokens(): Promise<void> {
-  await hydrate([TOKEN_KEY, REFRESH_KEY, DEVICE_KEY, USER_ID_KEY]);
+/** Load the stored credentials. Call before mounting; otherwise the app looks unauthenticated and registers a new account. */
+export function initTokens(): void {
   accessToken = getItemSync(TOKEN_KEY);
   refreshToken = getItemSync(REFRESH_KEY);
 }
@@ -26,7 +22,7 @@ export function getDeviceId(): string {
   let id = getItemSync(DEVICE_KEY);
   if (!id) {
     id = crypto.randomUUID();
-    setItem(DEVICE_KEY, id);
+    setLocalItem(DEVICE_KEY, id);
   }
   return id;
 }
@@ -38,9 +34,9 @@ export function getUserId(): string | null {
 function saveTokens(access: string, refresh: string, userId?: string) {
   accessToken = access;
   refreshToken = refresh;
-  setItem(TOKEN_KEY, access);
-  setItem(REFRESH_KEY, refresh);
-  if (userId) setItem(USER_ID_KEY, userId);
+  setLocalItem(TOKEN_KEY, access);
+  setLocalItem(REFRESH_KEY, refresh);
+  if (userId) setLocalItem(USER_ID_KEY, userId);
 }
 
 export function isAuthenticated(): boolean {
