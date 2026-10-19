@@ -88,7 +88,8 @@ cd frontend && npm run dev
 
 ## デプロイ
 
-SPA と API は 1 つの Worker（`vegtab-api`）で配信する。SPA は Workers の Static Assets
+SPA と API は 1 つの Worker で配信する。本番は `--env production` でデプロイするので、Worker 名は
+`vegtab-api-production`（dashboard で探すときはこの名前。`vegtab-api` は本番では使っていない）。SPA は Workers の Static Assets
 （`backend/wrangler.jsonc` の `assets`、`frontend/dist`）で、`/api/*` `/s/*` だけが Worker のコードに回る。
 
 ```bash

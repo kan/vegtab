@@ -54,14 +54,9 @@
         "VAPID_SUBJECT": "mailto:admin@vegtab.app",
         "VAPID_PUBLIC_KEY": "BPBJ-17ClQf8zOPEDLwGHnrz3hHC8KTYBSQpMdCUnoTZ9KRKWyggM3Y_KBl2cJUD58evORaaaI2ahn9wGbUZCB4",
       },
-      // vegtab.app/* sends everything (SPA included) to this Worker; a Worker route wins over the Pages custom domain.
-      // Roll back by deleting that route in the dashboard: Pages serves the SPA again and the two routes below keep the API.
-      // Removing a route from this file does not detach it; delete leftovers (vegtab.app/download/* included) in the dashboard.
-      "routes": [
-        { "pattern": "vegtab.app/*", "zone_name": "vegtab.app" },
-        { "pattern": "vegtab.app/api/*", "zone_name": "vegtab.app" },
-        { "pattern": "vegtab.app/s/*", "zone_name": "vegtab.app" },
-      ],
+      // vegtab.app/* sends everything (SPA included) to this Worker (vegtab-api-production).
+      // Removing a route from this file does not detach it; delete it in the dashboard too.
+      "routes": [{ "pattern": "vegtab.app/*", "zone_name": "vegtab.app" }],
       "d1_databases": [
         {
           "binding": "DB",

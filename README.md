@@ -97,7 +97,7 @@ npx -w backend wrangler secret put JWT_SECRET --env production
 
 ### リリース手順
 
-SPA と API は 1 つの Worker（`vegtab-api`）で配信する。SPA は Workers の Static Assets（`frontend/dist`）で、
+SPA と API は 1 つの Worker で配信する。`--env production` でデプロイするので、本番の Worker 名は `vegtab-api-production` になる。SPA は Workers の Static Assets（`frontend/dist`）で、
 `/api/*` `/s/*` だけが Worker のコードに回る（`backend/wrangler.jsonc` の `assets`）。
 
 ```bash
@@ -134,7 +134,7 @@ npm run deploy
 
 `backend/wrangler.jsonc` の `env.production` の `routes` で、`vegtab.app/*` を Worker に向ける。
 SPA と API は同じ Worker が同一オリジンで配信する。
-Pages からの移行期間は、ロールバック用に旧 route（`/api/*` `/s/*`）も残している（`wrangler.jsonc` のコメントを参照）。
+`wrangler.jsonc` から route を消しても、Cloudflare 側の route は外れない。消すときは dashboard（Worker `vegtab-api-production` の Domains & Routes）でも消す。
 
 ```jsonc
 "routes": [
