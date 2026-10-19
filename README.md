@@ -33,11 +33,11 @@ cd backend
 
 # D1 データベース
 wrangler d1 create tomado-db
-# → 出力の database_id を wrangler.toml に反映
+# → 出力の database_id を wrangler.jsonc に反映
 
 # KV namespace
 wrangler kv namespace create KV
-# → 出力の id を wrangler.toml に反映
+# → 出力の id を wrangler.jsonc に反映
 
 # R2 バケット（リプレイログ保存用）
 wrangler r2 bucket create tomado-replay-logs
@@ -82,7 +82,7 @@ cd backend && npm test     # バックエンドAPI（15テスト）
 ### 前提条件
 
 - `wrangler` が認証済み（`npx wrangler login`）
-- D1 / KV / R2 が作成済み（`backend/wrangler.toml` にID記載）
+- D1 / KV / R2 が作成済み（`backend/wrangler.jsonc` にID記載）
 - 本番 JWT シークレット設定済み
 
 ### 初回セットアップ
@@ -98,7 +98,7 @@ npx -w backend wrangler secret put JWT_SECRET --env production
 ### リリース手順
 
 SPA と API は 1 つの Worker（`vegtab-api`）で配信する。SPA は Workers の Static Assets（`frontend/dist`）で、
-`/api/*` `/s/*` `/download/*` だけが Worker のコードに回る（`backend/wrangler.toml` の `[assets]`）。
+`/api/*` `/s/*` `/download/*` だけが Worker のコードに回る（`backend/wrangler.jsonc` の `assets`）。
 
 ```bash
 # frontend build → 本番 D1 マイグレーション → Worker デプロイ（--env production）
@@ -132,14 +132,14 @@ npm run deploy
 
 ### 2. Worker のルーティング
 
-`backend/wrangler.toml` の `[env.production]` の `routes` で、`vegtab.app/*` を Worker に向ける。
+`backend/wrangler.jsonc` の `env.production` の `routes` で、`vegtab.app/*` を Worker に向ける。
 SPA と API は同じ Worker が同一オリジンで配信する。
-Pages からの移行期間は、ロールバック用に旧 route（`/api/*` `/s/*` `/download/*`）も残している（`wrangler.toml` のコメントを参照）。
+Pages からの移行期間は、ロールバック用に旧 route（`/api/*` `/s/*` `/download/*`）も残している（`wrangler.jsonc` のコメントを参照）。
 
-```toml
-routes = [
-  { pattern = "vegtab.app/*", zone_name = "vegtab.app" },
-]
+```jsonc
+"routes": [
+  { "pattern": "vegtab.app/*", "zone_name": "vegtab.app" },
+],
 ```
 
 同一オリジンでも、ネイティブ版は API の絶対 URL が必要なので `frontend/.env.production` に設定する。
@@ -152,7 +152,7 @@ VITE_API_BASE=https://vegtab.app
 
 | ファイル | 更新内容 |
 |----------|----------|
-| `backend/wrangler.toml` | `[env.production]` に `routes` 追加、`FRONTEND_URL` をカスタムドメインに（Capacitor 用のオリジンも残す） |
+| `backend/wrangler.jsonc` | `env.production` に `routes` 追加、`FRONTEND_URL` をカスタムドメインに（Capacitor 用のオリジンも残す） |
 | `frontend/.env.production` | `VITE_API_BASE` を本番URLに変更 |
 
 ```bash

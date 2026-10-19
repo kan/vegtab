@@ -1,12 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { SELF } from 'cloudflare:test';
-import { applyMigrations, registerUser, authHeader } from './helpers';
+import { registerUser, authHeader } from './helpers';
 
 describe('Auth API', () => {
-  beforeEach(async () => {
-    await applyMigrations();
-  });
-
   it('POST /api/auth/register creates a new user and returns tokens', async () => {
     const res = await SELF.fetch('http://localhost/api/auth/register', {
       method: 'POST',

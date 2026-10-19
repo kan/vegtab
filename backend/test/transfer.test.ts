@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF, env } from 'cloudflare:test';
-import { applyMigrations, registerUser, authHeader } from './helpers';
+import { registerUser, authHeader } from './helpers';
 
 async function issueCode(token: string) {
   const res = await SELF.fetch('http://localhost/api/auth/transfer-code', {
@@ -25,7 +25,6 @@ describe('Account transfer codes', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await applyMigrations();
     ({ accessToken, userId } = await registerUser(crypto.randomUUID()));
   });
 

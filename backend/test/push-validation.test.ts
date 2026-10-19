@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { applyMigrations, registerUser, subscribePush, PUSH_KEYS } from './helpers';
+import { registerUser, subscribePush, PUSH_KEYS } from './helpers';
 import { sendDailyPushNotifications } from '../src/lib/push-cron';
 import type { Bindings } from '../src/types';
 
@@ -15,7 +15,6 @@ describe('Push subscription validation', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await applyMigrations();
     ({ accessToken, userId } = await registerUser(crypto.randomUUID()));
   });
 

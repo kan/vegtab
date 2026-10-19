@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF } from 'cloudflare:test';
 import {
-  applyMigrations, registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
+  registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
 } from './helpers';
 
 describe('Seeds & Ranking API', () => {
@@ -9,7 +9,6 @@ describe('Seeds & Ranking API', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await applyMigrations();
     const reg = await registerUser('550e8400-e29b-41d4-a716-446655440020');
     accessToken = reg.accessToken;
     userId = reg.userId;

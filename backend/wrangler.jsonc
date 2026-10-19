@@ -1,0 +1,92 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "vegtab-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The SPA is served by this same Worker (Static Assets). Build the frontend first: wrangler needs the directory to exist.
+  // API, share pages and APK downloads go to the Worker; everything else is the SPA (unknown paths fall back to index.html)
+  "assets": {
+    "directory": "../frontend/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/s/*", "/download/*"],
+  },
+
+  "vars": {
+    "ENVIRONMENT": "development",
+    "FRONTEND_URL": "*",
+    "VAPID_SUBJECT": "mailto:admin@vegtab.app",
+    "VAPID_PUBLIC_KEY": "BPBJ-17ClQf8zOPEDLwGHnrz3hHC8KTYBSQpMdCUnoTZ9KRKWyggM3Y_KBl2cJUD58evORaaaI2ahn9wGbUZCB4",
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tomado-db",
+      "database_id": "05a51653-f823-4d9b-8dfb-921d4c8d0a36",
+      "migrations_dir": "migrations",
+    },
+  ],
+
+  "kv_namespaces": [{ "binding": "KV", "id": "f35acac0b7e144588ec0509e6b3fa4fa" }],
+
+  "r2_buckets": [
+    { "binding": "R2", "bucket_name": "tomado-replay-logs" },
+    { "binding": "DOWNLOADS", "bucket_name": "vegtab-downloads" },
+  ],
+
+  "triggers": { "crons": ["5 15 * * *"] },
+
+  // --- Rate limits (bindings are not inherited by environments, so both are listed) ---
+  "ratelimits": [
+    {
+      // Account transfer code redemption, keyed by client IP
+      "name": "TRANSFER_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 10, "period": 60 },
+    },
+  ],
+
+  "env": {
+    // --- Production environment ---
+    "production": {
+      "vars": {
+        "ENVIRONMENT": "production",
+        "FRONTEND_URL": "https://vegtab.app,https://localhost,capacitor://localhost",
+        "VAPID_SUBJECT": "mailto:admin@vegtab.app",
+        "VAPID_PUBLIC_KEY": "BPBJ-17ClQf8zOPEDLwGHnrz3hHC8KTYBSQpMdCUnoTZ9KRKWyggM3Y_KBl2cJUD58evORaaaI2ahn9wGbUZCB4",
+      },
+      // vegtab.app/* sends everything (SPA included) to this Worker; a Worker route wins over the Pages custom domain.
+      // Roll back by deleting that route in the dashboard: Pages serves the SPA again and the three routes below keep the API.
+      // Removing a route from this file does not detach it; delete leftovers in the dashboard.
+      "routes": [
+        { "pattern": "vegtab.app/*", "zone_name": "vegtab.app" },
+        { "pattern": "vegtab.app/api/*", "zone_name": "vegtab.app" },
+        { "pattern": "vegtab.app/s/*", "zone_name": "vegtab.app" },
+        { "pattern": "vegtab.app/download/*", "zone_name": "vegtab.app" },
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "tomado-db",
+          "database_id": "05a51653-f823-4d9b-8dfb-921d4c8d0a36",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "kv_namespaces": [{ "binding": "KV", "id": "f35acac0b7e144588ec0509e6b3fa4fa" }],
+      "r2_buckets": [
+        { "binding": "R2", "bucket_name": "tomado-replay-logs" },
+        { "binding": "DOWNLOADS", "bucket_name": "vegtab-downloads" },
+      ],
+      "triggers": { "crons": ["5 15 * * *"] },
+      "ratelimits": [
+        {
+          "name": "TRANSFER_RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": { "limit": 10, "period": 60 },
+        },
+      ],
+    },
+  },
+}

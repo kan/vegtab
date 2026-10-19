@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/generate-vapid-keys.ts
  *
  * Output the keys in base64url format.
- * - VAPID_PUBLIC_KEY: set in wrangler.toml [vars]
+ * - VAPID_PUBLIC_KEY: set in wrangler.jsonc "vars" (top level and env.production)
  * - VAPID_PRIVATE_KEY: set via `wrangler secret put VAPID_PRIVATE_KEY`
  */
 
@@ -25,7 +25,7 @@ async function main() {
   const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
 
   console.log('=== VAPID Keys ===\n');
-  console.log('VAPID_PUBLIC_KEY (add to wrangler.toml [vars]):');
+  console.log('VAPID_PUBLIC_KEY (add to wrangler.jsonc "vars", top level and env.production):');
   console.log(bufferToBase64url(publicKeyRaw));
   console.log('\nVAPID_PRIVATE_KEY (set via: wrangler secret put VAPID_PRIVATE_KEY --env production):');
   console.log(privateKeyJwk.d);

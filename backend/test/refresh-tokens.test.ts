@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { SELF, env } from 'cloudflare:test';
 import { SignJWT } from 'jose';
-import { applyMigrations, registerUser } from './helpers';
+import { registerUser } from './helpers';
 import { purgeExpiredRefreshTokens } from '../src/lib/refresh-tokens';
 
 function refresh(refreshToken: string) {
@@ -26,10 +26,6 @@ async function ageRotations() {
 }
 
 describe('Refresh token rotation', () => {
-  beforeEach(async () => {
-    await applyMigrations();
-  });
-
   it('rotates the token; retrying the used one right away fails without revoking the new one', async () => {
     const { refreshToken } = await registerUser(crypto.randomUUID());
     const next = await refreshOk(refreshToken);

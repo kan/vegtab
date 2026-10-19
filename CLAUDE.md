@@ -35,7 +35,7 @@ Phase 1 → 2 → 3 → 4 の順で段階的に実装する。各Phaseの詳細�
 - **言語:** TypeScript (全パッケージ共通)
 - **パッケージ管理:** npm workspaces
 - **テスト:** Vitest
-- **フロントエンド:** Vue.js (Composition API), Pinia, VueUse, vue-i18n
+- **フロントエンド:** Vue.js (Composition API), Pinia, vue-i18n
 - **バックエンド:** Cloudflare Workers (Hono), D1 (SQLite), KV, R2
 - **認証:** JWT (jose) — アクセストークン(1h) + リフレッシュトークン(90d)
 
@@ -61,7 +61,7 @@ wrangler kv namespace create KV                 # KV namespace
 wrangler r2 bucket create tomado-replay-logs    # R2 バケット
 wrangler secret put JWT_SECRET                  # JWT シークレット（リモート用）
 ```
-各コマンドの出力にある ID を `backend/wrangler.toml` に反映する。
+各コマンドの出力にある ID を `backend/wrangler.jsonc` に反映する。
 
 ### ローカル開発用の設定
 - `backend/.dev.vars` に `JWT_SECRET=<任意の値>` を設定（`.gitignore` 済み）
@@ -95,7 +95,7 @@ cd frontend && npm run dev
 ## デプロイ
 
 SPA と API は 1 つの Worker（`vegtab-api`）で配信する。SPA は Workers の Static Assets
-（`backend/wrangler.toml` の `[assets]`、`frontend/dist`）で、`/api/*` `/s/*` `/download/*` だけが Worker のコードに回る。
+（`backend/wrangler.jsonc` の `assets`、`frontend/dist`）で、`/api/*` `/s/*` `/download/*` だけが Worker のコードに回る。
 
 ```bash
 # frontend build（vue-tsc → vite build）→ 本番 D1 マイグレーション → Worker デプロイ（--env production）
@@ -134,8 +134,10 @@ cd backend && npm test         # バックエンドのみ
 ### backend/
 - Hono フレームワークでルーティング
 - 認証: JWT (jose) — アクセストークン(1h) + リフレッシュトークン(90d)
-- テスト: `@cloudflare/vitest-pool-workers` で Workers 環境をエミュレート
+- テスト: `@cloudflare/vitest-plugin` で Workers 環境をエミュレート。D1 のスキーマは `migrations/` を `test/apply-migrations.ts` で当てる（テスト用のスキーマを別に書かない）
 - `backend/.dev.vars` にローカル用シークレットを設定（Git 管理外）
+- Workers の型は `wrangler types` で生成した `backend/worker-configuration.d.ts` を使う（`@cloudflare/workers-types` は使わない）。`wrangler.jsonc` を変えたら `npm run cf-typegen -w backend` で作り直す。`npm run typecheck -w backend` は生成した型が古ければ失敗する
+- シークレット（`JWT_SECRET` など）は生成した型に入らないので、`src/types.ts` の `Bindings` に足す
 
 ### frontend/
 - API クライアント (`frontend/src/api/client.ts`) が認証・リトライを一元管理

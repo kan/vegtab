@@ -422,7 +422,7 @@ project/
 - **フレームワーク:** Vue.js (Composition API, `<script setup>`)
 - **状態管理:** Pinia
 - **i18n:** vue-i18n（日本語/英語）
-- **タッチ操作最適化:** VueUse (`usePointerSwipe`等) を活用。パズル盤面には `touch-action: none;` を適用しブラウザ標準のスワイプ挙動を無効化。描画パフォーマンス最適化のため、アニメーションは必ず `transform` を使用する。
+- **タッチ操作最適化:** 盤面のスワイプは Pointer Events を自前の `useDragHandler` で扱う。パズル盤面には `touch-action: none;` を適用しブラウザ標準のスワイプ挙動を無効化。描画パフォーマンス最適化のため、アニメーションは必ず `transform` を使用する。
 - **テスト:** Vitest（単体テスト）
 - **ハイブリッド化:** Capacitor (将来的にネイティブアプリ化する際に使用)
 
@@ -535,7 +535,7 @@ Vue.jsを用いた画面構築。
 3. **ランキング画面:** シード×モードごとのランキング表示、モード切り替え
 
 **技術要件:**
-- タッチ操作はVueUseの `usePointerSwipe` を活用
+- タッチ操作は Pointer Events を自前の `useDragHandler`（`frontend/src/composables/useDragHandler.ts`）で扱う
 - パズル盤面には `touch-action: none;` を適用
 - アニメーションは `transform` ベースで実装
 - 野菜アイコンは色とシルエットの両方で区別できるデザインとする

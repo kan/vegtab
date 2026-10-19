@@ -1,12 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF } from 'cloudflare:test';
-import { applyMigrations, registerUser, authHeader, subscribePush } from './helpers';
+import { registerUser, authHeader, subscribePush } from './helpers';
 
 describe('Push Notification API', () => {
   let accessToken: string;
 
   beforeEach(async () => {
-    await applyMigrations();
     const reg = await registerUser('550e8400-e29b-41d4-a716-446655440030');
     accessToken = reg.accessToken;
   });

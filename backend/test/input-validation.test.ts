@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF, env } from 'cloudflare:test';
-import { applyMigrations, registerUser, authHeader } from './helpers';
+import { registerUser, authHeader } from './helpers';
 
 // Built from code points so the source file stays plain ASCII
 const NUL = String.fromCodePoint(0x0000);
@@ -12,7 +12,6 @@ describe('Input validation', () => {
   let userId: string;
 
   beforeEach(async () => {
-    await applyMigrations();
     ({ accessToken, userId } = await registerUser(crypto.randomUUID()));
   });
 

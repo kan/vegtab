@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { BOARD_SIZE } from '@vegtab/engine';
-import { applyMigrations, resetDb, registerUser, buildReplay, submitScore, submitReplay } from './helpers';
+import { resetDb, registerUser, buildReplay, submitScore, submitReplay } from './helpers';
 import { todayJST } from '../src/lib/date';
 
 /** Legacy client payload: reported score fields are still sent but must be ignored */
@@ -18,7 +18,6 @@ describe('POST /api/scores replay verification', () => {
   let token: string;
 
   beforeEach(async () => {
-    await applyMigrations();
     ({ accessToken: token } = await registerUser(crypto.randomUUID()));
   });
 
@@ -145,7 +144,6 @@ describe('POST /api/scores: 0 時をまたいだプレイ', () => {
   async function submitYesterdayAt(iso: string) {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(`${iso}+09:00`));
-    await applyMigrations();
     const { accessToken } = await registerUser(crypto.randomUUID());
     const { replayLog } = buildReplay('sprint', 2, '2026-09-23');
     const res = await submitScore(accessToken, { date: '2026-09-23', mode: 'sprint', moveLimit: 15, replayLog });
