@@ -10,6 +10,7 @@ import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
 import { isTutorialFirstVisit, dismissTutorialPrompt } from '@/composables/useTutorialPlayer';
 import RankingModal from '@/components/RankingModal.vue';
+import { formatRecordTime } from '@/lib/playTime';
 import VegetableIcon from '@/components/VegetableIcon.vue';
 import SettingsModal from '@/components/SettingsModal.vue';
 import {
@@ -218,7 +219,7 @@ onUnmounted(() => {
 });
 
 // --- Ranking preview (from API) ---
-const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number }>>([]);
+const rankingPreview = ref<Array<{ rank: number; playerName: string; moves: number; clearTimeMs: number | null }>>([]);
 const rankingLoading = ref(false);
 
 let previewSeq = 0;
@@ -228,14 +229,14 @@ async function fetchRankingPreview() {
   rankingLoading.value = true;
   try {
     const data = await api<{
-      ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number }>;
+      ranking: Array<{ rank: number; displayName: string; moveCount: number; clearTimeMs: number | null }>;
     }>(`/api/rankings/by-value/${todaySeed.value}`);
     if (seq !== previewSeq) return;
     rankingPreview.value = data.ranking.slice(0, 10).map(e => ({
       rank: e.rank,
       playerName: e.displayName,
-      score: e.score,
       moves: e.moveCount,
+      clearTimeMs: e.clearTimeMs,
     }));
   } catch {
     if (seq !== previewSeq) return;
@@ -326,7 +327,7 @@ onMounted(() => {
               <span class="ranking-preview-rank">{{ entry.rank }}</span>
               <span class="ranking-preview-name">{{ entry.playerName }}</span>
               <span class="ranking-preview-score">{{ t('ranking.moves', { count: entry.moves }) }}</span>
-              <span class="ranking-preview-sub">{{ entry.score.toLocaleString() }}</span>
+              <span class="ranking-preview-score ranking-preview-time">{{ formatRecordTime(entry.clearTimeMs) }}</span>
             </div>
           </template>
           <div v-else class="ranking-preview-empty">{{ t('common.noRecords') }}</div>
@@ -971,11 +972,12 @@ onMounted(() => {
 .ranking-preview-score {
   font-weight: 700;
   color: var(--brand);
+  font-variant-numeric: tabular-nums;
 }
-.ranking-preview-sub {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 500;
+/* 順位の 2 つ目の基準。手数と同じ大きさで並べ、桁がそろうよう幅を固定する */
+.ranking-preview-time {
+  min-width: 3.5em;
+  text-align: right;
 }
 .ranking-preview-empty {
   font-size: 11px;

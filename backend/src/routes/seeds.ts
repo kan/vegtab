@@ -8,19 +8,22 @@ import { MODE } from '../lib/mode';
 interface BestScore {
   isCleared: boolean;
   moveCount: number;
+  /** クリアまでの時間（順位の 2 つ目の基準）。未クリアと、時間の記録がない記録は null */
+  clearTimeMs: number | null;
   score: number;
 }
 
-const BEST_COLUMNS = 'is_cleared, move_count, score';
+const BEST_COLUMNS = 'is_cleared, move_count, clear_time_ms, score';
 
 interface BestScoreRow {
   is_cleared: number;
   move_count: number;
+  clear_time_ms: number | null;
   score: number;
 }
 
 function toBestScore(row: BestScoreRow): BestScore {
-  return { isCleared: !!row.is_cleared, moveCount: row.move_count, score: row.score };
+  return { isCleared: !!row.is_cleared, moveCount: row.move_count, clearTimeMs: row.clear_time_ms, score: row.score };
 }
 
 export const seedRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();

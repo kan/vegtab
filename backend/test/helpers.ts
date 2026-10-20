@@ -117,15 +117,15 @@ export async function getTodaySeedId(token: string): Promise<string> {
  */
 export async function insertPlayScore(row: {
   userId: string; seedId: string; mode?: string; moveCount: number; score: number; isCleared?: boolean;
-  maxChain?: number; cascadePoints?: number; replayLogKey?: string;
+  clearTimeMs?: number | null; maxChain?: number; cascadePoints?: number; replayLogKey?: string;
 }): Promise<string> {
   const id = crypto.randomUUID();
   await env.DB.prepare(
-    `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, is_cleared, max_chain, cascade_points, replay_log_key)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, is_cleared, clear_time_ms, max_chain, cascade_points, replay_log_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id, row.userId, row.seedId, row.mode ?? 'clear', row.moveCount, row.score, row.isCleared ? 1 : 0,
-    row.maxChain ?? 0, row.cascadePoints ?? 0, row.replayLogKey ?? null,
+    row.clearTimeMs ?? null, row.maxChain ?? 0, row.cascadePoints ?? 0, row.replayLogKey ?? null,
   ).run();
   return id;
 }

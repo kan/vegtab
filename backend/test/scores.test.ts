@@ -116,8 +116,11 @@ describe('POST /api/scores: ベスト記録の upsert', () => {
 
   async function storedRows() {
     const { results } = await env.DB.prepare(
-      'SELECT id, score, move_count, is_cleared, max_chain, replay_log_key FROM play_scores WHERE user_id = ?'
-    ).bind(userId).all<{ id: string; score: number; move_count: number; is_cleared: number; max_chain: number; replay_log_key: string }>();
+      'SELECT id, score, move_count, is_cleared, clear_time_ms, max_chain, replay_log_key FROM play_scores WHERE user_id = ?'
+    ).bind(userId).all<{
+      id: string; score: number; move_count: number; is_cleared: number; clear_time_ms: number | null;
+      max_chain: number; replay_log_key: string;
+    }>();
     return results;
   }
 
@@ -126,10 +129,10 @@ describe('POST /api/scores: ベスト記録の upsert', () => {
   }
 
   /** Submit the run that clears CLEARED_DATE's board (the clock must already be fixed to that day) */
-  async function submitClearedRun() {
+  async function submitClearedRun(clearTimeMs?: number) {
     const { replayLog, state } = clearedRun();
     expect(state.isCleared).toBe(true);
-    const res = await submitScore(token, { date: CLEARED_DATE, mode: 'clear', replayLog });
+    const res = await submitScore(token, { date: CLEARED_DATE, mode: 'clear', clearTimeMs, replayLog });
     expect(res.status).toBe(201);
     return { body: await res.json() as { scoreId: string; newAchievements: string[] }, state };
   }
@@ -176,6 +179,49 @@ describe('POST /api/scores: ベスト記録の upsert', () => {
 
     const { state } = await submitClearedRun();
     expect((await storedRows())[0]).toMatchObject({ move_count: state.moveCount, score: state.score });
+  });
+
+  it('同じ手数なら短い時間のクリアで更新し、長い時間なら更新しない（スコアは比べない）', async () => {
+    useFakeToday(CLEARED_DATE);
+    const seedId = await getTodaySeedId(token);
+    const { state } = clearedRun();
+    // 保存済み: 同じ手数、スコアは高いが時間は遅い
+    await insertPlayScore({ userId, seedId, moveCount: state.moveCount, score: 999_999, isCleared: true, clearTimeMs: 90_000 });
+
+    await submitClearedRun(120_000);
+    expect((await storedRows())[0]).toMatchObject({ score: 999_999, clear_time_ms: 90_000 });
+
+    await submitClearedRun(60_000);
+    expect((await storedRows())[0]).toMatchObject({ score: state.score, clear_time_ms: 60_000 });
+  });
+
+  it('時間の記録がない保存済みのクリアは、同じ手数で時間のあるクリアに置き換わる', async () => {
+    useFakeToday(CLEARED_DATE);
+    const seedId = await getTodaySeedId(token);
+    const { state } = clearedRun();
+    await insertPlayScore({ userId, seedId, moveCount: state.moveCount, score: 1, isCleared: true, clearTimeMs: null });
+
+    await submitClearedRun(600_000);
+    expect((await storedRows())[0]).toMatchObject({ clear_time_ms: 600_000 });
+  });
+
+  it('未クリアの記録は時間を持たない（送られてきても保存しない）', async () => {
+    const { res } = await submitReplay(token, 1, { clearTimeMs: 5_000 });
+    expect(res.status).toBe(201);
+    expect((await storedRows())[0]).toMatchObject({ is_cleared: 0, clear_time_ms: null });
+  });
+
+  it('負の値・小数・数値でない時間は 400', async () => {
+    for (const clearTimeMs of [-1, 1.5, '60000']) {
+      const { res } = await submitReplay(token, 1, { clearTimeMs });
+      expect(res.status, String(clearTimeMs)).toBe(400);
+    }
+  });
+
+  it('上限（24 時間）を超える時間は弾かず、時間なしとして保存する', async () => {
+    useFakeToday(CLEARED_DATE);
+    await submitClearedRun(24 * 60 * 60 * 1000 + 1);
+    expect((await storedRows())[0]).toMatchObject({ is_cleared: 1, clear_time_ms: null });
   });
 
   it('クリアで clear_first と連鎖実績を解除する', async () => {

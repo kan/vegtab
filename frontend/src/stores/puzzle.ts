@@ -47,6 +47,8 @@ export const usePuzzleStore = defineStore('puzzle', () => {
   const _displayScore = ref<number | null>(null);
   const score = computed(() => _displayScore.value ?? (gameState.value?.score ?? 0));
   const moveCount = computed(() => gameState.value?.moveCount ?? 0);
+  /** 操作のアニメーション中（入力を受け付けない間）。プレイ時間はこの間を数えない */
+  const animating = ref(false);
   const isGameOver = computed(() => gameState.value?.isGameOver ?? false);
   const isCleared = computed(() => gameState.value?.isCleared);
   const obstacleCount = computed(() => {
@@ -168,7 +170,7 @@ export const usePuzzleStore = defineStore('puzzle', () => {
 
   return {
     gameState, seed, replayLog,
-    board, score, moveCount, isGameOver, isCleared,
+    board, score, moveCount, animating, isGameOver, isCleared,
     obstacleCount,
     startGame, restoreState, recordAction,
     activateScope, applyScopeSynthesis,

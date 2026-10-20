@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api, getUserId } from '@/api/client';
+import { formatRecordTime } from '@/lib/playTime';
 import { goldMedalIcon, silverMedalIcon, bronzeMedalIcon, playIcon, brickIcon } from '@/assets/icons';
 
 const { t } = useI18n();
@@ -21,15 +22,15 @@ const loading = ref(false);
 
 interface RankEntry {
   rank: number;
-  score: number;
   moves: number;
+  clearTimeMs: number | null;
   playerName: string;
   isMe: boolean;
   scoreId?: string;
 }
 
 const rankings = ref<RankEntry[]>([]);
-const myRank = ref<{ rank: number; score: number; moveCount: number } | null>(null);
+const myRank = ref<{ rank: number; moveCount: number; clearTimeMs: number | null } | null>(null);
 
 watch(() => props.open, (o) => { if (o) fetchRanking(); });
 
@@ -45,18 +46,18 @@ async function fetchRanking() {
         rank: number;
         userId: string;
         displayName: string;
-        score: number;
         moveCount: number;
+        clearTimeMs: number | null;
         scoreId?: string;
       }>;
-      userRank: { rank: number; score: number; moveCount: number } | null;
+      userRank: { rank: number; moveCount: number; clearTimeMs: number | null } | null;
     }>(`/api/rankings/by-value/${props.seed}`);
 
     if (seq !== fetchSeq) return; // stale response
     rankings.value = data.ranking.map(e => ({
       rank: e.rank,
-      score: e.score,
       moves: e.moveCount,
+      clearTimeMs: e.clearTimeMs,
       playerName: e.displayName,
       isMe: e.userId === userId,
       scoreId: e.scoreId,
@@ -122,7 +123,7 @@ function goToReplay(scoreId: string) {
           </div>
           <div class="my-rank-right">
             <span class="my-rank-score">{{ myRankDisplay }}</span>
-            <span class="my-rank-sub">{{ myRank.score.toLocaleString() }}</span>
+            <span class="my-rank-score my-rank-time">{{ formatRecordTime(myRank.clearTimeMs) }}</span>
           </div>
         </div>
         <div v-else class="my-rank-card my-rank-empty">
@@ -142,7 +143,7 @@ function goToReplay(scoreId: string) {
             </div>
             <div class="rank-right">
               <span class="rank-score">{{ t('ranking.moves', { count: entry.moves }) }}</span>
-              <span class="rank-sub">{{ entry.score.toLocaleString() }}</span>
+              <span class="rank-score rank-time">{{ formatRecordTime(entry.clearTimeMs) }}</span>
             </div>
             <button
               v-if="entry.scoreId"
@@ -253,16 +254,21 @@ function goToReplay(scoreId: string) {
   font-weight: 400;
   color: var(--text-muted);
 }
+/* 順位の基準（手数 → 時間）を同じ大きさで横に並べる */
 .my-rank-right {
-  text-align: right;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 10px;
+}
+.my-rank-time {
+  min-width: 3.5em;
+  text-align: right;
 }
 .my-rank-score {
   font-size: 20px;
   font-weight: 700;
   color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 .my-rank-name {
   font-size: 12px;
@@ -313,26 +319,20 @@ function goToReplay(scoreId: string) {
   white-space: nowrap;
 }
 .rank-right {
-  text-align: right;
   flex-shrink: 0;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: baseline;
+  gap: 8px;
+}
+.rank-time {
+  min-width: 3.5em;
+  text-align: right;
 }
 .rank-score {
   font-weight: 700;
   color: var(--text-primary);
   font-size: 14px;
-}
-.rank-sub {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-.my-rank-sub {
-  font-size: 13px;
-  color: var(--text-muted);
-  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .btn-replay {
   background: var(--brand);

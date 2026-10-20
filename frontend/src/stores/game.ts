@@ -20,6 +20,8 @@ export interface PlayRecord {
   playedAt: number;
   playerName: string;
   isCleared?: boolean;
+  /** クリアした時点のその日の累計プレイ時間（ミリ秒）。順位の 2 つ目の基準。未クリアと、時間を順位に入れる前の記録は null か未設定 */
+  clearTimeMs?: number | null;
   generatedItemTypes?: string[];
   replayLog?: ReplayAction[];
 }
@@ -70,7 +72,7 @@ export const useGameStore = defineStore('game', () => {
   const serverBest = new Map<number, ResultSummary>();
 
   function toSummary(r: PlayRecord): ResultSummary {
-    return { isCleared: r.isCleared ?? false, moves: r.moves, score: r.score };
+    return { isCleared: r.isCleared ?? false, moves: r.moves, timeMs: r.clearTimeMs ?? null };
   }
 
   /** サーバーのベストがこの記録以上なので、送っても置き換わらない（失敗だけの日に後からクリアした記録は送る） */
@@ -88,6 +90,7 @@ export const useGameStore = defineStore('game', () => {
           moveCount: number;
           score: number;
           isCleared: boolean;
+          clearTimeMs: number | null;
           createdAt: string;
         }>;
       }>('/api/scores/my');
@@ -95,7 +98,7 @@ export const useGameStore = defineStore('game', () => {
       serverBest.clear();
       const localSeeds = new Set(playRecords.value.map(r => r.seed));
       for (const s of data.scores) {
-        serverBest.set(s.seedValue, { isCleared: s.isCleared, moves: s.moveCount, score: s.score });
+        serverBest.set(s.seedValue, { isCleared: s.isCleared, moves: s.moveCount, timeMs: s.clearTimeMs });
         if (localSeeds.has(s.seedValue)) continue;
 
         playRecords.value.push({
@@ -103,6 +106,7 @@ export const useGameStore = defineStore('game', () => {
           score: s.score,
           moves: s.moveCount,
           isCleared: s.isCleared,
+          clearTimeMs: s.clearTimeMs,
           playedAt: new Date(s.createdAt + 'Z').getTime(),
           playerName: effectiveName.value,
         });
@@ -198,6 +202,8 @@ export const useGameStore = defineStore('game', () => {
     return {
       date,
       mode: 'clear',
+      // 時間はサーバーで検証できない自己申告の値（SPEC §5.3）
+      clearTimeMs: record.clearTimeMs ?? null,
       generatedItemTypes: record.generatedItemTypes ?? [],
       replayLog: record.replayLog,
     };

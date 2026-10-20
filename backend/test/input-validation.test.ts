@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF, env } from 'cloudflare:test';
 import { registerUser, authHeader } from './helpers';
+import { rankingCacheKey } from '../src/lib/ranking-rule';
 
 // Built from code points so the source file stays plain ASCII
 const NUL = String.fromCodePoint(0x0000);
@@ -116,7 +117,7 @@ describe('Input validation', () => {
       });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ranking: [], userRank: null });
-      expect(await env.KV.get(`ranking:${seedId}:clear`)).toBeNull();
+      expect(await env.KV.get(rankingCacheKey(seedId))).toBeNull();
     });
   });
 });

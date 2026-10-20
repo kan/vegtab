@@ -134,6 +134,13 @@ const drag = useDragHandler(cellSize, boardEl, commitSwap, handleTap, {
 });
 const { cellOffsets, getOff, setOff, clearOff } = drag;
 
+/** 操作のアニメーション中は入力を止める。プレイ時間もこの間は数えない（store.animating） */
+function setInputLocked(locked: boolean) {
+  drag.setLocked(locked);
+  store.animating = locked;
+}
+onUnmounted(() => { store.animating = false; });
+
 function onPointerUpWithDebug(e: PointerEvent) {
   drag.onPointerUp(e, (pos) => {
     // Debug panel intercept
@@ -167,7 +174,7 @@ async function handleTap(pos: Position) {
   if (!plan) return;
 
   store.recordAction({ type: 'tap', pos });
-  drag.setLocked(true);
+  setInputLocked(true);
   clearOff(pos.row, pos.col);
   visualBoard.value = plan.boardBeforeActivation;
 
@@ -182,7 +189,7 @@ function finishMove(chains: ChainAnimData[], finalState: GameState) {
   store.recordPlanStats(chains);
   store.applyState(finalState);
   visualBoard.value = null;
-  drag.setLocked(false);
+  setInputLocked(false);
 }
 
 async function handleScopeSelection(pos: Position) {
@@ -238,7 +245,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   } else {
     store.recordAction({ type: 'scope', pos: scopePos, targetCells });
   }
-  drag.setLocked(true);
+  setInputLocked(true);
   playSE('item_use'); vibrate(20);
 
   // Build a board with the scope removed but targets still present
@@ -312,7 +319,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   }
 
   store.recordAction({ type: 'scope_synthesis', pos1, pos2, targetCells });
-  drag.setLocked(true);
+  setInputLocked(true);
   playSE('item_use'); vibrate(20);
 
   // Remove both items from visual board
@@ -385,7 +392,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
 async function commitSwap(pos: Position, dir: Direction) {
   // Block swipes while scope selection is active (waiting for user to tap target)
   if (scope.scopeSelecting.value) return;
-  drag.setLocked(true);
+  setInputLocked(true);
   const cs = cellSize.value;
   const nb = adj(pos, dir);
   const fullX = (nb.col - pos.col) * cs, fullY = (nb.row - pos.row) * cs;
@@ -419,7 +426,7 @@ async function commitSwap(pos: Position, dir: Direction) {
 
         const preChainResult = store.computeScopeSwapPreChains(pos, dir);
         if (!preChainResult) {
-          drag.setLocked(false);
+          setInputLocked(false);
           return;
         }
 
@@ -436,7 +443,7 @@ async function commitSwap(pos: Position, dir: Direction) {
 
         scope.startSelection(preChainResult.scopePos);
         showScopeHint('scopeTapHint');
-        drag.setLocked(false);
+        setInputLocked(false);
         return;
       }
     }
@@ -478,7 +485,7 @@ async function commitSwap(pos: Position, dir: Direction) {
             'scope+burst': 'scopeBurstSynthHint',
           };
           showScopeHint(synthHintMap[synth.effect] ?? 'scopeTapHint');
-          drag.setLocked(false);
+          setInputLocked(false);
           return;
         }
       }
@@ -504,7 +511,7 @@ async function commitSwap(pos: Position, dir: Direction) {
   setOff(nb.row, nb.col, 0, 0, true, 0);
   await wait(ANIM.value.SWAP);
   clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
-  drag.setLocked(false);
+  setInputLocked(false);
 }
 
 // --- Item effect animations ---

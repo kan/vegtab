@@ -69,6 +69,7 @@ export default {
     seed: 'シード: {seed}',
     score: 'スコア: {score}',
     moveCount: '手数: {count}',
+    time: 'タイム: {time}',
     start: 'スタート',
     abandonTitle: 'ゲームを中断しますか？',
     abandonMessage: '現在のゲームは失われます。新しいパズルを始めますか？',

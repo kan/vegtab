@@ -4,6 +4,7 @@ import {
   resetDb, registerUser, authHeader, submitReplay, submitScore, getTodaySeedId, insertPlayScore,
   useFakeToday, CLEARED_DATE, clearedRun,
 } from './helpers';
+import { rankingCacheKey } from '../src/lib/ranking-rule';
 
 /**
  * Ranking cache invalidation tests.
@@ -29,18 +30,21 @@ describe('Ranking cache invalidation', () => {
     accessToken = reg.accessToken;
     userId = reg.userId;
     seedId = await getTodaySeedId(accessToken);
-    cacheKey = `ranking:${seedId}:clear`;
+    cacheKey = rankingCacheKey(seedId);
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
+  /** The client-reported clear time sent with the cleared run */
+  const CLEAR_TIME_MS = 42_000;
+
   /** Submit the run that clears today's board */
   async function submitClearedRun(token: string) {
     const { replayLog, state } = clearedRun();
     expect(state.isCleared).toBe(true);
-    const res = await submitScore(token, { date: CLEARED_DATE, mode: 'clear', replayLog });
+    const res = await submitScore(token, { date: CLEARED_DATE, mode: 'clear', clearTimeMs: CLEAR_TIME_MS, replayLog });
     return { status: res.status, data: await res.json() as Record<string, unknown>, state };
   }
 
@@ -50,8 +54,8 @@ describe('Ranking cache invalidation', () => {
       headers: authHeader(token),
     });
     return res.json() as Promise<{
-      ranking: Array<{ rank: number; score: number; moveCount: number; userId: string }>;
-      userRank: { rank: number; score: number; moveCount: number } | null;
+      ranking: Array<{ rank: number; moveCount: number; clearTimeMs: number | null; userId: string }>;
+      userRank: { rank: number; moveCount: number; clearTimeMs: number | null } | null;
     }>;
   }
 
@@ -76,7 +80,9 @@ describe('Ranking cache invalidation', () => {
     const ranking2 = await fetchRanking(accessToken);
     expect(ranking2.ranking.map(e => e.userId)).toEqual([userId, other.userId]);
     expect(ranking2.ranking[0].moveCount).toBe(cleared.state.moveCount);
-    expect(ranking2.userRank).toEqual({ rank: 1, score: cleared.state.score, moveCount: cleared.state.moveCount });
+    expect(ranking2.userRank).toEqual({
+      rank: 1, score: cleared.state.score, moveCount: cleared.state.moveCount, clearTimeMs: CLEAR_TIME_MS,
+    });
   });
 
   it('better score (upsert) invalidates ranking cache', async () => {
@@ -98,7 +104,7 @@ describe('Ranking cache invalidation', () => {
     // Step 5: Ranking reflects updated record
     const ranking = await fetchRanking(accessToken);
     expect(ranking.ranking).toHaveLength(1);
-    expect(ranking.ranking[0].score).toBe(cleared.state.score);
+    expect(ranking.ranking[0]).toMatchObject({ moveCount: cleared.state.moveCount, clearTimeMs: CLEAR_TIME_MS });
   });
 
   it('non-improving score does NOT invalidate ranking cache', async () => {

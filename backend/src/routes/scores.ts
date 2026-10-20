@@ -10,6 +10,7 @@ import { findOrCreateDailySeed } from '../lib/seed';
 import { evaluateAchievements } from '../lib/achievements';
 import { verifyReplay } from '../lib/replay-verify';
 import { MODE } from '../lib/mode';
+import { MAX_CLEAR_TIME_MS, BETTER_THAN_STORED, rankingCacheKey } from '../lib/ranking-rule';
 
 /**
  * Upper bound on replay length. Clear has no move limit (it ends on clearing or a stuck board),
@@ -34,22 +35,17 @@ const replayActionSchema: z.ZodType<ReplayAction> = z.discriminatedUnion('type',
 ]);
 
 // Client-reported score/moveCount/etc. are intentionally not part of the schema:
-// every result is re-simulated from the replay log.
+// every result is re-simulated from the replay log. The clear time is the one exception: it cannot
+// be verified from the replay and is accepted as reported (SPEC §5.3)
 const submitScoreSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   mode: z.literal(MODE),
+  // Over the cap is stored as "no time" instead of rejecting the run (a late-day or past-day run must not fail)
+  clearTimeMs: z.number().int().min(0).nullable().optional()
+    .transform(v => (v == null || v > MAX_CLEAR_TIME_MS ? null : v)),
   generatedItemTypes: z.array(z.string().max(20)).max(10).optional().default([]),
   replayLog: z.array(replayActionSchema).min(1).max(MAX_REPLAY_ACTIONS),
 });
-
-/**
- * upsert の DO UPDATE の条件: 新しい記録（excluded）が保存済みのベスト（play_scores）より良いか。
- * クリアした記録を優先し、どちらもクリアなら少ない手数、同じ手数なら高いスコアを良いとする
- */
-const BETTER_THAN_STORED = `excluded.is_cleared > play_scores.is_cleared
-    OR (excluded.is_cleared = 1 AND play_scores.is_cleared = 1
-      AND (excluded.move_count < play_scores.move_count
-        OR (excluded.move_count = play_scores.move_count AND excluded.score > play_scores.score)))`;
 
 export const scoreRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -87,14 +83,16 @@ scoreRoutes.post('/', bodyLimit({
   } = verified;
 
   const isCleared = verifiedIsCleared ? 1 : 0;
+  // Only a cleared run has a clear time
+  const clearTimeMs = verifiedIsCleared ? data.clearTimeMs : null;
 
   // Most submissions do not beat the stored best; those are answered without touching R2
   const stored = await c.env.DB.prepare(
     `SELECT play_scores.id, play_scores.replay_log_key, (${BETTER_THAN_STORED}) AS better
-     FROM play_scores, (SELECT ? AS score, ? AS move_count, ? AS is_cleared) AS excluded
+     FROM play_scores, (SELECT ? AS move_count, ? AS is_cleared, ? AS clear_time_ms) AS excluded
      WHERE play_scores.user_id = ? AND play_scores.seed_id = ? AND play_scores.mode = ?`
   ).bind(
-    verifiedScore, verifiedMoveCount, isCleared, userId, seed.id, MODE,
+    verifiedMoveCount, isCleared, clearTimeMs, userId, seed.id, MODE,
   ).first<{ id: string; replay_log_key: string | null; better: number }>();
 
   let scoreId: string;
@@ -109,17 +107,17 @@ scoreRoutes.post('/', bodyLimit({
     // insert, or replace the stored best only when the new result is still better.
     // move_limit and cascade_points (removed modes) are left to their column defaults
     const upserted = await c.env.DB.prepare(
-      `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, is_cleared, max_chain, replay_log_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, is_cleared, clear_time_ms, max_chain, replay_log_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id, seed_id, mode) DO UPDATE SET
          move_count = excluded.move_count, score = excluded.score,
-         is_cleared = excluded.is_cleared, max_chain = excluded.max_chain,
+         is_cleared = excluded.is_cleared, clear_time_ms = excluded.clear_time_ms, max_chain = excluded.max_chain,
          replay_log_key = excluded.replay_log_key
        WHERE ${BETTER_THAN_STORED}
        RETURNING id`
     ).bind(
       generateId(), userId, seed.id, MODE,
-      verifiedMoveCount, verifiedScore, isCleared, verifiedMaxChain, replayLogKey
+      verifiedMoveCount, verifiedScore, isCleared, clearTimeMs, verifiedMaxChain, replayLogKey
     ).first<{ id: string }>().catch(async (e) => {
       await c.env.R2.delete(replayLogKey);
       throw e;
@@ -129,7 +127,7 @@ scoreRoutes.post('/', bodyLimit({
       scoreId = upserted.id;
       await Promise.all([
         // Invalidate the ranking cache only after the DB write has committed
-        c.env.KV.delete(`ranking:${seed.id}:${MODE}`),
+        c.env.KV.delete(rankingCacheKey(seed.id)),
         // The row now points at the new object, so the replaced best's replay is unreferenced
         stored?.replay_log_key ? c.env.R2.delete(stored.replay_log_key) : undefined,
       ]);
@@ -164,7 +162,7 @@ scoreRoutes.get('/my', async (c) => {
   const userId = c.get('userId');
   const seedId = c.req.query('seedId');
 
-  let query = `SELECT ps.id, ps.seed_id, s.seed_value, ps.mode, ps.move_count, ps.score, ps.is_cleared, ps.created_at
+  let query = `SELECT ps.id, ps.seed_id, s.seed_value, ps.mode, ps.move_count, ps.score, ps.is_cleared, ps.clear_time_ms, ps.created_at
     FROM play_scores ps
     JOIN puzzle_seeds s ON s.id = ps.seed_id
     WHERE ps.user_id = ? AND ps.mode = ?`;
@@ -179,7 +177,7 @@ scoreRoutes.get('/my', async (c) => {
   const scores = await c.env.DB.prepare(query).bind(...params).all<{
     id: string; seed_id: string; seed_value: string; mode: string;
     move_count: number; score: number;
-    is_cleared: number; created_at: string;
+    is_cleared: number; clear_time_ms: number | null; created_at: string;
   }>();
 
   return c.json({
@@ -191,6 +189,7 @@ scoreRoutes.get('/my', async (c) => {
       moveCount: s.move_count,
       score: s.score,
       isCleared: !!s.is_cleared,
+      clearTimeMs: s.clear_time_ms,
       createdAt: s.created_at,
     })),
   });

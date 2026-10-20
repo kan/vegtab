@@ -1,10 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF, env } from 'cloudflare:test';
 import { resetDb, registerUser, authHeader, getTodaySeedId, insertPlayScore } from './helpers';
+import { rankingCacheKey } from '../src/lib/ranking-rule';
 
 interface RankingResponse {
-  ranking: Array<{ rank: number; userId: string; score: number; moveCount: number; isCleared: boolean; scoreId?: string }>;
-  userRank: { rank: number; score: number; moveCount: number } | null;
+  ranking: Array<{
+    rank: number; userId: string; moveCount: number; clearTimeMs: number | null;
+    isCleared: boolean; scoreId?: string;
+  }>;
+  userRank: { rank: number; moveCount: number; clearTimeMs: number | null } | null;
 }
 
 describe('Rankings: 同点の順位', () => {
@@ -38,33 +42,48 @@ describe('Rankings: 同点の順位', () => {
 
   async function insertClearRanks() {
     const [a, b, c, d] = users;
-    await insertPlayScore({ userId: a.userId, seedId, moveCount: 10, score: 200, isCleared: true });
-    await insertPlayScore({ userId: b.userId, seedId, moveCount: 10, score: 200, isCleared: true });
-    await insertPlayScore({ userId: c.userId, seedId, moveCount: 10, score: 300, isCleared: true });
-    await insertPlayScore({ userId: d.userId, seedId, moveCount: 12, score: 900, isCleared: true });
+    // スコアは順位に使わない: c はスコアが低くても時間が短いので上位、d は最速でも手数が多いので下位
+    await insertPlayScore({ userId: a.userId, seedId, moveCount: 10, score: 900, isCleared: true, clearTimeMs: 90_000 });
+    await insertPlayScore({ userId: b.userId, seedId, moveCount: 10, score: 200, isCleared: true, clearTimeMs: 90_000 });
+    await insertPlayScore({ userId: c.userId, seedId, moveCount: 10, score: 100, isCleared: true, clearTimeMs: 60_000 });
+    await insertPlayScore({ userId: d.userId, seedId, moveCount: 12, score: 999, isCleared: true, clearTimeMs: 1_000 });
     return { [c.userId]: 1, [a.userId]: 2, [b.userId]: 2, [d.userId]: 4 };
   }
 
-  it('手数もスコアも同じなら同順位、手数が同じでもスコアが高ければ上位', async () => {
+  it('手数が少ない順、同じ手数なら時間が短い順。手数も時間も同じなら同順位（スコアは使わない）', async () => {
     await expectRanks(await insertClearRanks());
+  });
+
+  it('時間の記録がない行は、同じ手数の中で最後に並ぶ', async () => {
+    const [a, b, c] = users;
+    await insertPlayScore({ userId: a.userId, seedId, moveCount: 10, score: 999, isCleared: true, clearTimeMs: null });
+    await insertPlayScore({ userId: b.userId, seedId, moveCount: 10, score: 100, isCleared: true, clearTimeMs: 600_000 });
+    await insertPlayScore({ userId: c.userId, seedId, moveCount: 11, score: 100, isCleared: true, clearTimeMs: 1_000 });
+    await expectRanks({ [b.userId]: 1, [a.userId]: 2, [c.userId]: 3 });
   });
 
   it('キャッシュから返すときも同じ順位になる', async () => {
     const expected = await insertClearRanks();
     await fetchRanking(users[0].accessToken); // キャッシュを作る
-    expect(await env.KV.get(`ranking:${seedId}:clear`)).not.toBeNull();
+    expect(await env.KV.get(rankingCacheKey(seedId))).not.toBeNull();
     await expectRanks(expected);
   });
 
   it('エントリと userRank の形（maxChain / cascadePoints を返さない）', async () => {
     const [a] = users;
-    await insertPlayScore({ userId: a.userId, seedId, moveCount: 10, score: 200, isCleared: true, maxChain: 5, cascadePoints: 40 });
+    await insertPlayScore({
+      userId: a.userId, seedId, moveCount: 10, score: 200, isCleared: true, clearTimeMs: 83_000, maxChain: 5, cascadePoints: 40,
+    });
     for (const pass of ['db', 'cache']) {
       const data = await fetchRanking(a.accessToken);
       expect(data.ranking, pass).toEqual([
-        { rank: 1, userId: a.userId, displayName: 'NO NAME', score: 200, moveCount: 10, isCleared: true, scoreId: expect.any(String) },
+        {
+          rank: 1, userId: a.userId, displayName: 'NO NAME', score: 200, moveCount: 10, clearTimeMs: 83_000,
+          isCleared: true, scoreId: expect.any(String),
+        },
       ]);
-      expect(data.userRank, pass).toEqual({ rank: 1, score: 200, moveCount: 10 });
+      // score は順位に使わないが、古い SPA のために返す
+      expect(data.userRank, pass).toEqual({ rank: 1, score: 200, moveCount: 10, clearTimeMs: 83_000 });
     }
   });
 

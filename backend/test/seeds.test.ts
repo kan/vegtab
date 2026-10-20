@@ -29,7 +29,7 @@ describe('Seeds & Ranking API', () => {
 
   async function fetchSeedInfo(seedId: string) {
     const res = await SELF.fetch(`http://localhost/api/seeds/${seedId}`, { headers: authHeader(accessToken) });
-    return res.json() as Promise<{ seedId: string; best: { isCleared: boolean; moveCount: number; score: number } | null }>;
+    return res.json() as Promise<{ seedId: string; best: { isCleared: boolean; moveCount: number; clearTimeMs: number | null; score: number } | null }>;
   }
 
   it('seed info returns null best before playing', async () => {
@@ -44,8 +44,8 @@ describe('Seeds & Ranking API', () => {
     await insertPlayScore({ userId, seedId, mode: 'sprint', moveCount: 15, score: 9000 });
     expect((await fetchSeedInfo(seedId)).best).toBeNull();
 
-    await insertPlayScore({ userId, seedId, moveCount: 12, score: 300, isCleared: true });
-    expect((await fetchSeedInfo(seedId)).best).toEqual({ isCleared: true, moveCount: 12, score: 300 });
+    await insertPlayScore({ userId, seedId, moveCount: 12, score: 300, isCleared: true, clearTimeMs: 83_000 });
+    expect((await fetchSeedInfo(seedId)).best).toEqual({ isCleared: true, moveCount: 12, clearTimeMs: 83_000, score: 300 });
   });
 
   it('calendar returns the stored Clear best per seed, ignoring removed modes', async () => {
@@ -57,7 +57,7 @@ describe('Seeds & Ranking API', () => {
       headers: authHeader(accessToken),
     });
     const { seeds } = await res.json() as { seeds: Array<{ seedId: string; userScores: unknown }> };
-    expect(seeds.find(s => s.seedId === seedId)?.userScores).toEqual({ isCleared: false, moveCount: 40, score: 500 });
+    expect(seeds.find(s => s.seedId === seedId)?.userScores).toEqual({ isCleared: false, moveCount: 40, clearTimeMs: null, score: 500 });
   });
 
   it('calendar returns null userScores for unplayed seeds', async () => {
@@ -107,12 +107,12 @@ describe('Seeds & Ranking API', () => {
     });
     expect(rankRes.status).toBe(200);
     const rankData = await rankRes.json() as {
-      ranking: Array<{ rank: number; score: number; moveCount: number; isCleared: boolean }>;
-      userRank: { rank: number; score: number; moveCount: number } | null;
+      ranking: Array<{ rank: number; moveCount: number; clearTimeMs: number | null; isCleared: boolean }>;
+      userRank: { rank: number; moveCount: number; clearTimeMs: number | null } | null;
     };
     // Uncleared plays are not ranked; fewest moves first
     expect(rankData.ranking.map(e => e.moveCount)).toEqual([12, 20]);
     expect(rankData.ranking[0].isCleared).toBe(true);
-    expect(rankData.userRank).toEqual({ rank: 1, score: 2000, moveCount: 12 });
+    expect(rankData.userRank).toEqual({ rank: 1, score: 2000, moveCount: 12, clearTimeMs: null });
   });
 });

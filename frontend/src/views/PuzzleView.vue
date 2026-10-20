@@ -14,6 +14,8 @@ import SettingsModal from '@/components/SettingsModal.vue';
 import { shareIcon as shareIconUrl, trophyIcon } from '@/assets/icons';
 import { buildShareUrl } from '@/utils/shareUrl';
 import { isRemovedMode } from '@/lib/legacyData';
+import { formatPlayTime } from '@/lib/playTime';
+import { usePlayTimer } from '@/composables/usePlayTimer';
 
 const isDev = import.meta.env.DEV;
 const { t } = useI18n();
@@ -33,6 +35,15 @@ const nameInput = ref('');
 type ViewPhase = 'loading' | 'pastNotice' | 'playing';
 const viewPhase = ref<ViewPhase>('loading');
 const isPastPuzzle = ref(false);
+
+// --- Play time (その日の累計。リトライをまたぐ。アニメーション中と画面を離れている間は数えない) ---
+const timer = usePlayTimer(
+  computed(() => store.seed),
+  computed(() => viewPhase.value === 'playing' && !store.isGameOver),
+  computed(() => store.animating),
+);
+/** クリアした時点の累計。終了画面とシェアに使う */
+const clearTimeMs = ref<number | null>(null);
 
 const SESSION_KEY = 'vegtab_puzzle_state';
 
@@ -78,6 +89,7 @@ function beginGame(seed: number) {
   store.startGame(seed);
   startBGM();
   scoreRecorded.value = false;
+  clearTimeMs.value = null;
   viewPhase.value = 'playing';
   pushGuardState();
 }
@@ -146,11 +158,13 @@ watch(() => store.isGameOver, (ended) => {
     playSE(isPositiveEnd ? 'complete' : 'game_over');
     vibrate(isPositiveEnd ? [30, 30, 50] : [50, 50, 100]);
     scoreRecorded.value = true;
+    clearTimeMs.value = isPositiveEnd ? Math.round(timer.now()) : null;
     gameStore.addPlayRecord({
       seed: store.seed,
       score: store.score,
       moves: store.moveCount,
       isCleared: store.isCleared ?? false,
+      clearTimeMs: clearTimeMs.value,
       generatedItemTypes: [...store.generatedItemTypes],
       replayLog: [...store.replayLog],
     });
@@ -184,7 +198,9 @@ async function shareScore() {
   const code = shareCode.value ?? `#${store.seed}`;
   const url = shareUrl.value ?? '';
   const appName = t('common.appName');
-  const text = `${appName} ${code} | ${store.isCleared ? 'CLEARED' : 'FAILED'} ${store.moveCount}${t('mode.moves')} ${store.score.toLocaleString()}pts`;
+  const moves = `${store.moveCount}${t('mode.moves')}`;
+  const result = clearTimeMs.value !== null ? `CLEARED ${moves} ${formatPlayTime(clearTimeMs.value)}` : `FAILED ${moves}`;
+  const text = `${appName} ${code} | ${result}`;
   const shareData: ShareData = { text };
   if (url) shareData.url = url;
   if (navigator.share) {
@@ -260,6 +276,7 @@ const gameOverScore = computed(() => store.isCleared
           <div class="move-label">
             {{ t('puzzle.moveCount', { count: store.moveCount }) }}
           </div>
+          <div class="move-label time-label">{{ t('puzzle.time', { time: formatPlayTime(timer.elapsedMs.value) }) }}</div>
         </div>
       </header>
 
@@ -279,7 +296,8 @@ const gameOverScore = computed(() => store.isCleared
         <div class="game-over-card">
           <h2>{{ gameOverTitle }}</h2>
           <p class="final-score">{{ gameOverScore }}</p>
-          <p class="clear-score-info">{{ t('puzzle.pts', { score: store.score }) }}</p>
+          <p v-if="clearTimeMs !== null" class="clear-time-info">{{ t('puzzle.time', { time: formatPlayTime(clearTimeMs) }) }}</p>
+          <p class="score-info">{{ t('puzzle.pts', { score: store.score }) }}</p>
           <div class="game-over-actions actions-col">
             <button class="btn" @click="restart"><span class="btn-icon">&#x21BB;</span> {{ t('common.retry') }}</button>
             <button class="btn btn-share" @click="shareScore"><img :src="shareIconUrl" class="btn-icon-svg" alt="" /> {{ t('common.share') }}</button>
@@ -390,6 +408,15 @@ const gameOverScore = computed(() => store.isCleared
 .move-label {
   font-size: 13px;
   color: var(--text-secondary);
+}
+.time-label {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.score-info {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
 }
 .btn-icon {
   margin-right: 4px;
@@ -504,7 +531,7 @@ const gameOverScore = computed(() => store.isCleared
 .btn-debug {
   background: var(--slate);
 }
-.clear-score-info {
+.clear-time-info {
   font-size: 20px;
   font-weight: 700;
   color: var(--brand);

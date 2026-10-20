@@ -69,6 +69,7 @@ export default {
     seed: 'SEED: {seed}',
     score: 'SCORE: {score}',
     moveCount: 'MOVE: {count}',
+    time: 'TIME: {time}',
     start: 'START',
     abandonTitle: 'Abandon Game?',
     abandonMessage: 'Current game will be lost. Start a new puzzle?',

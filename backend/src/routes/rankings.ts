@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 import { isRankingClosed } from '../lib/date';
 import { MODE } from '../lib/mode';
+import { RANKING_ORDER, rankingCacheKey } from '../lib/ranking-rule';
 
 const DEFAULT_DISPLAY_NAME = 'NO NAME';
 
@@ -27,14 +28,14 @@ async function fetchRanking(
   if (!seedInfo) return { ranking: [], userRank: null };
   const rankingClosed = seedInfo.daily_date != null && isRankingClosed(seedInfo.daily_date);
 
-  const cacheKey = `ranking:${seedId}:${MODE}`;
+  const cacheKey = rankingCacheKey(seedId);
   const cached = await kv.get(cacheKey, 'json') as RankingData | null;
   if (cached) {
     // Once the ranking is closed, expose scoreId on all entries
     const entries = cached.entries.map(e => toPublicEntry(e, rankingClosed || e.userId === userId));
     const cachedEntry = cached.entries.find(e => e.userId === userId);
     const userRank = cachedEntry
-      ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount }
+      ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount, clearTimeMs: cachedEntry.clearTimeMs }
       : await getUserRank(db, userId, seedId);
     return { ranking: entries, userRank };
   }
@@ -82,8 +83,14 @@ interface RankingEntry {
   rank: number;
   userId: string;
   displayName: string;
+  /**
+   * 順位には使わない。今の SPA は読まないが、service worker がキャッシュした古い SPA が `score.toLocaleString()` を
+   * 呼ぶので、古い SPA が残っている間は返し続ける
+   */
   score: number;
   moveCount: number;
+  /** その日の累計のクリアまでの時間（ミリ秒）。時間の記録がない行は null */
+  clearTimeMs: number | null;
   /** Always true: only cleared runs are ranked */
   isCleared: true;
   scoreId?: string;
@@ -108,11 +115,9 @@ interface RankedRow {
   user_id: string;
   score: number;
   move_count: number;
+  clear_time_ms: number | null;
   rank: number;
 }
-
-/** 良い順（少ない手数、同じ手数なら高いスコア）。すべての項目が同じなら同順位 */
-const RANKING_ORDER = 'move_count ASC, score DESC';
 
 /**
  * クリアした記録をユーザーごとのベスト 1 件に絞り、同点を同順位にした順位（1, 1, 3, ...）を付ける CTE。
@@ -143,6 +148,7 @@ async function queryRanking(db: D1Database, seedId: string): Promise<CachedRanki
     displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
     score: e.score,
     moveCount: e.move_count,
+    clearTimeMs: e.clear_time_ms,
     _scoreId: e.id,
   }));
 }
@@ -151,12 +157,12 @@ async function getUserRank(
   db: D1Database,
   userId: string,
   seedId: string,
-): Promise<{ rank: number; score: number; moveCount: number } | null> {
+): Promise<{ rank: number; score: number; moveCount: number; clearTimeMs: number | null } | null> {
   const row = await db.prepare(
     `${RANKED_CTE}
      SELECT * FROM ranked WHERE user_id = ?`
   ).bind(seedId, MODE, userId).first<RankedRow>();
   if (!row) return null;
 
-  return { rank: row.rank, score: row.score, moveCount: row.move_count };
+  return { rank: row.rank, score: row.score, moveCount: row.move_count, clearTimeMs: row.clear_time_ms };
 }
