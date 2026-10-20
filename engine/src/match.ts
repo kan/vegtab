@@ -1,5 +1,44 @@
 import { Cell, Color, Match, Position, BOARD_SIZE } from './types.js';
 
+/** マッチに参加できるセルか（アイテムとおじゃまタイルは参加しない） */
+export function isMatchable(cell: Cell | null): cell is Cell {
+  return cell !== null && !cell.item && !cell.obstacle;
+}
+
+/**
+ * (row, col) を含むマッチ（縦横 3 つ以上の直線、または 2×2）があるか。findMatches と同じ規則。
+ * cellAt で盤面の読み方を差し替えられる（入れ替えた後の盤面を、書き換えずに調べるため）
+ */
+export function hasMatchAt(
+  row: number, col: number,
+  cellAt: (row: number, col: number) => Cell | null,
+): boolean {
+  const colorAt = (r: number, c: number): Color | null => {
+    if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) return null;
+    const cell = cellAt(r, c);
+    return isMatchable(cell) ? cell.color : null;
+  };
+  const color = colorAt(row, col);
+  if (color === null) return false;
+  const same = (r: number, c: number) => colorAt(r, c) === color;
+
+  let h = 1;
+  for (let c = col - 1; same(row, c); c--) h++;
+  for (let c = col + 1; same(row, c); c++) h++;
+  if (h >= 3) return true;
+
+  let v = 1;
+  for (let r = row - 1; same(r, col); r--) v++;
+  for (let r = row + 1; same(r, col); r++) v++;
+  if (v >= 3) return true;
+
+  // (row, col) を角に持つ 4 つの 2×2
+  for (const [dr, dc] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    if (same(row + dr, col) && same(row, col + dc) && same(row + dr, col + dc)) return true;
+  }
+  return false;
+}
+
 /** 盤面上の全マッチを検出（縦横3以上の直線） */
 export function findMatches(board: (Cell | null)[][]): Match[] {
   const matches: Match[] = [];
@@ -12,7 +51,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
     let col = 0;
     while (col < BOARD_SIZE) {
       const cell = board[row][col];
-      if (cell === null || cell.item || cell.obstacle) {
+      if (!isMatchable(cell)) {
         col++;
         continue;
       }
@@ -20,7 +59,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
       let end = col + 1;
       while (end < BOARD_SIZE) {
         const next = board[row][end];
-        if (next === null || next.item || next.obstacle || next.color !== color) break;
+        if (!isMatchable(next) || next.color !== color) break;
         end++;
       }
       const length = end - col;
@@ -44,10 +83,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
       const c10 = board[row + 1][col];
       const c11 = board[row + 1][col + 1];
       if (
-        c00 && !c00.item && !c00.obstacle &&
-        c01 && !c01.item && !c01.obstacle &&
-        c10 && !c10.item && !c10.obstacle &&
-        c11 && !c11.item && !c11.obstacle &&
+        isMatchable(c00) && isMatchable(c01) && isMatchable(c10) && isMatchable(c11) &&
         c00.color === c01.color &&
         c00.color === c10.color &&
         c00.color === c11.color
@@ -69,7 +105,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
     let row = 0;
     while (row < BOARD_SIZE) {
       const cell = board[row][col];
-      if (cell === null || cell.item || cell.obstacle) {
+      if (!isMatchable(cell)) {
         row++;
         continue;
       }
@@ -77,7 +113,7 @@ export function findMatches(board: (Cell | null)[][]): Match[] {
       let end = row + 1;
       while (end < BOARD_SIZE) {
         const next = board[end][col];
-        if (next === null || next.item || next.obstacle || next.color !== color) break;
+        if (!isMatchable(next) || next.color !== color) break;
         end++;
       }
       const length = end - row;
