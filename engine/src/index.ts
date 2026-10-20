@@ -15,4 +15,4 @@ export { generateDailySeed } from './seed.js';
 export { playGame } from './autoPlayer.js';
 export type { GameMetrics } from './autoPlayer.js';
 export { ACHIEVEMENT_DEFS, ALL_ACHIEVEMENT_TYPES, getAchievementDef, isUnlocked } from './achievements.js';
-export type { AchievementDef } from './achievements.js';
+export type { AchievementDef, AchievementMetric } from './achievements.js';

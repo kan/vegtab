@@ -1,4 +1,4 @@
-import { ACHIEVEMENT_DEFS, isUnlocked } from '@vegtab/engine';
+import { ACHIEVEMENT_DEFS, isUnlocked, type AchievementMetric } from '@vegtab/engine';
 
 /** A verified Clear result */
 export interface ScoreData {
@@ -37,7 +37,7 @@ export async function evaluateAchievements(
   const statements: D1PreparedStatement[] = [];
 
   for (const def of ACHIEVEMENT_DEFS) {
-    const candidateValue = candidates[def.type];
+    const candidateValue = candidates[def.metric];
     if (candidateValue === undefined) continue;
 
     const prev = existingMap.get(def.type);
@@ -90,45 +90,29 @@ export async function evaluateAchievements(
   return newlyUnlocked;
 }
 
-function computeCandidates(data: ScoreData): Record<string, number> {
-  const c: Record<string, number> = {};
+/** Values this score yields, per metric. A metric left out is not evaluated for this submission */
+type Candidates = Partial<Record<AchievementMetric, number>>;
 
-  // Chain achievements (type names date from the removed Cascade mode; kept to match stored rows)
-  c['cascade_chain_3'] = data.maxChain;
-  c['cascade_chain_5'] = data.maxChain;
-  c['cascade_chain_10'] = data.maxChain;
-  c['cascade_chain_15'] = data.maxChain;
+function computeCandidates(data: ScoreData): Candidates {
+  const c: Candidates = { maxChain: data.maxChain };
 
   if (data.isCleared) {
-    c['clear_first'] = 1;
-    c['clear_under_10'] = data.moveCount;
-    c['clear_under_7'] = data.moveCount;
+    c.cleared = 1;
+    c.clearMoves = data.moveCount;
   }
 
-  // all_items_generated: 5 unique types = scope, v_cut, h_cut, burst, flush
-  if (data.generatedItemTypes.length >= 5) {
-    const unique = new Set(data.generatedItemTypes);
-    if (unique.size >= 5) c['all_items_generated'] = 1;
-  }
+  // 5 unique types = scope, v_cut, h_cut, burst, flush
+  if (new Set(data.generatedItemTypes).size >= 5) c.allItems = 1;
 
   return c;
 }
 
-async function computeCumulativeCandidates(
-  db: D1Database, userId: string,
-): Promise<Record<string, number>> {
-  const c: Record<string, number> = {};
-
+async function computeCumulativeCandidates(db: D1Database, userId: string): Promise<Candidates> {
   // Rows of removed modes stay in D1 and are counted too: those days were played, and the stored
   // current_value was computed from all rows, so counting only Clear rows would stall progress
   const dayResult = await db.prepare(
     `SELECT COUNT(DISTINCT date(created_at)) as days FROM play_scores WHERE user_id = ?`
   ).bind(userId).first<{ days: number }>();
 
-  const days = dayResult?.days ?? 0;
-  c['play_days_3'] = days;
-  c['play_days_7'] = days;
-  c['play_days_30'] = days;
-
-  return c;
+  return { playDays: dayResult?.days ?? 0 };
 }
