@@ -2,7 +2,7 @@
 
 export interface AchievementDef {
   type: string;
-  category: 'sprint' | 'clear' | 'survival' | 'cascade' | 'collection';
+  category: 'clear' | 'chain' | 'collection';
   threshold: number;
   /** 'gte' = current_value >= threshold to unlock, 'lte' = current_value <= threshold */
   comparator: 'gte' | 'lte';
@@ -12,35 +12,19 @@ export interface AchievementDef {
 export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
   // Tutorial
   { type: 'tutorial_complete', category: 'collection', threshold: 1, comparator: 'gte', secret: false },
-  // Sprint
-  { type: 'sprint_score_500', category: 'sprint', threshold: 500, comparator: 'gte', secret: false },
-  { type: 'sprint_score_1000', category: 'sprint', threshold: 1000, comparator: 'gte', secret: false },
-  { type: 'sprint_score_2000', category: 'sprint', threshold: 2000, comparator: 'gte', secret: false },
-  { type: 'sprint_score_5000', category: 'sprint', threshold: 5000, comparator: 'gte', secret: true },
-  // Cascade (chain achievements — evaluated across all modes)
-  { type: 'cascade_chain_3', category: 'cascade', threshold: 3, comparator: 'gte', secret: false },
-  { type: 'cascade_chain_5', category: 'cascade', threshold: 5, comparator: 'gte', secret: false },
-  { type: 'cascade_chain_10', category: 'cascade', threshold: 10, comparator: 'gte', secret: false },
-  { type: 'cascade_chain_15', category: 'cascade', threshold: 15, comparator: 'gte', secret: true },
   // Clear
   { type: 'clear_first', category: 'clear', threshold: 1, comparator: 'gte', secret: false },
   { type: 'clear_under_10', category: 'clear', threshold: 10, comparator: 'lte', secret: false },
   { type: 'clear_under_7', category: 'clear', threshold: 7, comparator: 'lte', secret: false },
-  // Survival
-  { type: 'survival_moves_20', category: 'survival', threshold: 20, comparator: 'gte', secret: false },
-  { type: 'survival_moves_50', category: 'survival', threshold: 50, comparator: 'gte', secret: false },
-  { type: 'survival_moves_100', category: 'survival', threshold: 100, comparator: 'gte', secret: false },
-  { type: 'survival_moves_200', category: 'survival', threshold: 200, comparator: 'gte', secret: true },
-  // Cascade CP
-  { type: 'cascade_cp_20', category: 'cascade', threshold: 20, comparator: 'gte', secret: false },
-  { type: 'cascade_cp_50', category: 'cascade', threshold: 50, comparator: 'gte', secret: false },
-  { type: 'cascade_cp_100', category: 'cascade', threshold: 100, comparator: 'gte', secret: false },
-  { type: 'cascade_cp_150', category: 'cascade', threshold: 150, comparator: 'gte', secret: true },
+  // Chain（type 名は Cascade モードがあった頃のまま。解除済みの記録と対応させるため変えない）
+  { type: 'cascade_chain_3', category: 'chain', threshold: 3, comparator: 'gte', secret: false },
+  { type: 'cascade_chain_5', category: 'chain', threshold: 5, comparator: 'gte', secret: false },
+  { type: 'cascade_chain_10', category: 'chain', threshold: 10, comparator: 'gte', secret: false },
+  { type: 'cascade_chain_15', category: 'chain', threshold: 15, comparator: 'gte', secret: true },
   // Collection
   { type: 'play_days_3', category: 'collection', threshold: 3, comparator: 'gte', secret: false },
   { type: 'play_days_7', category: 'collection', threshold: 7, comparator: 'gte', secret: false },
   { type: 'play_days_30', category: 'collection', threshold: 30, comparator: 'gte', secret: false },
-  { type: 'all_modes_played', category: 'collection', threshold: 1, comparator: 'gte', secret: false },
   { type: 'all_items_generated', category: 'collection', threshold: 1, comparator: 'gte', secret: false },
 ] as const;
 

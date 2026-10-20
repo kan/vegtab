@@ -1,8 +1,7 @@
-import { Cell, Direction, GameMode, GameState, Position, BOARD_SIZE } from './types.js';
+import { Cell, GameState, BOARD_SIZE } from './types.js';
 import { findMatches } from './match.js';
 import { cloneBoard } from './board.js';
-import { allObstaclesCleared, hasObstacleWithMinDurability } from './obstacle.js';
-import { SURVIVAL_MAX_OBSTACLE_DURABILITY } from './survival.js';
+import { allObstaclesCleared } from './obstacle.js';
 
 /** 有効なスワイプが存在するかチェック */
 export function hasValidSwap(board: (Cell | null)[][]): boolean {
@@ -71,51 +70,12 @@ function isStuck(board: (Cell | null)[][]): boolean {
   return !hasValidSwap(board) && !hasActivatableItems(board);
 }
 
-/** ゲーム終了判定（4モード対応） */
+/** ゲーム終了判定: 全おじゃまタイル除去でクリア、詰みで失敗 */
 export function checkGameOverState(state: GameState): {
   gameOver: boolean;
   isCleared?: boolean;
 } {
-  const { board, mode, moveCount, moveLimit } = state;
-
-  switch (mode) {
-    case 'sprint':
-    case 'cascade': {
-      if (moveLimit !== undefined && moveCount >= moveLimit) return { gameOver: true };
-      if (isStuck(board)) return { gameOver: true };
-      return { gameOver: false };
-    }
-    case 'clear': {
-      if (allObstaclesCleared(board)) return { gameOver: true, isCleared: true };
-      if (isStuck(board)) return { gameOver: true, isCleared: false };
-      return { gameOver: false };
-    }
-    case 'survival': {
-      // (a) 耐久値が SURVIVAL_MAX_OBSTACLE_DURABILITY に到達したおじゃまタイルが存在する → 即死
-      if (hasObstacleWithMinDurability(board, SURVIVAL_MAX_OBSTACLE_DURABILITY)) {
-        return { gameOver: true };
-      }
-      // (b) 詰み（有効なスワイプなし かつ 起動可能なアイテムなし）
-      if (isStuck(board)) return { gameOver: true };
-      return { gameOver: false };
-    }
-  }
-}
-
-/** 後方互換: 旧シグネチャ (テスト用) */
-export function isGameOver(
-  board: (Cell | null)[][],
-  mode: GameMode = 'sprint',
-  moveCount: number = 0,
-  moveLimit?: number,
-): boolean {
-  return checkGameOverState({
-    board,
-    mode,
-    moveCount,
-    moveLimit,
-    score: 0,
-    rngState: [],
-    isGameOver: false,
-  }).gameOver;
+  if (allObstaclesCleared(state.board)) return { gameOver: true, isCleared: true };
+  if (isStuck(state.board)) return { gameOver: true, isCleared: false };
+  return { gameOver: false };
 }

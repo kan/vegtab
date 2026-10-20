@@ -46,8 +46,9 @@ export function useCalendar() {
     }
   }
 
-  function bestScore(seed: number): number {
-    return gameStore.getBestScore(seed, 'sprint');
+  /** その日のクリアの最少手数（クリアしていなければ 0） */
+  function bestMoves(seed: number): number {
+    return gameStore.getBestMoves(seed);
   }
 
   return {
@@ -59,6 +60,6 @@ export function useCalendar() {
     isCurrentMonth,
     prevMonth,
     nextMonth,
-    bestScore,
+    bestMoves,
   };
 }

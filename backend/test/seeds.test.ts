@@ -1,14 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SELF } from 'cloudflare:test';
 import {
-  registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
+  resetDb, registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
 } from './helpers';
+import { todayJST } from '../src/lib/date';
 
 describe('Seeds & Ranking API', () => {
   let accessToken: string;
   let userId: string;
 
   beforeEach(async () => {
+    await resetDb();
     const reg = await registerUser('550e8400-e29b-41d4-a716-446655440020');
     accessToken = reg.accessToken;
     userId = reg.userId;
@@ -25,19 +27,50 @@ describe('Seeds & Ranking API', () => {
     expect(data.shareCode).toHaveLength(6);
   });
 
-  it('seed info returns best scores', async () => {
-    const seedId = await getTodaySeedId(accessToken);
+  async function fetchSeedInfo(seedId: string) {
+    const res = await SELF.fetch(`http://localhost/api/seeds/${seedId}`, { headers: authHeader(accessToken) });
+    return res.json() as Promise<{ seedId: string; best: { isCleared: boolean; moveCount: number; score: number } | null }>;
+  }
 
-    const infoRes = await SELF.fetch(`http://localhost/api/seeds/${seedId}`, {
+  it('seed info returns null best before playing', async () => {
+    const seedId = await getTodaySeedId(accessToken);
+    const info = await fetchSeedInfo(seedId);
+    expect(info.seedId).toBe(seedId);
+    expect(info.best).toBeNull();
+  });
+
+  it('seed info returns the stored Clear best, ignoring removed modes', async () => {
+    const seedId = await getTodaySeedId(accessToken);
+    await insertPlayScore({ userId, seedId, mode: 'sprint', moveCount: 15, score: 9000 });
+    expect((await fetchSeedInfo(seedId)).best).toBeNull();
+
+    await insertPlayScore({ userId, seedId, moveCount: 12, score: 300, isCleared: true });
+    expect((await fetchSeedInfo(seedId)).best).toEqual({ isCleared: true, moveCount: 12, score: 300 });
+  });
+
+  it('calendar returns the stored Clear best per seed, ignoring removed modes', async () => {
+    const seedId = await getTodaySeedId(accessToken);
+    await insertPlayScore({ userId, seedId, mode: 'sprint', moveCount: 15, score: 9000 });
+    await insertPlayScore({ userId, seedId, moveCount: 40, score: 500, isCleared: false });
+
+    const res = await SELF.fetch(`http://localhost/api/seeds/daily/calendar?month=${todayJST().slice(0, 7)}`, {
       headers: authHeader(accessToken),
     });
-    const info = await infoRes.json() as { seedId: string; bestScores: Record<string, number> };
-    expect(info.seedId).toBe(seedId);
-    expect(info.bestScores).toEqual({});
+    const { seeds } = await res.json() as { seeds: Array<{ seedId: string; userScores: unknown }> };
+    expect(seeds.find(s => s.seedId === seedId)?.userScores).toEqual({ isCleared: false, moveCount: 40, score: 500 });
+  });
+
+  it('calendar returns null userScores for unplayed seeds', async () => {
+    const seedId = await getTodaySeedId(accessToken);
+    await insertPlayScore({ userId, seedId, mode: 'cascade', moveCount: 15, score: 9000, cascadePoints: 20 });
+
+    const res = await SELF.fetch('http://localhost/api/seeds/daily/calendar', { headers: authHeader(accessToken) });
+    const { seeds } = await res.json() as { seeds: Array<{ seedId: string; userScores: unknown }> };
+    expect(seeds.find(s => s.seedId === seedId)?.userScores).toBeNull();
   });
 
   it('score submission creates seed and returns shareCode', async () => {
-    const { res } = await submitReplay(accessToken, 'sprint', 1);
+    const { res } = await submitReplay(accessToken, 1);
     expect(res.status).toBe(201);
     const data = await res.json() as { scoreId: string; shareCode: string };
     expect(data.scoreId).toBeTruthy();
@@ -45,40 +78,31 @@ describe('Seeds & Ranking API', () => {
   });
 
   it('rejects score for invalid date', async () => {
-    const { res } = await submitReplay(accessToken, 'sprint', 1, { date: '2020-01-01' });
+    const { res } = await submitReplay(accessToken, 1, { date: '2020-01-01' });
     expect(res.status).toBe(400);
   });
 
-  it('sprint ranking returns correct data', async () => {
-    // Submit a score (auto-creates daily seed)
-    const { state } = await submitReplay(accessToken, 'sprint', 2);
+  it('an uncleared run is stored but not ranked', async () => {
+    const { res } = await submitReplay(accessToken, 2);
+    expect(res.status).toBe(201);
     const seedId = await getTodaySeedId(accessToken);
 
-    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=sprint`, {
-      headers: authHeader(accessToken),
-    });
+    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}`, { headers: authHeader(accessToken) });
     expect(rankRes.status).toBe(200);
-    const rankData = await rankRes.json() as {
-      ranking: Array<{ rank: number; score: number }>;
-      userRank: { rank: number; score: number } | null;
-    };
-    expect(rankData.ranking).toHaveLength(1);
-    expect(rankData.ranking[0].score).toBe(state.score);
-    expect(rankData.userRank?.rank).toBe(1);
-    expect(rankData.userRank?.score).toBe(state.score);
+    expect(await rankRes.json()).toEqual({ ranking: [], userRank: null });
   });
 
-  it('clear mode ranking uses the fewest moves among cleared plays', async () => {
+  it('ranking uses the fewest moves among cleared plays', async () => {
     // Cleared plays cannot be produced by short replays, so the rows are inserted directly
     // (one row per user and seed×mode, so the other results belong to other users)
     const seedId = await getTodaySeedId(accessToken);
     const slower = await registerUser(crypto.randomUUID());
     const notCleared = await registerUser(crypto.randomUUID());
-    await insertPlayScore({ userId: slower.userId, seedId, mode: 'clear', moveCount: 20, score: 3000, isCleared: true });
-    await insertPlayScore({ userId, seedId, mode: 'clear', moveCount: 12, score: 2000, isCleared: true });
-    await insertPlayScore({ userId: notCleared.userId, seedId, mode: 'clear', moveCount: 5, score: 500, isCleared: false });
+    await insertPlayScore({ userId: slower.userId, seedId, moveCount: 20, score: 3000, isCleared: true });
+    await insertPlayScore({ userId, seedId, moveCount: 12, score: 2000, isCleared: true });
+    await insertPlayScore({ userId: notCleared.userId, seedId, moveCount: 5, score: 500, isCleared: false });
 
-    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=clear`, {
+    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}`, {
       headers: authHeader(accessToken),
     });
     expect(rankRes.status).toBe(200);
@@ -89,32 +113,6 @@ describe('Seeds & Ranking API', () => {
     // Uncleared plays are not ranked; fewest moves first
     expect(rankData.ranking.map(e => e.moveCount)).toEqual([12, 20]);
     expect(rankData.ranking[0].isCleared).toBe(true);
-    expect(rankData.userRank?.rank).toBe(1);
-    expect(rankData.userRank?.moveCount).toBe(12);
-  });
-
-  it('survival mode ranking sorted by move_count DESC then score DESC', async () => {
-    const seedId = await getTodaySeedId(accessToken);
-    const reg2 = await registerUser('550e8400-e29b-41d4-a716-446655440021');
-
-    // User 1 survives 30 moves; user 2 survives 25 moves with a higher score (ranked lower)
-    await insertPlayScore({ userId, seedId, mode: 'survival', moveCount: 30, score: 8000 });
-    await insertPlayScore({ userId: reg2.userId, seedId, mode: 'survival', moveCount: 25, score: 9000 });
-
-    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}?mode=survival`, {
-      headers: authHeader(accessToken),
-    });
-    expect(rankRes.status).toBe(200);
-    const rankData = await rankRes.json() as {
-      ranking: Array<{ rank: number; userId: string; moveCount: number; score: number }>;
-      userRank: { rank: number; score: number; moveCount: number } | null;
-    };
-    expect(rankData.ranking).toHaveLength(2);
-    expect(rankData.ranking[0].moveCount).toBe(30);
-    expect(rankData.ranking[0].score).toBe(8000);
-    expect(rankData.ranking[1].moveCount).toBe(25);
-    expect(rankData.ranking[1].score).toBe(9000);
-    expect(rankData.userRank?.rank).toBe(1);
-    expect(rankData.userRank?.moveCount).toBe(30);
+    expect(rankData.userRank).toEqual({ rank: 1, score: 2000, moveCount: 12 });
   });
 });

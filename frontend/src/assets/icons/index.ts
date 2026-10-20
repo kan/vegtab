@@ -11,10 +11,8 @@ export { default as scissorsIcon } from './2702.svg';
 export { default as forkKnifeIcon } from './1F37D.svg';
 export { default as saladIcon } from './1F957.svg';
 
-// Mode icons
-export { default as lightningIcon } from './26A1.svg';
+// Clear (obstacle) icon
 export { default as brickIcon } from './1F9F1.svg';
-export { default as infinityIcon } from './267E.svg';
 
 // Ranking / Achievement
 export { default as trophyIcon } from './1F3C6.svg';

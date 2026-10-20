@@ -1,5 +1,5 @@
 /**
- * Debug investigation for CLEAR mode bugs reported with 2026-04-05 seed.
+ * Debug investigation for bugs reported with 2026-04-05 seed (formerly CLEAR mode).
  *
  * Findings summary:
  * 1. ENGINE is correct — obstacle damage, item generation, gravity all work properly.
@@ -14,7 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import { initializeGame, processAction, processDamage } from '../src/engine.js';
 import { generateDailySeed } from '../src/seed.js';
-import { BOARD_SIZE, Cell, Action, Position, Color, NUM_COLORS } from '../src/types.js';
+import { BOARD_SIZE, Cell, Action, Position, Color } from '../src/types.js';
 import { countObstacles, damageObstacles } from '../src/obstacle.js';
 import { applyGravity } from '../src/gravity.js';
 import { fillEmptyCells } from '../src/board.js';
@@ -67,11 +67,11 @@ function describeCell(board: (Cell | null)[][], row: number, col: number): strin
   return d;
 }
 
-describe('CLEAR mode debug - 2026-04-05', () => {
+describe('debug - 2026-04-05', () => {
   const seed = generateDailySeed('2026-04-05');
 
   function applyMoves(count: number): { state: ReturnType<typeof initializeGame> } {
-    let state = initializeGame(seed, 'clear');
+    let state = initializeGame(seed);
     const moves: Action[] = [
       { type: 'swap', pos: { row: 7, col: 2 }, dir: 'right' },  // c1右
       { type: 'swap', pos: { row: 3, col: 3 }, dir: 'up' },     // d5上
@@ -154,7 +154,7 @@ describe('CLEAR mode debug - 2026-04-05', () => {
     boardEngine[4][2] = { color: 0 as Color, item: 'scope' }; // item at cleared pos above obstacle
     const destroyedE = damageObstacles(boardEngine, clearedPositions);
     expect(destroyedE.length).toBe(1); // obstacle at (5,2) destroyed
-    applyGravity(boardEngine, true); // processDamage's gravity
+    applyGravity(boardEngine); // processDamage's gravity
 
     // --- FRONTEND behavior: item placed, damageObstacles only, then single gravity ---
     const boardFE = makeBoard();
@@ -163,7 +163,7 @@ describe('CLEAR mode debug - 2026-04-05', () => {
     const destroyedF = damageObstacles(boardFE, clearedPositions);
     expect(destroyedF.length).toBe(1);
     // Frontend does NOT call gravity inside damageObstacles; it calls gravity once after
-    applyGravity(boardFE, true);
+    applyGravity(boardFE);
 
     // Both should be the same here because there's only ONE gravity call in both cases.
     // The difference emerges when processDamage calls gravity+fill, and THEN processChains
@@ -176,9 +176,9 @@ describe('CLEAR mode debug - 2026-04-05', () => {
     bEng[4][2] = { color: 0 as Color, item: 'scope' };
     // processDamage: damage + gravity + fill (skip fill for comparison)
     damageObstacles(bEng, clearedPositions);
-    applyGravity(bEng, true); // processDamage internal gravity
+    applyGravity(bEng); // processDamage internal gravity
     // Then processChains regular gravity
-    applyGravity(bEng, true);
+    applyGravity(bEng);
     printBoard(bEng, 'Engine (double gravity):');
 
     console.log('\n--- Frontend flow (single gravity) ---');
@@ -187,7 +187,7 @@ describe('CLEAR mode debug - 2026-04-05', () => {
     bFE[4][2] = { color: 0 as Color, item: 'scope' };
     damageObstacles(bFE, clearedPositions);
     // Frontend: only ONE gravity call
-    applyGravity(bFE, true);
+    applyGravity(bFE);
     printBoard(bFE, 'Frontend (single gravity):');
 
     // Both gravity results should be identical (double gravity is idempotent)
@@ -227,7 +227,7 @@ describe('CLEAR mode debug - 2026-04-05', () => {
         }
       }
 
-      // おじゃまタイルは増えない（Clear モードは侵食がないため単調非増加）
+      // おじゃまタイルは増えない（侵食がないため単調非増加）
       const obstacles = countObstacles(state.board);
       expect(obstacles, `move ${m}: おじゃまタイルが増加`).toBeLessThanOrEqual(prevObstacles);
       prevObstacles = obstacles;
@@ -284,7 +284,7 @@ describe('CLEAR mode debug - 2026-04-05', () => {
     const boardA = makeBoard();
     for (const p of clearedPositions) boardA[p.row][p.col] = null;
     const rngA = [100, 200, 300, 400, 500, 600, 700, 800]; // 8列分
-    const rngAfterA = processDamage(boardA, clearedPositions, [...rngA], 'clear');
+    const rngAfterA = processDamage(boardA, clearedPositions, [...rngA]);
 
     // --- 修正後フロントエンドフロー: damageObstacles + gravity + fill ---
     const boardB = makeBoard();
@@ -293,8 +293,8 @@ describe('CLEAR mode debug - 2026-04-05', () => {
     const destroyed = damageObstacles(boardB, clearedPositions);
     let rngAfterB = rngB;
     if (destroyed.length > 0) {
-      applyGravity(boardB, true); // clear mode
-      rngAfterB = fillEmptyCells(boardB, rngAfterB, NUM_COLORS);
+      applyGravity(boardB);
+      rngAfterB = fillEmptyCells(boardB, rngAfterB);
     }
 
     // 盤面一致
@@ -332,7 +332,7 @@ describe('CLEAR mode debug - 2026-04-05', () => {
 
     const rng = [100, 200, 300, 400, 500, 600, 700, 800];
     const rngBefore = [...rng];
-    const rngAfter = processDamage(board, clearedPositions, rng, 'clear');
+    const rngAfter = processDamage(board, clearedPositions, rng);
 
     // RNG状態は変化しない（gravity+fillが実行されていない）
     expect(rngAfter).toEqual(rngBefore);

@@ -36,7 +36,8 @@ function forSeedsWithChains(
 ) {
   let observed = 0;
   for (let seed = 1; seed <= 40; seed++) {
-    const state = initializeGame(seed, 'sprint');
+    // シード配置のおじゃまタイルは置かない（置いたアイテムの効果範囲を変えないため）
+    const state = initializeGame(seed, { obstacleCount: 0 });
     plant(state.board);
 
     const effects: ItemEffectData[] = [];
@@ -60,7 +61,7 @@ describe('chain index after item effects', () => {
     const board = noMatchBoard(4);
     board[0][0] = { color: 0, item: 'v_cut' };
     board[4][0] = { color: 0, item: 'burst' }; // v_cut で誘爆される
-    const state = initializeGame(4242, 'cascade');
+    const state = initializeGame(4242);
     state.board = board;
 
     const tap = processAction(state, { type: 'tap', pos: { row: 0, col: 0 } });
@@ -68,7 +69,7 @@ describe('chain index after item effects', () => {
 
     expect(tap.board).toEqual(swap.board);
     expect(tap.score).toBe(swap.score);
-    expect(tap.cascadePoints).toBe(swap.cascadePoints);
+    expect(tap.maxChainIndex).toBe(swap.maxChainIndex);
     expect(tap.lastChainCount).toBe(swap.lastChainCount);
   });
 

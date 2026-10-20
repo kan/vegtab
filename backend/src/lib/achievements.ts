@@ -1,13 +1,10 @@
-import { ACHIEVEMENT_DEFS, isUnlocked } from './achievement-defs';
+import { ACHIEVEMENT_DEFS, isUnlocked } from '@vegtab/engine';
 
+/** A verified Clear result */
 export interface ScoreData {
-  mode: string;
-  score: number;
   moveCount: number;
   isCleared: boolean;
-  date: string;
   maxChain: number;
-  cascadePoints: number;
   generatedItemTypes: string[];
 }
 
@@ -25,7 +22,7 @@ export async function evaluateAchievements(
 
   // Run cumulative queries and existing-achievements fetch in parallel
   const [cumulativeCandidates, existing] = await Promise.all([
-    computeCumulativeCandidates(db, userId, data),
+    computeCumulativeCandidates(db, userId),
     db.prepare(
       'SELECT achievement_type, current_value, is_unlocked FROM achievements WHERE user_id = ?'
     ).bind(userId).all<{ achievement_type: string; current_value: number; is_unlocked: number }>(),
@@ -96,39 +93,16 @@ export async function evaluateAchievements(
 function computeCandidates(data: ScoreData): Record<string, number> {
   const c: Record<string, number> = {};
 
-  if (data.mode === 'sprint') {
-    c['sprint_score_500'] = data.score;
-    c['sprint_score_1000'] = data.score;
-    c['sprint_score_2000'] = data.score;
-    c['sprint_score_5000'] = data.score;
-  }
-
-  // Chain achievements — evaluated across all modes
+  // Chain achievements (type names date from the removed Cascade mode; kept to match stored rows)
   c['cascade_chain_3'] = data.maxChain;
   c['cascade_chain_5'] = data.maxChain;
   c['cascade_chain_10'] = data.maxChain;
   c['cascade_chain_15'] = data.maxChain;
 
-  if (data.mode === 'clear') {
-    if (data.isCleared) {
-      c['clear_first'] = 1;
-      c['clear_under_10'] = data.moveCount;
-      c['clear_under_7'] = data.moveCount;
-    }
-  }
-
-  if (data.mode === 'cascade') {
-    c['cascade_cp_20'] = data.cascadePoints;
-    c['cascade_cp_50'] = data.cascadePoints;
-    c['cascade_cp_100'] = data.cascadePoints;
-    c['cascade_cp_150'] = data.cascadePoints;
-  }
-
-  if (data.mode === 'survival') {
-    c['survival_moves_20'] = data.moveCount;
-    c['survival_moves_50'] = data.moveCount;
-    c['survival_moves_100'] = data.moveCount;
-    c['survival_moves_200'] = data.moveCount;
+  if (data.isCleared) {
+    c['clear_first'] = 1;
+    c['clear_under_10'] = data.moveCount;
+    c['clear_under_7'] = data.moveCount;
   }
 
   // all_items_generated: 5 unique types = scope, v_cut, h_cut, burst, flush
@@ -141,30 +115,20 @@ function computeCandidates(data: ScoreData): Record<string, number> {
 }
 
 async function computeCumulativeCandidates(
-  db: D1Database, userId: string, data: ScoreData,
+  db: D1Database, userId: string,
 ): Promise<Record<string, number>> {
   const c: Record<string, number> = {};
 
-  // Run both queries in parallel
-  const [dayResult, modesResult] = await Promise.all([
-    db.prepare(
-      `SELECT COUNT(DISTINCT date(created_at)) as days FROM play_scores WHERE user_id = ?`
-    ).bind(userId).first<{ days: number }>(),
-    db.prepare(
-      `SELECT DISTINCT ps.mode FROM play_scores ps
-       JOIN puzzle_seeds s ON s.id = ps.seed_id
-       WHERE ps.user_id = ? AND s.daily_date = ?`
-    ).bind(userId, data.date).all<{ mode: string }>(),
-  ]);
+  // Rows of removed modes stay in D1 and are counted too: those days were played, and the stored
+  // current_value was computed from all rows, so counting only Clear rows would stall progress
+  const dayResult = await db.prepare(
+    `SELECT COUNT(DISTINCT date(created_at)) as days FROM play_scores WHERE user_id = ?`
+  ).bind(userId).first<{ days: number }>();
 
   const days = dayResult?.days ?? 0;
   c['play_days_3'] = days;
   c['play_days_7'] = days;
   c['play_days_30'] = days;
-
-  const modes = new Set((modesResult.results ?? []).map(r => r.mode));
-  modes.add(data.mode); // Include current submission
-  if (modes.size >= 3) c['all_modes_played'] = 1;
 
   return c;
 }

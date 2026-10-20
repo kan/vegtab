@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { api, showToast } from '@/api/client';
 import { ACHIEVEMENT_DEFS, getAchievementDef, type AchievementDef } from '@vegtab/engine';
 import { i18n } from '@/i18n';
+import { filterAchievements } from '@/lib/legacyData';
 
 export interface AchievementState {
   type: string;
@@ -80,7 +81,7 @@ export const useAchievementStore = defineStore('achievements', () => {
   function loadFromStorage(): AchievementState[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
+      return filterAchievements<AchievementState>(raw ? JSON.parse(raw) : []);
     } catch {
       return [];
     }

@@ -1,17 +1,15 @@
 import {
   Cell, Color, ItemType, Position, Direction, Action, ReplayAction, SynthesisEffect,
-  Match, ChainStep, GameState, GameMode, GameInitParams, BOARD_SIZE, NUM_COLORS,
+  ChainStep, GameState, GameInitParams, BOARD_SIZE,
 } from './types.js';
-import { createRng, nextInt } from './rng.js';
 import {
-  generateRawBoard, fillEmptyCells, cloneBoard, getCell, isValidPosition, nextColor,
+  generateRawBoard, fillEmptyCells, cloneBoard, getCell, isValidPosition,
   createColumnRngStates, findItemPosition,
-  createSparkleRngStates, placeInitialSparkles,
 } from './board.js';
 import { findMatches, getUniquePositions, hasMatches } from './match.js';
 import { applyGravity } from './gravity.js';
 import {
-  determineItem, determineItemFromMatches, ITEM_PRIORITY,
+  determineItemFromMatches,
   getItemTargets, getSynthesisEffect, getSynthesisTargets,
   findFlushTargetColor, getFlushTargets,
   getVCutTargets, getHCutTargets, getBurstTargets,
@@ -20,14 +18,8 @@ import {
 import { calculateStepScore, getFullClearBonus } from './score.js';
 import { checkGameOverState } from './gameOver.js';
 import { generateObstacles, damageObstacles, damageObstacleAt, damageAllObstacles } from './obstacle.js';
-import {
-  computeWavePositions, SURVIVAL_WAVE_INTERVAL, SURVIVAL_MAX_OBSTACLE_DURABILITY,
-} from './survival.js';
 import type { TraceCollector } from './traceCollector.js';
 import { computeDropMoves } from './dropMoves.js';
-
-const DEFAULT_MOVE_LIMIT = 15;
-const DEFAULT_CASCADE_MOVE_LIMIT = 15;
 
 /**
  * 「マッチがなくなるまで消して補充する」ループの安全弁。
@@ -37,20 +29,6 @@ const DEFAULT_CASCADE_MOVE_LIMIT = 15;
  * 無限ループでブラウザやWorkerを固めるよりは望ましいので break する。
  */
 export const MAX_STABILIZE_ITERATIONS = 200;
-
-/** Cascadeモードの連鎖マイルストーンボーナス定義
- * 1ゲーム中に初めて到達した連鎖数に応じてCPを加算する */
-export const CASCADE_MILESTONES: readonly { chain: number; bonus: number }[] = [
-  { chain: 3, bonus: 10 },
-  { chain: 5, bonus: 25 },
-  { chain: 7, bonus: 50 },
-];
-
-/** Clear/Survivalモードではおじゃまタイルを固定し、非おじゃまタイルが
- *  すり抜けて落下する（passThroughObstacles=true）。 */
-export function isPassThroughMode(mode: GameMode): boolean {
-  return mode === 'clear' || mode === 'survival';
-}
 
 /** 方向から隣接位置を計算 */
 function getAdjacentPos(pos: Position, dir: Direction): Position {
@@ -84,18 +62,12 @@ function isValidTargetCells(targetCells: unknown, expected: number): targetCells
   return keys.size === expected;
 }
 
-/** 初期盤面を生成（自動消去込み、スコア0・アイテムなし） */
-export function initializeGame(
-  seed: number,
-  mode: GameMode = 'sprint',
-  params?: GameInitParams,
-): GameState {
-  const numColors = mode === 'cascade' ? (params?.numColors ?? 4) : NUM_COLORS;
-  const { board, rngState: mainRng } = generateRawBoard(seed, numColors);
+/** 初期盤面を生成（自動消去込み、スコア0・アイテムなし）し、おじゃまタイルを配置する */
+export function initializeGame(seed: number, params?: GameInitParams): GameState {
+  const { board, rngState: mainRng } = generateRawBoard(seed);
   let rngState = createColumnRngStates(mainRng);
 
   // 自動消去ループ: マッチがなくなるまで繰り返す
-  const passThrough = isPassThroughMode(mode);
   let iterations = 0;
   while (hasMatches(board)) {
     // 安全弁: 列RNGが独立していれば数回で収束する（実測の最大は19回）。
@@ -106,47 +78,20 @@ export function initializeGame(
     for (const pos of positions) {
       board[pos.row][pos.col] = null;
     }
-    applyGravity(board, passThrough);
-    rngState = fillEmptyCells(board, rngState, numColors);
+    applyGravity(board);
+    rngState = fillEmptyCells(board, rngState);
   }
 
-  const state: GameState = {
+  const obstacles = generateObstacles(board, rngState, params?.obstacleCount);
+  return {
     board,
     score: 0,
-    rngState,
+    rngState: obstacles.rngState,
     moveCount: 0,
     isGameOver: false,
-    mode,
     seed,
+    maxChainIndex: 0,
   };
-
-  if (numColors !== NUM_COLORS) {
-    state.numColors = numColors;
-  }
-
-  switch (mode) {
-    case 'sprint':
-      state.moveLimit = params?.moveLimit ?? DEFAULT_MOVE_LIMIT;
-      break;
-    case 'clear': {
-      const result = generateObstacles(board, rngState, params?.obstacleCount);
-      state.rngState = result.rngState;
-      break;
-    }
-    case 'survival':
-      // 新仕様: 初期盤面にはおじゃまタイル配置なし。ウェーブ侵食で出現する。
-      break;
-    case 'cascade':
-      state.moveLimit = params?.moveLimit ?? DEFAULT_CASCADE_MOVE_LIMIT;
-      state.maxChainIndex = 0;
-      state.cascadePoints = 0;
-      state.milestonesClaimed = [];
-      placeInitialSparkles(board, seed);
-      state.sparkleRngState = createSparkleRngStates(seed);
-      break;
-  }
-
-  return state;
 }
 
 /** GameStateのディープコピー */
@@ -157,15 +102,9 @@ export function cloneGameState(state: GameState): GameState {
     rngState: [...state.rngState],
     moveCount: state.moveCount,
     isGameOver: state.isGameOver,
-    mode: state.mode,
     seed: state.seed,
-    moveLimit: state.moveLimit,
     isCleared: state.isCleared,
-    numColors: state.numColors,
     maxChainIndex: state.maxChainIndex,
-    cascadePoints: state.cascadePoints,
-    milestonesClaimed: state.milestonesClaimed ? [...state.milestonesClaimed] : undefined,
-    sparkleRngState: state.sparkleRngState ? [...state.sparkleRngState] : undefined,
     lastChainCount: state.lastChainCount,
   };
 }
@@ -360,34 +299,15 @@ function activateCoffeeSynthesis(
 /** おじゃまタイルへのダメージ処理（消去位置に基づく）
  * boardを直接変更する: 隣接おじゃまの耐久値減少・破壊時のgravity・補充
  * @returns 更新後のrngState */
-export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number[], mode: GameMode = 'sprint', numColors: number = NUM_COLORS, sparkleRngStates?: number[]): number[] {
+export function processDamage(board: (Cell | null)[][], clearedPositions: Position[], rngState: number[]): number[] {
   if (clearedPositions.length === 0) return rngState;
   let rng = rngState;
   const destroyed = damageObstacles(board, clearedPositions);
   if (destroyed.length > 0) {
-    applyGravity(board, isPassThroughMode(mode));
-    rng = fillEmptyCells(board, rng, numColors, sparkleRngStates);
+    applyGravity(board);
+    rng = fillEmptyCells(board, rng);
   }
   return rng;
-}
-
-/** Cascade のときだけ盤面のキラキラを数える（アイテム効果で消えたキラキラを CP に足すため） */
-function countSparkles(state: GameState): number {
-  if (state.cascadePoints === undefined) return 0;
-  let count = 0;
-  for (const row of state.board) {
-    for (const cell of row) if (cell?.sparkle) count++;
-  }
-  return count;
-}
-
-/**
- * アイテム効果の前後のキラキラの数の差を CP に加算する（連鎖で消えた分は applyChainStats が加算する）。
- * 効果による消去の後、落下・補充の前に呼ぶ
- */
-function addClearedSparkleCp(state: GameState, sparklesBefore: number): void {
-  if (state.cascadePoints === undefined) return;
-  state.cascadePoints += sparklesBefore - countSparkles(state);
 }
 
 /**
@@ -401,37 +321,43 @@ function chainStartAfterItems(depthLevels: number, preChains = 0): number {
   return Math.max(2, depthLevels + preChains + 1);
 }
 
-/** 連鎖の結果から maxChainIndex・lastChainCount と Cascade の CP（連鎖・キラキラ・マイルストーン）を更新する */
-export function applyChainStats(state: GameState, steps: readonly Pick<ChainStep, 'chainIndex' | 'sparkleCount'>[]): void {
+/** 連鎖の結果から maxChainIndex・lastChainCount を更新する */
+export function applyChainStats(state: GameState, steps: readonly Pick<ChainStep, 'chainIndex'>[]): void {
   let maxInAction = 0;
   for (const step of steps) {
     if (step.chainIndex > maxInAction) {
       maxInAction = step.chainIndex;
     }
-    // Cascade points: accumulate chainIndex for chains >= 2
-    if (state.cascadePoints !== undefined && step.chainIndex >= 2) {
-      state.cascadePoints += step.chainIndex;
-    }
-    // キラキラボーナス: 消去されたキラキラ個数分 +1 CP
-    if (state.cascadePoints !== undefined && step.sparkleCount) {
-      state.cascadePoints += step.sparkleCount;
-    }
   }
   state.lastChainCount = maxInAction;
 
-  if (state.maxChainIndex !== undefined && maxInAction > state.maxChainIndex) {
+  if (maxInAction > (state.maxChainIndex ?? 0)) {
     state.maxChainIndex = maxInAction;
   }
+}
 
-  // マイルストーンボーナス: 初到達の連鎖数に応じてCP加算
-  if (state.milestonesClaimed !== undefined && state.cascadePoints !== undefined) {
-    for (const ms of CASCADE_MILESTONES) {
-      if (maxInAction >= ms.chain && !state.milestonesClaimed.includes(ms.chain)) {
-        state.cascadePoints += ms.bonus;
-        state.milestonesClaimed.push(ms.chain);
-      }
-    }
+/**
+ * アイテム効果の後の落下 → 補充 → 連鎖（おじゃまのダメージは効果の中で処理済み）。
+ * state.board を直接変更し、スコアと RNG を state に反映して、連鎖のステップを返す
+ */
+function dropFillAndChain(state: GameState, startChain: number, collector?: TraceCollector): ChainStep[] {
+  const board = state.board;
+  // collector: gravity 前に dropMoves を計算
+  if (collector?.onDropData) {
+    const dm = computeDropMoves(board);
+    collector.onDropData(dm.moves, dm.newTileEntries);
   }
+
+  applyGravity(board);
+  state.rngState = fillEmptyCells(board, state.rngState);
+
+  // collector: gravity + fill 後の盤面スナップショット
+  collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
+
+  const chainResult = processChains(board, state.rngState, startChain, collector);
+  state.score += chainResult.score;
+  state.rngState = chainResult.rngState;
+  return chainResult.steps;
 }
 
 /** ゲーム終了チェック */
@@ -439,178 +365,6 @@ function applyGameOver(state: GameState): void {
   const result = checkGameOverState(state);
   if (result.gameOver) state.isGameOver = true;
   if (result.isCleared !== undefined) state.isCleared = result.isCleared;
-}
-
-/** Survivalウェーブ侵食を盤面に適用する。
- *
- * 侵食位置 (シード×ウェーブ番号から決定論的に算出) を処理順に走査し:
- *  1. 既存おじゃまタイル → 耐久値+1 (MAX到達で gameOver=true)
- *  2. アイテム → 強制発動 (スプーンは周囲4マスのみ、flushは自動targetColor)
- *     → アイテム発動後の落下・補充・連鎖処理を行い、最後にその位置へ耐久値1のおじゃまを上書き設置
- *  3. 通常タイル (または空) → そのまま耐久値1のおじゃま設置
- *
- * boardを直接変更する。戻り値の gameOver=true の場合は呼び出し側で state.isGameOver を立てる。
- * 公開されているのはテスト向け。通常は finalizeMove から呼ばれる。
- */
-export function applyWave(
-  board: (Cell | null)[][],
-  seed: number,
-  waveNumber: number,
-  rngState: number[],
-  numColors: number,
-  collector?: TraceCollector,
-): { score: number; rngState: number[]; gameOver: boolean } {
-  const positions = computeWavePositions(seed, waveNumber);
-  let rng = rngState;
-  let totalScore = 0;
-  let gameOver = false;
-
-  // --- フェーズ1: 全位置にお邪魔タイルを配置（アイテムは保存して後で発動） ---
-  const deferredItems: { pos: Position; item: ItemType }[] = [];
-
-  for (const pos of positions) {
-    const cell = board[pos.row]?.[pos.col];
-
-    // Case 1: 既存のおじゃまタイル → 耐久値+1
-    if (cell?.obstacle) {
-      cell.obstacle.durability += 1;
-      if (cell.obstacle.durability >= SURVIVAL_MAX_OBSTACLE_DURABILITY) {
-        gameOver = true;
-      }
-      if (collector?.onWaveStep) {
-        collector.onWaveStep({
-          pos, kind: 'bump',
-          newDurability: cell.obstacle.durability,
-          boardAfter: cloneBoard(board),
-          score: 0,
-        });
-      }
-      continue;
-    }
-
-    // Case 2: アイテム → 保存してからおじゃま設置（発動はフェーズ2で）
-    if (cell?.item) {
-      deferredItems.push({ pos, item: cell.item });
-    }
-
-    // Case 2 & 3: おじゃまタイル設置（アイテム位置も通常タイル位置も同じ処理）
-    const color: Color = ((cell?.color ?? 0) as Color);
-    board[pos.row][pos.col] = { color, obstacle: { durability: 1 } };
-    if (collector?.onWaveStep) {
-      collector.onWaveStep({
-        pos, kind: 'place',
-        boardAfter: cloneBoard(board),
-        score: 0,
-      });
-    }
-  }
-
-  // --- フェーズ2: 保存したアイテムを順に強制発動 ---
-  for (const { pos, item } of deferredItems) {
-    // おじゃまタイルを一時的に除去してアイテムを発動
-    board[pos.row][pos.col] = null;
-    let stepScore = 0;
-    // 強制発動の効果の段数（スプーンは消去そのものを1段目とする）
-    let depthLevels = item === 'scope' ? 1 : 0;
-
-    if (item === 'scope') {
-      const adjTargets = getScopeAdjacentTargets(board, pos);
-      for (const t of adjTargets) {
-        const adjCell = board[t.row]?.[t.col];
-        if (!adjCell) continue;
-        if (adjCell.obstacle) {
-          damageObstacleAt(board, t);
-          continue;
-        }
-        if (adjCell.item) {
-          let tc: number | undefined;
-          if (adjCell.item === 'flush') {
-            tc = findFlushTargetColor(board, t) ?? undefined;
-          }
-          const r = activateItem(board, t, adjCell.item, tc, 1, rng, undefined, collector);
-          stepScore += r.score;
-          rng = r.rngState;
-          depthLevels = Math.max(depthLevels, 1 + r.depthLevels);
-        } else {
-          board[t.row][t.col] = null;
-          stepScore += 10;
-        }
-      }
-    } else if (item === 'flush') {
-      const targetColor = findFlushTargetColor(board, pos) ?? undefined;
-      if (targetColor !== undefined) {
-        const result = activateItem(board, pos, item, targetColor, 1, rng, undefined, collector);
-        stepScore += result.score;
-        rng = result.rngState;
-        depthLevels = result.depthLevels;
-      }
-    } else {
-      const result = activateItem(board, pos, item, undefined, 1, rng, undefined, collector);
-      stepScore += result.score;
-      rng = result.rngState;
-      depthLevels = result.depthLevels;
-    }
-
-    totalScore += stepScore;
-
-    // collector: gravity 前に dropMoves を計算
-    const dropData = collector?.onWaveStep
-      ? computeDropMoves(board, true)
-      : undefined;
-
-    // 落下 → 補充 → 連鎖（Survivalは Clearと同じく passThrough）
-    applyGravity(board, true);
-    rng = fillEmptyCells(board, rng, numColors);
-    const chainResult = processChains(board, rng, chainStartAfterItems(depthLevels), 'survival', false, numColors, collector);
-    totalScore += chainResult.score;
-    rng = chainResult.rngState;
-
-    if (collector?.onWaveStep) {
-      collector.onWaveStep({
-        pos, kind: 'item_activate',
-        dropMoves: dropData?.moves,
-        newTileEntries: dropData?.newTileEntries,
-        boardAfter: cloneBoard(board),
-        score: stepScore + chainResult.score,
-      });
-    }
-  }
-
-  // 全位置処理後に盤面を再チェック: アイテム強制発動で耐久値が下がった場合を反映
-  if (gameOver) {
-    gameOver = false;
-    for (let r = 0; r < board.length; r++) {
-      for (let c = 0; c < board[r].length; c++) {
-        const cell = board[r][c];
-        if (cell?.obstacle && cell.obstacle.durability >= SURVIVAL_MAX_OBSTACLE_DURABILITY) {
-          gameOver = true;
-          break;
-        }
-      }
-      if (gameOver) break;
-    }
-  }
-
-  return { score: totalScore, rngState: rng, gameOver };
-}
-
-/** Survivalウェーブを必要に応じて適用してから gameOver 判定を行う共通ヘルパー。
- *  processAction/processScopeSynthesis 等の末尾で applyGameOver の代わりに呼ぶ。 */
-function finalizeMove(state: GameState, collector?: TraceCollector): void {
-  if (state.mode === 'survival'
-      && state.seed !== undefined
-      && state.moveCount > 0
-      && state.moveCount % SURVIVAL_WAVE_INTERVAL === 0) {
-    const waveNumber = state.moveCount / SURVIVAL_WAVE_INTERVAL;
-    const nc = state.numColors ?? NUM_COLORS;
-    const result = applyWave(state.board, state.seed, waveNumber, state.rngState, nc, collector);
-    state.score += result.score;
-    state.rngState = result.rngState;
-    if (result.gameOver) {
-      state.isGameOver = true;
-    }
-  }
-  applyGameOver(state);
 }
 
 /** プレイヤーの操作を処理して新しいGameStateを返す */
@@ -625,7 +379,6 @@ export function processAction(state: GameState, action: Action, collector?: Trac
   const newState = cloneGameState(state);
   newState.lastChainCount = 0;
   const board = newState.board;
-  const nc = newState.numColors ?? NUM_COLORS;
 
   if (action.type === 'scope') {
     // scope起動: タップで1手消費、周囲4マス消去 + ユーザー選択マスを消去
@@ -634,7 +387,6 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
     const allCleared: Position[] = [];
     let depthLevels = 1;
-    const sparklesBefore = countSparkles(newState);
 
     // まず周囲上下左右4マスを消去
     const adjTargets = getScopeAdjacentTargets(board, action.pos);
@@ -688,30 +440,11 @@ export function processAction(state: GameState, action: Action, collector?: Trac
       }
     }
 
-    addClearedSparkleCp(newState, sparklesBefore);
-
     // collector: 消去完了後の盤面スナップショット
     collector?.onBoardSnapshot?.('boardAfterClear', cloneBoard(board));
 
-    // collector: gravity 前に dropMoves を計算
-    if (collector?.onDropData) {
-      const dm = computeDropMoves(board, isPassThroughMode(newState.mode));
-      collector.onDropData(dm.moves, dm.newTileEntries);
-    }
-
-    // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-    applyGravity(board, isPassThroughMode(newState.mode));
-    newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
-
-    // collector: gravity + fill 後の盤面スナップショット
-    collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
-
-    const chainResult = processChains(board, newState.rngState, chainStartAfterItems(depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
-    newState.score += chainResult.score;
-    newState.rngState = chainResult.rngState;
-
-    applyChainStats(newState, chainResult.steps);
-    finalizeMove(newState, collector);
+    applyChainStats(newState, dropFillAndChain(newState, chainStartAfterItems(depthLevels), collector));
+    applyGameOver(newState);
     return newState;
   }
 
@@ -733,30 +466,12 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     }
 
     collector?.onBoardSnapshot?.('beforeItemActivation', cloneBoard(board));
-    const sparklesBefore = countSparkles(newState);
     const result = activateItem(board, action.pos, item, targetColor, 1, newState.rngState, undefined, collector);
     newState.score += result.score;
     newState.rngState = result.rngState;
     newState.moveCount++;
-    addClearedSparkleCp(newState, sparklesBefore);
 
-    // collector: gravity 前に dropMoves を計算
-    if (collector?.onDropData) {
-      const dm = computeDropMoves(board, isPassThroughMode(newState.mode));
-      collector.onDropData(dm.moves, dm.newTileEntries);
-    }
-
-    // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-    applyGravity(board, isPassThroughMode(newState.mode));
-    newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
-
-    // collector: gravity + fill 後の盤面スナップショット
-    collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
-
-    const chainResult = processChains(board, newState.rngState, chainStartAfterItems(result.depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
-    newState.score += chainResult.score;
-    newState.rngState = chainResult.rngState;
-    applyChainStats(newState, chainResult.steps);
+    applyChainStats(newState, dropFillAndChain(newState, chainStartAfterItems(result.depthLevels), collector));
 
   } else {
     // スワイプ
@@ -776,7 +491,6 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
         collector?.onBoardSnapshot?.('afterSwap', cloneBoard(board));
 
-        const sparklesBefore = countSparkles(newState);
         const synthResult = processSynthesis(
           board, action.pos, targetPos, cell1.item, cell2.item,
           synthesis.effect, newState.rngState, collector
@@ -784,27 +498,9 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         newState.score += synthResult.score;
         newState.rngState = synthResult.rngState;
         newState.moveCount++;
-        addClearedSparkleCp(newState, sparklesBefore);
 
-        // collector: gravity 前に dropMoves を計算
-        if (collector?.onDropData) {
-          const dm = computeDropMoves(board, isPassThroughMode(newState.mode));
-          collector.onDropData(dm.moves, dm.newTileEntries);
-        }
-
-        // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-        applyGravity(board, isPassThroughMode(newState.mode));
-        newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
-
-        // collector: gravity + fill 後の盤面スナップショット
-        collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
-
-        const chainResult = processChains(board, newState.rngState, chainStartAfterItems(synthResult.depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
-        newState.score += chainResult.score;
-        newState.rngState = chainResult.rngState;
-
-        applyChainStats(newState, chainResult.steps);
-        finalizeMove(newState, collector);
+        applyChainStats(newState, dropFillAndChain(newState, chainStartAfterItems(synthResult.depthLevels), collector));
+        applyGameOver(newState);
         return newState;
       }
     }
@@ -849,25 +545,8 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
         collector?.onBoardSnapshot?.('boardAfterClear', cloneBoard(board));
 
-        const passThrough = isPassThroughMode(newState.mode);
-
-        // collector: gravity 前に dropMoves を計算
-        if (collector?.onDropData) {
-          const dm = computeDropMoves(board, passThrough);
-          collector.onDropData(dm.moves, dm.newTileEntries);
-        }
-
-        // 落下 → 補充 → 連鎖
-        applyGravity(board, passThrough);
-        newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
-
-        collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
-
-        const chainResult = processChains(board, newState.rngState, chainStartAfterItems(1), newState.mode, false, nc, collector, newState.sparkleRngState);
-        newState.score += chainResult.score;
-        newState.rngState = chainResult.rngState;
-        applyChainStats(newState, chainResult.steps);
-        finalizeMove(newState, collector);
+        applyChainStats(newState, dropFillAndChain(newState, chainStartAfterItems(1), collector));
+        applyGameOver(newState);
         return newState;
       }
 
@@ -880,10 +559,8 @@ export function processAction(state: GameState, action: Action, collector?: Trac
 
       collector?.onBoardSnapshot?.('afterSwap', cloneBoard(board));
 
-      const passThrough = isPassThroughMode(newState.mode);
-
       // #15: 野菜のマッチ判定を先に処理（pre-chains）
-      const preChainResult = processChains(board, newState.rngState, 1, newState.mode, false, nc, collector, newState.sparkleRngState);
+      const preChainResult = processChains(board, newState.rngState, 1, collector);
       newState.score += preChainResult.score;
       newState.rngState = preChainResult.rngState;
 
@@ -892,7 +569,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
       if (!currentItemPos) {
         // アイテムが消滅（pre-chainで誘爆等） — スワップのみ有効
         newState.moveCount++;
-        finalizeMove(newState, collector);
+        applyGameOver(newState);
         return newState;
       }
 
@@ -902,33 +579,16 @@ export function processAction(state: GameState, action: Action, collector?: Trac
       }
 
       collector?.onBoardSnapshot?.('beforeItemActivation', cloneBoard(board));
-      const sparklesBefore = countSparkles(newState);
       const result = activateItem(board, currentItemPos, itemCell.item!, targetColor, preChainResult.steps.length + 1, newState.rngState, undefined, collector);
       newState.score += result.score;
       newState.rngState = result.rngState;
       newState.moveCount++;
-      addClearedSparkleCp(newState, sparklesBefore);
 
-      // collector: gravity 前に dropMoves を計算
-      if (collector?.onDropData) {
-        const dm = computeDropMoves(board, passThrough);
-        collector.onDropData(dm.moves, dm.newTileEntries);
-      }
-
-      // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-      applyGravity(board, passThrough);
-      newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
-
-      // collector: gravity + fill 後の盤面スナップショット
-      collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
-
-      const chainResult = processChains(board, newState.rngState, chainStartAfterItems(result.depthLevels, preChainResult.steps.length), newState.mode, false, nc, collector, newState.sparkleRngState);
-      newState.score += chainResult.score;
-      newState.rngState = chainResult.rngState;
+      const chainSteps = dropFillAndChain(newState, chainStartAfterItems(result.depthLevels, preChainResult.steps.length), collector);
 
       // 入れ替えの連鎖とアイテムの後の連鎖を1回の操作としてまとめて集計する（lastChainCount は操作内の最大）
-      applyChainStats(newState, [...preChainResult.steps, ...chainResult.steps]);
-      finalizeMove(newState, collector);
+      applyChainStats(newState, [...preChainResult.steps, ...chainSteps]);
+      applyGameOver(newState);
       return newState;
     }
 
@@ -951,16 +611,10 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     // アイテム生成判定
     const itemGens = determineItemFromMatches(matches, [action.pos, targetPos]);
 
-    // マッチ消去（キラキラカウント付き）
+    // マッチ消去
     const cleared = getUniquePositions(matches);
-    let firstChainSparkle = 0;
     for (const pos of cleared) {
-      if (board[pos.row][pos.col]?.sparkle) firstChainSparkle++;
       board[pos.row][pos.col] = null;
-    }
-    // キラキラCP加算（1連鎖目は applyChainStats を通らないため直接加算）
-    if (newState.cascadePoints !== undefined && firstChainSparkle > 0) {
-      newState.cascadePoints += firstChainSparkle;
     }
 
     // スコア計算（1連鎖目）
@@ -973,21 +627,20 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     }
 
     // おじゃまタイルへのダメージ
-    const passThrough_swap = isPassThroughMode(newState.mode);
     const destroyedObstacles = damageObstacles(board, cleared);
     if (destroyedObstacles.length > 0) {
-      applyGravity(board, passThrough_swap);
-      newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
+      applyGravity(board);
+      newState.rngState = fillEmptyCells(board, newState.rngState);
     }
 
     // collector: gravity 前に dropMoves を計算
     const firstChainDropData = collector?.onChainStep
-      ? computeDropMoves(board, passThrough_swap)
+      ? computeDropMoves(board)
       : undefined;
 
     // 落下 → 補充 → 連鎖
-    applyGravity(board, passThrough_swap);
-    newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
+    applyGravity(board);
+    newState.rngState = fillEmptyCells(board, newState.rngState);
 
     // collector: inline first chain step を通知
     if (collector?.onChainStep) {
@@ -998,22 +651,20 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         destroyedObstacles,
         itemGens,
         score: stepScore,
-        sparkleCount: firstChainSparkle > 0 ? firstChainSparkle : undefined,
         dropMoves: firstChainDropData!.moves,
         newTileEntries: firstChainDropData!.newTileEntries,
         boardAfterDrop: cloneBoard(board),
       });
     }
 
-    const chainResult = processChains(board, newState.rngState, 2, newState.mode, false, nc, collector, newState.sparkleRngState);
+    const chainResult = processChains(board, newState.rngState, 2, collector);
     newState.score += chainResult.score;
     newState.rngState = chainResult.rngState;
 
-    // maxChainIndex 更新 (cascade mode)
     applyChainStats(newState, chainResult.steps);
   }
 
-  finalizeMove(newState, collector);
+  applyGameOver(newState);
   return newState;
 }
 
@@ -1104,7 +755,7 @@ function processSynthesis(
       effectType: effect, item1, item2, pos1, pos2,
       targets: allCleared, detonations: [], score: getFullClearBonus(),
     });
-    // 落下・補充は呼び出し側で行う（他の合成と同じくキラキラ用の乱数を使い、落下のアニメーションも出る）
+    // 落下・補充は呼び出し側で行う（他の合成と同じく落下のアニメーションも出る）
 
     return { score: totalScore, rngState: rng, clearedPositions: allCleared, depthLevels: 1 };
   }
@@ -1206,7 +857,6 @@ export function processScopeSynthesis(
   board[pos1.row][pos1.col] = null;
   board[pos2.row][pos2.col] = null;
   newState.moveCount++;
-  const sparklesBefore = countSparkles(newState);
 
   const synthPos = pos2;
   const effect = synthesis.effect;
@@ -1278,31 +928,11 @@ export function processScopeSynthesis(
     allCleared.push(...result.clearedPositions);
   }
 
-  addClearedSparkleCp(newState, sparklesBefore);
-
   // collector: 消去完了後の盤面スナップショット
   collector?.onBoardSnapshot?.('boardAfterClear', cloneBoard(board));
 
-  // collector: gravity 前に dropMoves を計算
-  if (collector?.onDropData) {
-    const dm = computeDropMoves(board, isPassThroughMode(newState.mode));
-    collector.onDropData(dm.moves, dm.newTileEntries);
-  }
-
-  // 落下 → 補充 → 連鎖（おじゃまダメージはアイテム効果内で直接処理済み）
-  const nc = newState.numColors ?? NUM_COLORS;
-  applyGravity(board, isPassThroughMode(newState.mode));
-  newState.rngState = fillEmptyCells(board, newState.rngState, nc, newState.sparkleRngState);
-
-  // collector: gravity + fill 後の盤面スナップショット
-  collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
-
-  const chainResult = processChains(board, newState.rngState, chainStartAfterItems(depthLevels), newState.mode, false, nc, collector, newState.sparkleRngState);
-  newState.score += chainResult.score;
-  newState.rngState = chainResult.rngState;
-
-  applyChainStats(newState, chainResult.steps);
-  finalizeMove(newState, collector);
+  applyChainStats(newState, dropFillAndChain(newState, chainStartAfterItems(depthLevels), collector));
+  applyGameOver(newState);
   return newState;
 }
 
@@ -1337,8 +967,7 @@ export function processScopeSwapPreChains(
   collector?.onBoardSnapshot?.('afterSwap', cloneBoard(board));
 
   // Pre-chains: process matches created by the vegetable swap
-  const nc = newState.numColors ?? NUM_COLORS;
-  const preChainResult = processChains(board, newState.rngState, 1, newState.mode, false, nc, collector, newState.sparkleRngState);
+  const preChainResult = processChains(board, newState.rngState, 1, collector);
   newState.score += preChainResult.score;
   newState.rngState = preChainResult.rngState;
   applyChainStats(newState, preChainResult.steps);
@@ -1361,7 +990,7 @@ export function processScopeSwap(
   if (!scopePos) {
     // Scope was destroyed during pre-chains
     newState.moveCount++;
-    finalizeMove(newState, collector);
+    applyGameOver(newState);
     return newState;
   }
 
@@ -1377,86 +1006,21 @@ export function applyReplayAction(state: GameState, action: ReplayAction): GameS
   switch (action.type) {
     case 'scope_synthesis': return processScopeSynthesis(state, action.pos1, action.pos2, action.targetCells);
     case 'scope_swap': return processScopeSwap(state, action.pos, action.dir, action.targetCells);
-    case 'auto_activate': return processAutoActivation(state);
     default: return processAction(state, action);
   }
 }
 
-/** Sprint終了時の残存アイテム自動発動（1アイテムのみ）。moveCountを増やさず、連鎖なし。
- *  最初に見つかったアイテムを1つ発動し、新しいGameStateを返す。
- *  scopeは周囲4マス消去のみ（ユーザー選択なし、誘爆時と同じ）。
- *  アイテムが見つからなければnullを返す。 */
-export function processAutoActivationStep(state: GameState, collector?: TraceCollector): GameState | null {
-  if (state.mode !== 'sprint') return null;
-
-  const current = cloneGameState(state);
-  const board = current.board;
-
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      const cell = board[r][c];
-      if (!cell?.item) continue;
-      const pos = { row: r, col: c };
-      let targetColor: number | undefined;
-      if (cell.item === 'flush') {
-        targetColor = findFlushTargetColor(board, pos) ?? undefined;
-        if (targetColor === undefined) continue;
-      }
-      collector?.onBoardSnapshot?.('beforeItemActivation', cloneBoard(board));
-      const result = activateItem(board, pos, cell.item, targetColor, 1, current.rngState, undefined, collector);
-      current.score += result.score;
-      current.rngState = result.rngState;
-
-      // collector: gravity 前に dropMoves を計算
-      if (collector?.onDropData) {
-        const dm = computeDropMoves(board, false);
-        collector.onDropData(dm.moves, dm.newTileEntries);
-      }
-
-      applyGravity(board, false);
-      current.rngState = fillEmptyCells(board, current.rngState, current.numColors ?? NUM_COLORS);
-
-      // collector: gravity + fill 後の盤面スナップショット
-      collector?.onBoardSnapshot?.('afterItemDrop', cloneBoard(board));
-
-      // 連鎖処理なし — アイテム効果のスコアのみ加算（#9: スキル要素を損なうランダム連鎖を抑制）
-      return current;
-    }
-  }
-
-  return null;
-}
-
-/** Sprint終了時の残存アイテム自動発動（全アイテム）。moveCountを増やさず、新アイテム生成を抑制する。 */
-export function processAutoActivation(state: GameState, collector?: TraceCollector): GameState {
-  if (state.mode !== 'sprint') return state;
-  let current = state;
-  let next = processAutoActivationStep(current, collector);
-  while (next) {
-    current = next;
-    next = processAutoActivationStep(current, collector);
-  }
-  return current;
-}
-
-/** 落下後の連鎖を処理
- * @param suppressItemGen true なら連鎖中のアイテム生成を抑制（Sprint終了時の自動発動用）
- */
+/** 落下後の連鎖を処理 */
 function processChains(
   board: (Cell | null)[][],
   rngState: number[],
   startChain: number,
-  mode: GameMode = 'sprint',
-  suppressItemGen = false,
-  numColors: number = NUM_COLORS,
   collector?: TraceCollector,
-  sparkleRngStates?: number[],
 ): { score: number; rngState: number[]; steps: ChainStep[] } {
   let rng = rngState;
   let totalScore = 0;
   const steps: ChainStep[] = [];
   let chainIndex = startChain;
-  const passThrough = isPassThroughMode(mode);
 
   const MAX_CHAIN_ITERATIONS = 20;
   let iterations = 0;
@@ -1473,21 +1037,19 @@ function processChains(
         if (m.length === 0) break;
         const c = getUniquePositions(m);
         for (const p of c) board[p.row][p.col] = null;
-        rng = processDamage(board, c, rng, mode, numColors, sparkleRngStates);
-        applyGravity(board, passThrough);
-        rng = fillEmptyCells(board, rng, numColors, sparkleRngStates);
+        rng = processDamage(board, c, rng);
+        applyGravity(board);
+        rng = fillEmptyCells(board, rng);
       }
       break;
     }
 
     // アイテム生成判定
-    const itemGens = suppressItemGen ? [] : determineItemFromMatches(matches);
+    const itemGens = determineItemFromMatches(matches);
 
-    // 消去（キラキラカウント付き）
+    // 消去
     const cleared = getUniquePositions(matches);
-    let sparkleCount = 0;
     for (const pos of cleared) {
-      if (board[pos.row][pos.col]?.sparkle) sparkleCount++;
       board[pos.row][pos.col] = null;
     }
 
@@ -1509,7 +1071,6 @@ function processChains(
       clearedPositions: cleared,
       generatedItems,
       score: stepScore,
-      sparkleCount: sparkleCount > 0 ? sparkleCount : undefined,
     });
 
     chainIndex++;
@@ -1517,18 +1078,18 @@ function processChains(
     // おじゃまタイルへのダメージ
     const destroyed = damageObstacles(board, cleared);
     if (destroyed.length > 0) {
-      applyGravity(board, passThrough);
-      rng = fillEmptyCells(board, rng, numColors, sparkleRngStates);
+      applyGravity(board);
+      rng = fillEmptyCells(board, rng);
     }
 
     // collector: gravity 前に dropMoves を計算
     const dropData = collector?.onChainStep
-      ? computeDropMoves(board, passThrough)
+      ? computeDropMoves(board)
       : undefined;
 
     // 落下 → 補充
-    applyGravity(board, passThrough);
-    rng = fillEmptyCells(board, rng, numColors, sparkleRngStates);
+    applyGravity(board);
+    rng = fillEmptyCells(board, rng);
 
     // collector: chain step 完了を通知
     if (collector?.onChainStep) {
@@ -1539,7 +1100,6 @@ function processChains(
         destroyedObstacles: destroyed,
         itemGens: generatedItems,
         score: stepScore,
-        sparkleCount: sparkleCount > 0 ? sparkleCount : undefined,
         dropMoves: dropData!.moves,
         newTileEntries: dropData!.newTileEntries,
         boardAfterDrop: cloneBoard(board),

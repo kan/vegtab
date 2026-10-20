@@ -1,11 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { initializeGame, processAction, processScopeSynthesis, cloneGameState } from '../src/engine.js';
+import { initializeGame, processAction, cloneGameState } from '../src/engine.js';
 import { hasMatches, findMatches } from '../src/match.js';
-import { isGameOver, hasValidSwap, hasActivatableItems, checkGameOverState } from '../src/gameOver.js';
-import { countObstacles, allObstaclesCleared } from '../src/obstacle.js';
-import { SURVIVAL_WAVE_INTERVAL, SURVIVAL_MAX_OBSTACLE_DURABILITY } from '../src/survival.js';
+import { checkGameOverState } from '../src/gameOver.js';
+import { countObstacles } from '../src/obstacle.js';
 import { generateDailySeed } from '../src/seed.js';
-import { BOARD_SIZE, Cell, Color, GameState } from '../src/types.js';
+import { BOARD_SIZE, Color, GameState } from '../src/types.js';
 
 describe('Game Initialization', () => {
   it('初期盤面にマッチが存在しない', () => {
@@ -27,15 +26,23 @@ describe('Game Initialization', () => {
     }
   });
 
+  it('初期化時にseed値が保存され、maxChainIndexは0', () => {
+    const state = initializeGame(42);
+    expect(state.seed).toBe(42);
+    expect(state.maxChainIndex).toBe(0);
+  });
+
   it('同一シードで同一の初期盤面を生成する（決定性）', () => {
     const s1 = initializeGame(12345);
     const s2 = initializeGame(12345);
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         expect(s1.board[r][c]!.color).toBe(s2.board[r][c]!.color);
+        expect(s1.board[r][c]?.obstacle?.durability).toBe(s2.board[r][c]?.obstacle?.durability);
       }
     }
     expect(s1.rngState).toEqual(s2.rngState);
+    expect(s1.seed).toBe(s2.seed);
   });
 
   it('異なるシードで異なる盤面を生成する', () => {
@@ -52,6 +59,13 @@ describe('Game Initialization', () => {
       if (!same) break;
     }
     expect(same).toBe(false);
+  });
+
+  it('cloneGameStateでseedが正しくコピーされる', () => {
+    const state = initializeGame(42);
+    const cloned = cloneGameState(state);
+    expect(cloned.seed).toBe(42);
+    expect(cloned.seed).toBe(state.seed);
   });
 });
 
@@ -130,59 +144,9 @@ describe('Game Over', () => {
   });
 });
 
-describe('Game Mode', () => {
-  it('デフォルトはSprintモード(15手)', () => {
-    const state = initializeGame(42);
-    expect(state.mode).toBe('sprint');
-    expect(state.moveLimit).toBe(15);
-  });
-
-  it('Sprintモードのカスタム手数', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 20 });
-    expect(state.moveLimit).toBe(20);
-  });
-
-  it('Sprintモードで規定手数到達時にゲーム終了', () => {
-    // 2手制限で2手打つ
-    let state = initializeGame(42, 'sprint', { moveLimit: 2 });
-    const action1 = findValidSwap(state);
-    if (!action1) return;
-    state = processAction(state, action1);
-    expect(state.moveCount).toBe(1);
-    expect(state.isGameOver).toBe(false);
-
-    const action2 = findValidSwap(state);
-    if (!action2) return;
-    state = processAction(state, action2);
-    expect(state.moveCount).toBe(2);
-    expect(state.isGameOver).toBe(true);
-  });
-});
-
-
-describe('Sprint game over (no item bonus)', () => {
-  it('Sprintモード終了時に残存アイテムボーナスは加算されない', () => {
-    // 1手制限で始めて、アイテムを配置してから1手消費
-    let state = initializeGame(42, 'sprint', { moveLimit: 1 });
-    state.board[7][7] = { color: 0 as Color, item: 'flush' };
-    const action = findValidSwap(state);
-    if (!action) return;
-    const newState = processAction(state, action);
-    if (newState.isGameOver) {
-      const flushOnBoard = newState.board.some(row =>
-        row.some(cell => cell?.item === 'flush')
-      );
-      if (flushOnBoard) {
-        // ボーナスなし: スコアは500未満のはず（アイテム自動発動はフロントエンド側で処理）
-        expect(newState.score).toBeLessThan(500);
-      }
-    }
-  });
-});
-
 describe('Scope Action', () => {
   it('scopeタップで1マス消去', () => {
-    let state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     // scopeを手動配置
     state.board[3][3] = { color: 0 as Color, item: 'scope' };
     const target = { row: 4, col: 4 };
@@ -199,7 +163,7 @@ describe('Scope Action', () => {
   });
 
   it('scopeでアイテムを選択するとそのアイテムが発動', () => {
-    let state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[3][3] = { color: 0 as Color, item: 'scope' };
     state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
     const newState = processAction(state, {
@@ -213,7 +177,7 @@ describe('Scope Action', () => {
   });
 
   it('通常tapではscopeは起動しない', () => {
-    let state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[3][3] = { color: 0 as Color, item: 'scope' };
     const newState = processAction(state, {
       type: 'tap',
@@ -224,73 +188,21 @@ describe('Scope Action', () => {
   });
 });
 
-describe('Sprint Mode', () => {
-  it('デフォルトのmoveLimitは15', () => {
-    const state = initializeGame(42, 'sprint');
-    expect(state.moveLimit).toBe(15);
-    expect(state.mode).toBe('sprint');
-  });
-
-  it('カスタムmoveLimitが設定できる', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 25 });
-    expect(state.moveLimit).toBe(25);
-  });
-
-  it('ゲーム終了時に残存アイテムボーナスは加算されない（自動発動はフロントエンド側）', () => {
-    let state = initializeGame(42, 'sprint', { moveLimit: 1 });
-    state.board[7][7] = { color: 0 as Color, item: 'v_cut' };
-    const action = findValidSwap(state);
-    if (!action) return;
-    const newState = processAction(state, action);
-    if (newState.isGameOver) {
-      const vCutOnBoard = newState.board.some(row =>
-        row.some(cell => cell?.item === 'v_cut')
-      );
-      if (vCutOnBoard) {
-        // ボーナスなし: v_cutの150点は加算されない
-        expect(newState.score).toBeLessThan(150);
-      }
-    }
-  });
-
-  it('Sprintモードではおじゃまタイルなし', () => {
-    const state = initializeGame(42, 'sprint');
-    const obstacleCount = countObstacles(state.board);
-    expect(obstacleCount).toBe(0);
-  });
-});
-
-describe('Clear Mode', () => {
+describe('おじゃまタイルとクリア判定', () => {
   it('初期化時におじゃまタイルが盤面に存在する', () => {
-    const state = initializeGame(42, 'clear');
-    expect(state.mode).toBe('clear');
+    const state = initializeGame(42);
     const count = countObstacles(state.board);
     expect(count).toBeGreaterThanOrEqual(10);
     expect(count).toBeLessThanOrEqual(20);
   });
 
   it('カスタムobstacleCountでおじゃまタイル数を指定できる', () => {
-    const state = initializeGame(42, 'clear', { obstacleCount: 5 });
+    const state = initializeGame(42, { obstacleCount: 5 });
     expect(countObstacles(state.board)).toBe(5);
   });
 
-  it('moveLimitは設定されない', () => {
-    const state = initializeGame(42, 'clear');
-    expect(state.moveLimit).toBeUndefined();
-  });
-
-  it('ゲーム終了時のスコアはmoveCountになる', () => {
-    // 全おじゃまタイルが除去された状態をシミュレート
-    const state = initializeGame(42, 'clear', { obstacleCount: 0 });
-    state.moveCount = 7;
-    // 盤面にはおじゃまタイルがないので checkGameOverState は isCleared: true を返す
-    const result = checkGameOverState(state);
-    expect(result.gameOver).toBe(true);
-    expect(result.isCleared).toBe(true);
-  });
-
   it('全おじゃまタイル除去でisCleared=true', () => {
-    const state = initializeGame(42, 'clear', { obstacleCount: 0 });
+    const state = initializeGame(42, { obstacleCount: 0 });
     const result = checkGameOverState(state);
     expect(result.gameOver).toBe(true);
     expect(result.isCleared).toBe(true);
@@ -298,7 +210,7 @@ describe('Clear Mode', () => {
 
   it('詰み状態でisCleared=false', () => {
     // 全セルをnullにして詰み状態にし、おじゃまタイルを残す
-    const state = initializeGame(42, 'clear');
+    const state = initializeGame(42);
     // 盤面をクリアして詰み状態にする
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -312,18 +224,23 @@ describe('Clear Mode', () => {
     expect(result.isCleared).toBe(false);
   });
 
-  it('Clearモードでもマッチによるスコアが加算される', () => {
-    const state = initializeGame(42, 'clear', { obstacleCount: 3 });
+  it('おじゃまタイルが残っていて詰みでなければゲームオーバーにならない', () => {
+    const state = initializeGame(42);
+    state.moveCount = 30;
+    const result = checkGameOverState(state);
+    expect(result.gameOver).toBe(false);
+  });
+
+  it('おじゃまタイルがある盤面でもマッチによるスコアが加算される', () => {
+    const state = initializeGame(42, { obstacleCount: 3 });
     const action = findValidSwap(state);
     if (!action) return;
     const newState = processAction(state, action);
-    if (!newState.isGameOver) {
-      expect(newState.score).toBeGreaterThanOrEqual(0);
-    }
+    expect(newState.score).toBeGreaterThan(0);
   });
 
   it('おじゃまタイルはスワイプで入れ替え可能', () => {
-    const state = initializeGame(42, 'clear', { obstacleCount: 1 });
+    const state = initializeGame(42, { obstacleCount: 1 });
     let obsPos: { row: number; col: number } | null = null;
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -344,111 +261,9 @@ describe('Clear Mode', () => {
     // マッチ不成立で戻るか、成立して新stateのどちらか
     expect(result).toBeDefined();
   });
-});
 
-describe('Survival Mode', () => {
-  it('初期化時にseed値が保存される', () => {
-    const state = initializeGame(42, 'survival');
-    expect(state.mode).toBe('survival');
-    expect(state.seed).toBe(42);
-  });
-
-  it('moveLimitは設定されない', () => {
-    const state = initializeGame(42, 'survival');
-    expect(state.moveLimit).toBeUndefined();
-  });
-
-  it('初期盤面にはおじゃまタイルが配置されない', () => {
-    const state = initializeGame(42, 'survival');
-    expect(countObstacles(state.board)).toBe(0);
-  });
-
-  it('耐久値4のおじゃまタイルが存在するとゲームオーバー判定される', () => {
-    const state = initializeGame(42, 'survival');
-    // 手動で耐久値4のおじゃまタイルを配置
-    state.board[0][0] = {
-      color: 0 as Color,
-      obstacle: { durability: SURVIVAL_MAX_OBSTACLE_DURABILITY },
-    };
-    const result = checkGameOverState(state);
-    expect(result.gameOver).toBe(true);
-  });
-
-  it('耐久値4未満のおじゃまタイルのみではゲームオーバーにならない（詰みでなければ）', () => {
-    const state = initializeGame(42, 'survival');
-    // 耐久値3のおじゃまを配置
-    state.board[0][0] = { color: 0 as Color, obstacle: { durability: 3 } };
-    const result = checkGameOverState(state);
-    // 詰みでなければゲームオーバーではない
-    if (hasValidSwap(state.board) || hasActivatableItems(state.board)) {
-      expect(result.gameOver).toBe(false);
-    }
-  });
-
-  it('おじゃまタイルが存在しない場合、詰みでなければゲームオーバーにならない', () => {
-    const state = initializeGame(42, 'survival');
-    state.moveCount = 3;
-    state.score = 0;
-    const result = checkGameOverState(state);
-    // 初期盤面はおじゃまなし・詰みでもないのでゲームオーバーにならない
-    if (hasValidSwap(state.board) || hasActivatableItems(state.board)) {
-      expect(result.gameOver).toBe(false);
-    }
-  });
-
-  it('cloneGameStateでseedが正しくコピーされる', () => {
-    const state = initializeGame(42, 'survival');
-    const cloned = cloneGameState(state);
-    expect(cloned.seed).toBe(42);
-    expect(cloned.seed).toBe(state.seed);
-  });
-
-  it('cloneGameStateで旧フィールド(quotaTable, segmentStartScore)が含まれない', () => {
-    const state = initializeGame(42, 'survival');
-    const cloned = cloneGameState(state);
-    expect((cloned as any).quotaTable).toBeUndefined();
-    expect((cloned as any).segmentStartScore).toBeUndefined();
-  });
-});
-
-describe('Mode Determinism', () => {
-  it('同一シード・同一モードで同一の状態を生成する', () => {
-    for (const mode of ['sprint', 'clear', 'survival'] as const) {
-      const s1 = initializeGame(42, mode);
-      const s2 = initializeGame(42, mode);
-      expect(s1.mode).toBe(s2.mode);
-      expect(s1.rngState).toEqual(s2.rngState);
-      expect(s1.moveLimit).toBe(s2.moveLimit);
-      expect(s1.seed).toBe(s2.seed);
-      for (let r = 0; r < BOARD_SIZE; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-          expect(s1.board[r][c]?.color).toBe(s2.board[r][c]?.color);
-          expect(s1.board[r][c]?.obstacle?.durability).toBe(s2.board[r][c]?.obstacle?.durability);
-        }
-      }
-    }
-  });
-
-  it('同一シードでもモードが異なれば状態が異なる', () => {
-    const sprint = initializeGame(42, 'sprint');
-    const clear = initializeGame(42, 'clear');
-    const survival = initializeGame(42, 'survival');
-
-    // Clear は obstacles があるので board が異なる
-    expect(countObstacles(clear.board)).toBeGreaterThan(0);
-    expect(countObstacles(sprint.board)).toBe(0);
-
-    // Survival は初期盤面におじゃまなし（Sprintと同じ）
-    expect(countObstacles(survival.board)).toBe(0);
-    // Sprint には moveLimit があり Survival にはない
-    expect(sprint.moveLimit).toBeDefined();
-    expect(survival.moveLimit).toBeUndefined();
-  });
-});
-
-describe('Clear Mode - Obstacle Damage via Match', () => {
   it('マッチ消去でおじゃまタイルにダメージが入る', () => {
-    const state = initializeGame(42, 'clear', { obstacleCount: 5 });
+    const state = initializeGame(42, { obstacleCount: 5 });
     const initialCount = countObstacles(state.board);
     expect(initialCount).toBe(5);
 
@@ -489,11 +304,11 @@ function findValidSwap(state: ReturnType<typeof initializeGame>) {
   return null;
 }
 
-describe('Cascade Mode - Chain Item Placement', () => {
+describe('Chain Item Placement', () => {
   it('連鎖中に生成されたアイテムが重力で正しい位置に落下する', () => {
-    // 2026-04-05のシードでCASCADEを初期化し、報告された手順を再現
+    // 2026-04-05のシードで、旧 Cascade で報告された手順を打つ（盤面は当時と異なる）
     const seed = generateDailySeed('2026-04-05');
-    let state = initializeGame(seed, 'cascade');
+    let state = initializeGame(seed);
 
     // 各手を実行した後、盤面が全セル埋まっていることを確認
     // （アイテムが不正な位置に上書きされていないことの検証）
@@ -523,7 +338,7 @@ describe('Cascade Mode - Chain Item Placement', () => {
   it('連鎖中アイテムは重力に参加し、宙に浮かない', () => {
     // 多数のシードで連鎖後のアイテム位置を検証
     for (const seedVal of [100, 200, 300, 400, 500]) {
-      let state = initializeGame(seedVal, 'cascade');
+      let state = initializeGame(seedVal);
       const action = findValidSwap(state);
       if (!action) continue;
 
@@ -544,17 +359,17 @@ describe('Cascade Mode - Chain Item Placement', () => {
   });
 });
 
-describe('Item Immediate Placement - All Modes', () => {
-  /** 全モードで processAction 後の盤面が整合していることを検証するヘルパー */
+describe('Item Immediate Placement - Board Integrity', () => {
+  /** processAction 後の盤面が整合していることを検証するヘルパー */
   function assertBoardIntegrity(state: GameState, label: string) {
-    // 全セルが埋まっている（おじゃまタイル消滅直後を除く）
+    // 全セルが埋まっている
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
-        expect(state.board[r][c]).not.toBeNull();
+        expect(state.board[r][c], `${label}: null at (${r},${c})`).not.toBeNull();
       }
     }
     // マッチが残っていない
-    expect(hasMatches(state.board)).toBe(false);
+    expect(hasMatches(state.board), `${label}: matches remain`).toBe(false);
     // アイテムが宙に浮いていない（下にnullがない）
     for (let r = 0; r < BOARD_SIZE - 1; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
@@ -567,95 +382,62 @@ describe('Item Immediate Placement - All Modes', () => {
     }
   }
 
-  it('Sprint: 全シードで連鎖後の盤面整合性', () => {
+  it('全シードで連鎖後の盤面整合性（おじゃまタイル含む）', () => {
     for (const seed of [42, 100, 200, 300, 777, 999]) {
-      let state = initializeGame(seed, 'sprint');
+      let state = initializeGame(seed);
       const action = findValidSwap(state);
       if (!action) continue;
       state = processAction(state, action);
-      assertBoardIntegrity(state, `sprint seed=${seed}`);
+      assertBoardIntegrity(state, `seed=${seed}`);
     }
   });
 
-  it('Clear: 全シードで連鎖後の盤面整合性（おじゃまタイル含む）', () => {
-    for (const seed of [42, 100, 200, 300, 777]) {
-      let state = initializeGame(seed, 'clear', { obstacleCount: 5 });
+  it('おじゃまタイルの個数を変えても連鎖後の盤面が整合する', () => {
+    for (const obstacleCount of [5, 20]) {
+      let state = initializeGame(42, { obstacleCount });
       const action = findValidSwap(state);
       if (!action) continue;
       state = processAction(state, action);
-      // Clearモードでは全セル埋まっている必要がある
-      for (let r = 0; r < BOARD_SIZE; r++) {
-        for (let c = 0; c < BOARD_SIZE; c++) {
-          expect(state.board[r][c]).not.toBeNull();
-        }
-      }
-      expect(hasMatches(state.board)).toBe(false);
+      assertBoardIntegrity(state, `obstacleCount=${obstacleCount}`);
     }
   });
 
-  it('Survival: 全シードで連鎖後の盤面整合性', () => {
-    for (const seed of [42, 100, 200, 300, 777]) {
-      let state = initializeGame(seed, 'survival');
-      const action = findValidSwap(state);
-      if (!action) continue;
-      state = processAction(state, action);
-      if (state.isGameOver) continue; // ウェーブ侵食によるゲームオーバーの場合はスキップ
-      assertBoardIntegrity(state, `survival seed=${seed}`);
-    }
-  });
-
-  it('Cascade: 全シードで連鎖後の盤面整合性', () => {
-    for (const seed of [42, 100, 200, 300, 777, 999]) {
-      let state = initializeGame(seed, 'cascade');
-      const action = findValidSwap(state);
-      if (!action) continue;
-      state = processAction(state, action);
-      assertBoardIntegrity(state, `cascade seed=${seed}`);
-    }
-  });
-
-  it('全モードで複数手を連続実行しても盤面が整合する', () => {
-    const modes = ['sprint', 'clear', 'survival', 'cascade'] as const;
-    for (const mode of modes) {
-      const opts = mode === 'clear' ? { obstacleCount: 5 } : undefined;
-      let state = initializeGame(42, mode, opts);
+  it('複数手を連続実行しても盤面が整合する', () => {
+    for (const seed of [42, 100]) {
+      let state = initializeGame(seed);
       for (let i = 0; i < 5; i++) {
         const action = findValidSwap(state);
         if (!action) break;
         state = processAction(state, action);
         if (state.isGameOver) break;
         // 毎手ごとに全セル埋まり+マッチなし
-        for (let r = 0; r < BOARD_SIZE; r++) {
-          for (let c = 0; c < BOARD_SIZE; c++) {
-            expect(state.board[r][c], `${mode} step=${i}: null at (${r},${c})`).not.toBeNull();
-          }
-        }
-        expect(hasMatches(state.board), `${mode} step=${i}: matches remain`).toBe(false);
+        assertBoardIntegrity(state, `seed=${seed} step=${i}`);
       }
     }
   });
 });
 
 describe('Item Immediate Placement - Determinism', () => {
-  it('即座配置でも同一シード・同一操作で同一結果（全モード）', () => {
-    const modes = ['sprint', 'clear', 'survival', 'cascade'] as const;
-    for (const mode of modes) {
-      const opts = mode === 'clear' ? { obstacleCount: 5 } : undefined;
-      const s1 = initializeGame(42, mode, opts);
-      const s2 = initializeGame(42, mode, opts);
+  it('即座配置でも同一シード・同一操作で同一結果', () => {
+    for (const obstacleCount of [undefined, 5]) {
+      const s1 = initializeGame(42, { obstacleCount });
+      const s2 = initializeGame(42, { obstacleCount });
       const action = findValidSwap(s1);
       if (!action) continue;
 
       const r1 = processAction(s1, action);
       const r2 = processAction(s2, action);
 
-      expect(r1.score, `${mode}: score mismatch`).toBe(r2.score);
-      expect(r1.rngState, `${mode}: rng mismatch`).toEqual(r2.rngState);
-      expect(r1.moveCount, `${mode}: moveCount mismatch`).toBe(r2.moveCount);
+      const label = `obstacleCount=${obstacleCount}`;
+      expect(r1.score, `${label}: score mismatch`).toBe(r2.score);
+      expect(r1.rngState, `${label}: rng mismatch`).toEqual(r2.rngState);
+      expect(r1.moveCount, `${label}: moveCount mismatch`).toBe(r2.moveCount);
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
-          expect(r1.board[r][c]?.color, `${mode}: color at (${r},${c})`).toBe(r2.board[r][c]?.color);
-          expect(r1.board[r][c]?.item, `${mode}: item at (${r},${c})`).toBe(r2.board[r][c]?.item);
+          expect(r1.board[r][c]?.color, `${label}: color at (${r},${c})`).toBe(r2.board[r][c]?.color);
+          expect(r1.board[r][c]?.item, `${label}: item at (${r},${c})`).toBe(r2.board[r][c]?.item);
+          expect(r1.board[r][c]?.obstacle?.durability, `${label}: obstacle at (${r},${c})`)
+            .toBe(r2.board[r][c]?.obstacle?.durability);
         }
       }
     }
@@ -663,8 +445,8 @@ describe('Item Immediate Placement - Determinism', () => {
 
   it('複数手実行後も決定性が保たれる', () => {
     for (const seed of [42, 123, 456]) {
-      const s1 = initializeGame(seed, 'cascade');
-      const s2 = initializeGame(seed, 'cascade');
+      const s1 = initializeGame(seed);
+      const s2 = initializeGame(seed);
 
       let state1 = s1;
       let state2 = s2;
@@ -678,10 +460,12 @@ describe('Item Immediate Placement - Determinism', () => {
 
       expect(state1.score).toBe(state2.score);
       expect(state1.moveCount).toBe(state2.moveCount);
+      expect(state1.maxChainIndex).toBe(state2.maxChainIndex);
       for (let r = 0; r < BOARD_SIZE; r++) {
         for (let c = 0; c < BOARD_SIZE; c++) {
           expect(state1.board[r][c]?.color).toBe(state2.board[r][c]?.color);
           expect(state1.board[r][c]?.item).toBe(state2.board[r][c]?.item);
+          expect(state1.board[r][c]?.obstacle?.durability).toBe(state2.board[r][c]?.obstacle?.durability);
         }
       }
     }
@@ -693,7 +477,7 @@ describe('Item Immediate Placement - Item Generation in Chains', () => {
     // 多数のシードを試して、アイテムが生成されるケースを探す
     let found = false;
     for (const seed of [42, 55, 77, 100, 123, 200, 300, 400, 500, 600, 700, 800, 900, 999]) {
-      let state = initializeGame(seed, 'sprint');
+      let state = initializeGame(seed);
       // 複数手を試す
       for (let i = 0; i < 10 && !state.isGameOver; i++) {
         const action = findValidSwap(state);
@@ -732,53 +516,48 @@ describe('Item Immediate Placement - Item Generation in Chains', () => {
     // findMatchesはitem付きセルをスキップするため、アイテムがマッチに含まれることはない
     // これを間接的に検証: 連鎖完了後の盤面にアイテムが残っていて、かつマッチがない
     for (const seed of [42, 100, 200, 300, 500, 777]) {
-      for (const mode of ['sprint', 'cascade'] as const) {
-        let state = initializeGame(seed, mode);
-        for (let i = 0; i < 5 && !state.isGameOver; i++) {
-          const action = findValidSwap(state);
-          if (!action) break;
-          state = processAction(state, action);
+      let state = initializeGame(seed);
+      for (let i = 0; i < 5 && !state.isGameOver; i++) {
+        const action = findValidSwap(state);
+        if (!action) break;
+        state = processAction(state, action);
 
-          // マッチが残っていない（アイテムセルが誤ってマッチに参加していない）
-          expect(hasMatches(state.board)).toBe(false);
+        // マッチが残っていない（アイテムセルが誤ってマッチに参加していない）
+        expect(hasMatches(state.board)).toBe(false);
 
-          // アイテムがあればfindMatchesで返るマッチに含まれていないことを二重確認
-          const matches = findMatches(state.board);
-          expect(matches.length).toBe(0);
-        }
+        // アイテムがあればfindMatchesで返るマッチに含まれていないことを二重確認
+        const matches = findMatches(state.board);
+        expect(matches.length).toBe(0);
       }
     }
   });
 
-  it('Cascadeモードで連鎖が正しくカウントされる（cascadePoints が加算される）', () => {
-    // Cascadeモードでは chainIndex >= 2 の連鎖に対してCPが加算される
-    // 即座配置に変更しても、連鎖カウントが正しく機能することを確認
+  it('2連鎖以上が起きると maxChainIndex が 2 以上になる', () => {
+    // maxChainIndex は全操作で更新される
     let foundChain = false;
     for (const seed of [42, 100, 200, 300, 400, 500, 600, 700, 800, 900]) {
-      let state = initializeGame(seed, 'cascade');
+      let state = initializeGame(seed);
       for (let i = 0; i < 10 && !state.isGameOver; i++) {
         const action = findValidSwap(state);
         if (!action) break;
-        const prevCP = state.cascadePoints ?? 0;
         state = processAction(state, action);
 
-        if ((state.cascadePoints ?? 0) > prevCP) {
+        if ((state.lastChainCount ?? 0) >= 2) {
           foundChain = true;
-          // CPが増えた場合、maxChainIndexも2以上であるはず
-          expect(state.maxChainIndex).toBeGreaterThanOrEqual(2);
+          expect(state.maxChainIndex).toBeGreaterThanOrEqual(state.lastChainCount!);
           break;
         }
       }
       if (foundChain) break;
     }
-    expect(foundChain, 'No chain with CP found across tested seeds').toBe(true);
+    expect(foundChain, 'No chain of 2 or more found across tested seeds').toBe(true);
   });
 });
 
 describe('Item Immediate Placement - Edge Cases', () => {
   it('手動配置したアイテムがfindMatchesでスキップされる', () => {
     // アイテム付きセルはマッチ対象から除外されることの直接テスト
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     // 盤面の一部にアイテムを配置してマッチを崩す
     state.board[0][0] = { color: 0 as Color, item: 'scope' };
 
@@ -796,7 +575,7 @@ describe('Item Immediate Placement - Edge Cases', () => {
 
   it('盤面上にアイテムがある状態からのスワップで整合性が保たれる', () => {
     // 先にアイテムを生成させてから、次の手を打つ
-    let state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    let state = initializeGame(42);
 
     // 数手プレイしてアイテムが盤面に残る状態を作る
     for (let i = 0; i < 15; i++) {
@@ -822,11 +601,11 @@ describe('Item Immediate Placement - Edge Cases', () => {
     }
   });
 
-  it('Clear モードのおじゃまタイルとアイテムの共存', () => {
-    // おじゃまタイルがセグメントバリアとして機能している中でも
+  it('おじゃまタイルとアイテムの共存', () => {
+    // おじゃまタイルを固定して他のタイルがすり抜けて落ちる中でも
     // アイテムが正しく配置・落下すること
     for (const seed of [42, 100, 200]) {
-      let state = initializeGame(seed, 'clear', { obstacleCount: 10 });
+      let state = initializeGame(seed, { obstacleCount: 10 });
       for (let i = 0; i < 10 && !state.isGameOver; i++) {
         const action = findValidSwap(state);
         if (!action) break;
@@ -846,8 +625,11 @@ describe('Item Immediate Placement - Edge Cases', () => {
 });
 
 describe('サラダボウル×おじゃまタイル スワイプ', () => {
+  /** シード配置のおじゃまタイルが無い盤面（テストで置いたおじゃまだけが残る） */
+  const boardWithoutObstacles = () => initializeGame(42, { obstacleCount: 0 });
+
   it('flush×おじゃまスワイプで全おじゃまの耐久値が1減少する', () => {
-    const state = initializeGame(42, 'survival');
+    const state = boardWithoutObstacles();
     // (3,3) にflush、(3,4) におじゃま耐久値2を配置
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
@@ -859,7 +641,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
     expect(result).not.toBe(state); // 操作が有効
 
     // スワップ後: flush→(3,4), obstacle→(3,3)。flushは消去され、全おじゃまに-1ダメージ
-    // (3,3) のおじゃま: 耐久値2→1（おじゃまはSurvivalでは落下しないので位置固定）
+    // (3,3) のおじゃま: 耐久値2→1（おじゃまは落下しないので位置固定）
     const obs33 = result.board[3][3]?.obstacle;
     expect(obs33).toBeDefined();
     expect(obs33!.durability).toBe(1);
@@ -876,7 +658,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('flush×おじゃまスワイプは1手消費する', () => {
-    const state = initializeGame(42, 'survival');
+    const state = boardWithoutObstacles();
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
     const beforeMoves = state.moveCount;
@@ -886,7 +668,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('flush×おじゃまスワイプでflushが消去される', () => {
-    const state = initializeGame(42, 'survival');
+    const state = boardWithoutObstacles();
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
 
@@ -898,7 +680,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('おじゃまがない盤面でflush×非おじゃまスワイプは通常の色消去が発動する', () => {
-    const state = initializeGame(42, 'sprint');
+    const state = boardWithoutObstacles();
     // flushと通常タイルのスワイプ
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 1 as Color }; // 通常タイル
@@ -911,7 +693,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('flush×おじゃまスワイプで破壊されたおじゃま1個につき10点加算される', () => {
-    const state = initializeGame(42, 'survival');
+    const state = boardWithoutObstacles();
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 1 } };
     // 耐久値1のおじゃまをさらに2個配置（計3個が破壊される）
@@ -925,7 +707,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('耐久値が高いおじゃまのみの場合はスコアが0点（破壊なし）', () => {
-    const state = initializeGame(42, 'survival');
+    const state = boardWithoutObstacles();
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 3 } };
     // 他のおじゃまも高耐久値
@@ -936,6 +718,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
     // 破壊0個のダメージスコアは0（連鎖のスコアのみ）
     // ダメージスコア(destroyed.length * 10)の部分は0であることを間接確認
     expect(result).not.toBe(state); // 操作は有効
+    expect(result.score).toBeGreaterThanOrEqual(scoreBefore);
     // (3,4)のおじゃま耐久値は3→2、(0,0)は4→3
     const obs34 = result.board[3][4]?.obstacle;
     if (obs34) expect(obs34.durability).toBe(2);
@@ -944,7 +727,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('逆方向（おじゃま側からflush側へ）スワイプでも全おじゃまにダメージが入る', () => {
-    const state = initializeGame(42, 'survival');
+    const state = boardWithoutObstacles();
     // (3,3)におじゃま、(3,4)にflush
     state.board[3][3] = { color: 0 as Color, obstacle: { durability: 2 } };
     state.board[3][4] = { color: 0 as Color, item: 'flush' };
@@ -964,8 +747,8 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
     expect(obs00!.durability).toBe(2);
   });
 
-  it('Clearモードでもflush×おじゃまスワイプが動作する', () => {
-    const state = initializeGame(42, 'clear');
+  it('シード配置のおじゃまがある盤面でもflush×おじゃまスワイプが動作する', () => {
+    const state = initializeGame(42);
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
     state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
@@ -977,7 +760,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('flush×おじゃまスワイプ後に落下と補充が実行される', () => {
-    const state = initializeGame(42, 'survival');
+    const state = boardWithoutObstacles();
     // 上部におじゃま(耐久値1)、その上に通常タイルを配置
     state.board[5][5] = { color: 0 as Color, obstacle: { durability: 1 } };
     state.board[4][5] = { color: 1 as Color };
@@ -995,18 +778,29 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('flush×おじゃまスワイプ後にゲームオーバー判定が実行される', () => {
-    const state = initializeGame(42, 'survival');
+    const state = boardWithoutObstacles();
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
 
     const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
-    // finalizeMove が呼ばれており、isGameOver フラグが適切に設定されている
-    expect(typeof result.isGameOver).toBe('boolean');
+    // 耐久値2→1 でおじゃまが残るのでクリアにならない
+    expect(result.isGameOver).toBe(false);
+    expect(result.isCleared).not.toBe(true);
+  });
+
+  it('flush×おじゃまスワイプで最後のおじゃまを壊すとクリアになる', () => {
+    const state = boardWithoutObstacles();
+    state.board[3][3] = { color: 0 as Color, item: 'flush' };
+    state.board[3][4] = { color: 0 as Color, obstacle: { durability: 1 } };
+
+    const result = processAction(state, { type: 'swap', pos: { row: 3, col: 3 }, dir: 'right' });
+    expect(result.isGameOver).toBe(true);
+    expect(result.isCleared).toBe(true);
   });
 
   it('flush×おじゃまスワイプは決定的である（同一入力で同一結果）', () => {
     function run() {
-      const state = initializeGame(42, 'survival');
+      const state = boardWithoutObstacles();
       state.board[3][3] = { color: 0 as Color, item: 'flush' };
       state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
       state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
@@ -1029,16 +823,7 @@ describe('サラダボウル×おじゃまタイル スワイプ', () => {
   });
 
   it('おじゃまタイルが1つだけ（スワイプ対象のみ）の場合', () => {
-    // sprintモードはおじゃま自動生成なし
-    const state = initializeGame(42, 'sprint');
-    // 盤面のおじゃまをクリアしてからテスト
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        if (state.board[r][c]?.obstacle) {
-          state.board[r][c] = { color: 0 as Color };
-        }
-      }
-    }
+    const state = boardWithoutObstacles();
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 1 } };
     // おじゃまは(3,4)の1個のみ

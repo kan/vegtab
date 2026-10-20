@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Bindings, Variables } from '../types';
-import { ACHIEVEMENT_DEFS } from '../lib/achievement-defs';
+import { ACHIEVEMENT_DEFS } from '@vegtab/engine';
 
 const unlockSchema = z.object({
   /** Client-unlockable achievement types (not tied to score submission) */

@@ -535,19 +535,11 @@ export const tutorialSections: TutorialSection[] = [
     ],
   },
   {
-    id: 'modes',
-    titleKey: 'tutorial.section_modes',
+    id: 'goal',
+    titleKey: 'tutorial.section_goal',
     steps: [
       {
-        id: 'mode_sprint',
-
-        type: 'info',
-        titleKey: 'tutorial.step15_title',
-        bodyKey: 'tutorial.step15_body',
-        image: '/tutorial/sprint.png',
-      },
-      {
-        id: 'mode_clear',
+        id: 'clear_goal',
 
         type: 'info',
         titleKey: 'tutorial.step16_title',
@@ -560,22 +552,6 @@ export const tutorialSections: TutorialSection[] = [
           [2, 5, { color: 0 as Color, obstacle: { durability: 1 } }],
         ]),
         focusArea: { startRow: 1, startCol: 2, rows: 3, cols: 5 },
-      },
-      {
-        id: 'mode_survival',
-
-        type: 'info',
-        titleKey: 'tutorial.step17_title',
-        bodyKey: 'tutorial.step17_body',
-        image: '/tutorial/survival.png',
-      },
-      {
-        id: 'mode_cascade',
-
-        type: 'info',
-        titleKey: 'tutorial.step18_title',
-        bodyKey: 'tutorial.step18_body',
-        image: '/tutorial/cascade.png',
       },
     ],
   },

@@ -2,6 +2,26 @@ import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 import { todayJST } from '../lib/date';
 import { findOrCreateDailySeed } from '../lib/seed';
+import { MODE } from '../lib/mode';
+
+/** The user's stored best for a seed (POST /api/scores keeps only the best row) */
+interface BestScore {
+  isCleared: boolean;
+  moveCount: number;
+  score: number;
+}
+
+const BEST_COLUMNS = 'is_cleared, move_count, score';
+
+interface BestScoreRow {
+  is_cleared: number;
+  move_count: number;
+  score: number;
+}
+
+function toBestScore(row: BestScoreRow): BestScore {
+  return { isCleared: !!row.is_cleared, moveCount: row.move_count, score: row.score };
+}
 
 export const seedRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -36,22 +56,18 @@ seedRoutes.get('/daily/calendar', async (c) => {
     id: string; seed_value: string; share_code: string; daily_date: string;
   }>();
 
-  // Check which seeds the user has played
+  // The user's stored best per seed (one row per user×seed×mode)
   const seedIds = (seeds.results ?? []).map((s) => s.id);
-  let userScores: Record<string, { sprint: number | null }> = {};
+  const userScores: Record<string, BestScore> = {};
   if (seedIds.length > 0) {
     const placeholders = seedIds.map(() => '?').join(',');
     const scores = await c.env.DB.prepare(
-      `SELECT seed_id, mode, MAX(score) as best_score FROM play_scores
-       WHERE user_id = ? AND seed_id IN (${placeholders})
-       GROUP BY seed_id, mode`
-    ).bind(userId, ...seedIds).all<{ seed_id: string; mode: string; best_score: number }>();
+      `SELECT seed_id, ${BEST_COLUMNS} FROM play_scores
+       WHERE user_id = ? AND mode = ? AND seed_id IN (${placeholders})`
+    ).bind(userId, MODE, ...seedIds).all<BestScoreRow & { seed_id: string }>();
 
     for (const s of scores.results ?? []) {
-      if (!userScores[s.seed_id]) userScores[s.seed_id] = { sprint: null };
-      if (s.mode === 'sprint') {
-        userScores[s.seed_id].sprint = s.best_score;
-      }
+      userScores[s.seed_id] = toBestScore(s);
     }
   }
 
@@ -79,15 +95,9 @@ seedRoutes.get('/:id', async (c) => {
   }>();
   if (!seed) return c.json({ error: 'Seed not found' }, 404);
 
-  // Get user's best scores
-  const scores = await c.env.DB.prepare(
-    'SELECT mode, MAX(score) as best_score FROM play_scores WHERE user_id = ? AND seed_id = ? GROUP BY mode'
-  ).bind(userId, seedId).all<{ mode: string; best_score: number }>();
-
-  const bestScores: Record<string, number> = {};
-  for (const s of scores.results ?? []) {
-    bestScores[s.mode] = s.best_score;
-  }
+  const best = await c.env.DB.prepare(
+    `SELECT ${BEST_COLUMNS} FROM play_scores WHERE user_id = ? AND seed_id = ? AND mode = ?`
+  ).bind(userId, seedId, MODE).first<BestScoreRow>();
 
   return c.json({
     seedId: seed.id,
@@ -95,7 +105,7 @@ seedRoutes.get('/:id', async (c) => {
     shareCode: seed.share_code,
     isDaily: !!seed.is_daily,
     dailyDate: seed.daily_date,
-    bestScores,
+    best: best ? toBestScore(best) : null,
   });
 });
 

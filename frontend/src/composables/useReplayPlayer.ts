@@ -1,8 +1,8 @@
 import { ref, computed, reactive, onUnmounted } from 'vue';
 import {
-  initializeGame, processAction, processScopeSynthesis, processScopeSwap, processAutoActivation,
+  initializeGame, applyReplayAction,
   computeSwapPlan,
-  type GameState, type GameMode, type Cell, type GameInitParams, type ChainAnimData,
+  type GameState, type Cell, type ChainAnimData,
 } from '@vegtab/engine';
 import type { ReplayAction } from '@/stores/puzzle';
 
@@ -21,7 +21,6 @@ export function useReplayPlayer() {
   const isPlaying = ref(false);
   const speed = ref(1000);
   const recordedFinalScore = ref<number | null>(null);
-  const recordedCascadePoints = ref<number | null>(null);
 
   // Animation state
   const isAnimating = ref(false);
@@ -48,10 +47,6 @@ export function useReplayPlayer() {
     return currentState.value?.score ?? 0;
   });
   const currentMoveCount = computed(() => currentState.value?.moveCount ?? 0);
-  const currentCascadePoints = computed(() => {
-    if (isAtEnd.value && recordedCascadePoints.value !== null) return recordedCascadePoints.value;
-    return currentState.value?.cascadePoints ?? 0;
-  });
 
   const currentAction = computed<ReplayAction | null>(() =>
     currentStep.value > 0 ? actions.value[currentStep.value - 1] ?? null : null,
@@ -73,20 +68,16 @@ export function useReplayPlayer() {
     isAnimating.value = false;
   }
 
-  function load(
-    seed: number, mode: GameMode, replayActions: ReplayAction[], params?: GameInitParams,
-    recorded?: { finalScore?: number; cascadePoints?: number },
-  ) {
+  function load(seed: number, replayActions: ReplayAction[], recorded?: { finalScore?: number }) {
     pause();
     cancelAnimation();
     actions.value = replayActions;
     recordedFinalScore.value = recorded?.finalScore ?? null;
-    recordedCascadePoints.value = recorded?.cascadePoints ?? null;
 
     const states: GameState[] = [];
     const chains: number[] = [];
     const anims: StepAnimData[] = [];
-    let state = initializeGame(seed, mode, params);
+    let state = initializeGame(seed);
     states.push(state);
 
     for (const action of replayActions) {
@@ -98,27 +89,10 @@ export function useReplayPlayer() {
         state = plan.finalState;
       } else {
         anims.push({ chains: [] });
-        if (action.type === 'scope_synthesis') {
-          state = processScopeSynthesis(state, action.pos1, action.pos2, action.targetCells);
-        } else if (action.type === 'scope_swap') {
-          state = processScopeSwap(state, action.pos, action.dir, action.targetCells);
-        } else if (action.type !== 'auto_activate') {
-          state = processAction(state, action);
-        }
+        state = applyReplayAction(state, action);
       }
       states.push(state);
       chains.push(state.lastChainCount ?? 0);
-    }
-
-    // Sprint auto-activation
-    if (state.isGameOver && mode === 'sprint') {
-      const afterAuto = processAutoActivation(state);
-      if (afterAuto.score !== state.score) {
-        actions.value = [...replayActions, { type: 'auto_activate' as const }];
-        states.push(afterAuto);
-        chains.push(0);
-        anims.push({ chains: [] });
-      }
     }
 
     gameStates.value = states;
@@ -250,9 +224,7 @@ export function useReplayPlayer() {
     currentBoard,
     currentScore,
     currentMoveCount,
-    currentCascadePoints,
     recordedFinalScore,
-    recordedCascadePoints,
     currentAction,
     nextAction,
     isPlaying,

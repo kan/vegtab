@@ -8,17 +8,19 @@ import type { Cell } from './types.js';
 import { BOARD_SIZE } from './types.js';
 import type { DropMove, NewTileEntry } from './traceCollector.js';
 
-function computeDropMovesForSegment(
+/**
+ * おじゃまタイルのない列の落下移動。下のすり抜け用の計算でも moves は同じになるが、
+ * newTileEntries の並び（こちらは上の行から）が変わり、アニメーション計画の内容が変わるので分けている
+ */
+function computeDropMovesForPlainColumn(
   board: (Cell | null)[][],
   col: number,
-  start: number,
-  end: number,
   moves: DropMove[],
   newTileEntries: NewTileEntry[],
 ): void {
-  let writeRow = end - 1;
+  let writeRow = BOARD_SIZE - 1;
   let nullCount = 0;
-  for (let readRow = end - 1; readRow >= start; readRow--) {
+  for (let readRow = BOARD_SIZE - 1; readRow >= 0; readRow--) {
     if (board[readRow][col] !== null) {
       if (writeRow !== readRow) {
         moves.push({ col, fromRow: readRow, toRow: writeRow });
@@ -30,12 +32,13 @@ function computeDropMovesForSegment(
   }
   if (nullCount > 0) {
     for (let i = 0; i < nullCount; i++) {
-      newTileEntries.push({ row: start + i, col, segNulls: nullCount });
+      newTileEntries.push({ row: i, col, segNulls: nullCount });
     }
   }
 }
 
-export function computeDropMoves(board: (Cell | null)[][], passThroughObstacles = false) {
+/** applyGravity と同じく、おじゃまタイルを固定して他のタイルがすり抜けて落ちる前提で計算する */
+export function computeDropMoves(board: (Cell | null)[][]) {
   const moves: DropMove[] = [];
   const newTileEntries: NewTileEntry[] = [];
   for (let col = 0; col < BOARD_SIZE; col++) {
@@ -45,8 +48,8 @@ export function computeDropMoves(board: (Cell | null)[][], passThroughObstacles 
     }
 
     if (!hasObstacle) {
-      computeDropMovesForSegment(board, col, 0, BOARD_SIZE, moves, newTileEntries);
-    } else if (passThroughObstacles) {
+      computeDropMovesForPlainColumn(board, col, moves, newTileEntries);
+    } else {
       const freeRows: number[] = [];
       const tiles: { row: number; cell: Cell }[] = [];
       for (let row = BOARD_SIZE - 1; row >= 0; row--) {
@@ -71,21 +74,6 @@ export function computeDropMoves(board: (Cell | null)[][], passThroughObstacles 
         for (const row of topFreeRows) {
           newTileEntries.push({ row, col, segNulls: nullCount });
         }
-      }
-    } else {
-      const obstacleRows: number[] = [];
-      for (let row = 0; row < BOARD_SIZE; row++) {
-        if (board[row][col]?.obstacle) obstacleRows.push(row);
-      }
-      const segments: [number, number][] = [];
-      let segStart = 0;
-      for (const obsRow of obstacleRows) {
-        if (obsRow > segStart) segments.push([segStart, obsRow]);
-        segStart = obsRow + 1;
-      }
-      if (segStart < BOARD_SIZE) segments.push([segStart, BOARD_SIZE]);
-      for (const [start, end] of segments) {
-        computeDropMovesForSegment(board, col, start, end, moves, newTileEntries);
       }
     }
   }

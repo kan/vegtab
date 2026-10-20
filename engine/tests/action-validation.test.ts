@@ -16,7 +16,7 @@ function stateWith(items: Placement[] = []): GameState {
     Array.from({ length: BOARD_SIZE }, (_, c) => ({ color: ((r * 2 + c) % 5) as Color })));
   expect(findMatches(board)).toHaveLength(0);
   for (const [row, col, item] of items) board[row][col] = { color: 0, item };
-  const state = initializeGame(12345, 'sprint');
+  const state = initializeGame(12345);
   state.board = board;
   return state;
 }

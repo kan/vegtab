@@ -1,13 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { env } from 'cloudflare:test';
+import { env, SELF } from 'cloudflare:test';
 import { BOARD_SIZE } from '@vegtab/engine';
-import { resetDb, registerUser, buildReplay, submitScore, submitReplay } from './helpers';
+import {
+  resetDb, registerUser, authHeader, buildReplay, submitScore, submitReplay, insertPlayScore,
+  getTodaySeedId, useFakeToday, CLEARED_DATE, clearedRun,
+} from './helpers';
 import { todayJST } from '../src/lib/date';
 
-/** Legacy client payload: reported score fields are still sent but must be ignored */
+/** Legacy client payload: reported score fields (and the removed moveLimit) are still sent but must be ignored */
 const basePayload = () => ({
   date: todayJST(),
-  mode: 'sprint',
+  mode: 'clear',
   moveLimit: 15,
   moveCount: 15,
   score: 999999999,
@@ -28,8 +31,20 @@ describe('POST /api/scores replay verification', () => {
     expect(row?.n).toBe(0);
   });
 
+  it.each(['sprint', 'survival', 'cascade', undefined])('rejects mode %s (only clear is accepted)', async (mode) => {
+    const { replayLog } = buildReplay(1);
+    const res = await submitScore(token, { ...basePayload(), mode, replayLog });
+    expect(res.status).toBe(400);
+  });
+
   it('rejects unknown action types', async () => {
     const res = await submitScore(token, { ...basePayload(), replayLog: [{ type: 'teleport' }] });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects the removed auto_activate action', async () => {
+    const { replayLog } = buildReplay(1);
+    const res = await submitScore(token, { ...basePayload(), replayLog: [...replayLog, { type: 'auto_activate' }] });
     expect(res.status).toBe(400);
   });
 
@@ -51,32 +66,35 @@ describe('POST /api/scores replay verification', () => {
   });
 
   it('rejects replay logs with too many actions', async () => {
-    const replayLog = Array.from({ length: 1001 }, () => ({ type: 'auto_activate' }));
+    const replayLog = Array.from({ length: 1001 }, () => ({ type: 'tap', pos: { row: 0, col: 0 } }));
     const res = await submitScore(token, { ...basePayload(), replayLog });
     expect(res.status).toBe(400);
   });
 
   it('rejects oversized request bodies', async () => {
-    const { replayLog } = buildReplay('sprint', 1);
+    const { replayLog } = buildReplay(1);
     const res = await submitScore(token, { ...basePayload(), replayLog, padding: 'x'.repeat(300 * 1024) });
     expect(res.status).toBe(413);
   });
 
   it('stores the re-simulated score and a normalized replay log', async () => {
-    const { replayLog: [action], state } = buildReplay('sprint', 1);
+    const { replayLog: [action], state } = buildReplay(1);
     const res = await submitScore(token, {
       ...basePayload(),
       replayLog: [{ ...action, injected: 'x'.repeat(100) }],
     });
     expect(res.status).toBe(201);
-    const data = await res.json() as { verifiedScore: number; verifiedMoveCount: number };
+    const data = await res.json() as { scoreId: string; verifiedScore: number; verifiedMoveCount: number };
     expect(data.verifiedScore).toBe(state.score);
     expect(data.verifiedMoveCount).toBe(1);
 
-    const row = await env.DB.prepare('SELECT score, move_count, replay_log_key FROM play_scores')
-      .first<{ score: number; move_count: number; replay_log_key: string }>();
-    expect(row?.score).toBe(state.score);
-    expect(row?.move_count).toBe(1);
+    const row = await env.DB.prepare(
+      'SELECT mode, score, move_count, is_cleared, move_limit, cascade_points, replay_log_key FROM play_scores WHERE id = ?'
+    ).bind(data.scoreId).first<Record<string, unknown> & { replay_log_key: string }>();
+    // move_limit and cascade_points belong to removed modes and are left to their column defaults
+    expect(row).toMatchObject({
+      mode: 'clear', score: state.score, move_count: 1, is_cleared: 0, move_limit: null, cascade_points: 0,
+    });
 
     const stored = await env.R2.get(row!.replay_log_key);
     expect(JSON.parse(await stored!.text())).toEqual([action]);
@@ -92,10 +110,14 @@ describe('POST /api/scores: ベスト記録の upsert', () => {
     ({ accessToken: token, userId } = await registerUser(crypto.randomUUID()));
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   async function storedRows() {
     const { results } = await env.DB.prepare(
-      'SELECT id, score, replay_log_key FROM play_scores WHERE user_id = ?'
-    ).bind(userId).all<{ id: string; score: number; replay_log_key: string }>();
+      'SELECT id, score, move_count, is_cleared, max_chain, replay_log_key FROM play_scores WHERE user_id = ?'
+    ).bind(userId).all<{ id: string; score: number; move_count: number; is_cleared: number; max_chain: number; replay_log_key: string }>();
     return results;
   }
 
@@ -103,35 +125,80 @@ describe('POST /api/scores: ベスト記録の upsert', () => {
     return (await env.R2.list({ prefix: `replays/${userId}/` })).objects.map(o => o.key);
   }
 
-  it('同じ seed×mode の初回送信が同時に届いても 1 行にまとまる', async () => {
-    const [r1, r2] = await Promise.all([submitReplay(token, 'sprint', 2), submitReplay(token, 'sprint', 3)]);
+  /** Submit the run that clears CLEARED_DATE's board (the clock must already be fixed to that day) */
+  async function submitClearedRun() {
+    const { replayLog, state } = clearedRun();
+    expect(state.isCleared).toBe(true);
+    const res = await submitScore(token, { date: CLEARED_DATE, mode: 'clear', replayLog });
+    expect(res.status).toBe(201);
+    return { body: await res.json() as { scoreId: string; newAchievements: string[] }, state };
+  }
+
+  it('同じ seed の初回送信が同時に届いても 1 行にまとまる', async () => {
+    const [r1, r2] = await Promise.all([submitReplay(token, 2), submitReplay(token, 3)]);
     expect([r1.res.status, r2.res.status]).toEqual([201, 201]);
-    const rows = await storedRows();
-    expect(rows).toHaveLength(1);
-    expect(rows[0].score).toBe(Math.max(r1.state.score, r2.state.score));
+    expect(await storedRows()).toHaveLength(1);
   });
 
-  it('良くなった記録は同じ行を更新し、R2 には新しいリプレイだけが残る', async () => {
-    const first = await submitReplay(token, 'sprint', 1);
+  it('クリアした記録は未クリアの記録を置き換え、R2 には新しいリプレイだけが残る', async () => {
+    useFakeToday(CLEARED_DATE);
+    const first = await submitReplay(token, 1);
     const firstId = (await first.res.json() as { scoreId: string }).scoreId;
-    const better = await submitReplay(token, 'sprint', 3);
-    expect((await better.res.json() as { scoreId: string }).scoreId).toBe(firstId);
+
+    const { body, state } = await submitClearedRun();
+    expect(body.scoreId).toBe(firstId);
 
     const [row] = await storedRows();
-    expect(row).toMatchObject({ id: firstId, score: better.state.score });
+    // max_chain keeps recording the run's longest chain
+    expect(row).toMatchObject({
+      id: firstId, score: state.score, move_count: state.moveCount, is_cleared: 1, max_chain: state.maxChainIndex,
+    });
     expect(await replayObjectKeys()).toEqual([row.replay_log_key]);
   });
 
-  it('悪い記録は保存せず、そのリプレイも R2 に残さない', async () => {
-    const best = await submitReplay(token, 'sprint', 3);
-    const bestId = (await best.res.json() as { scoreId: string }).scoreId;
-    const keysBefore = await replayObjectKeys();
+  it('保存済みのクリアより手数が多い記録は保存せず、そのリプレイも R2 に残さない', async () => {
+    useFakeToday(CLEARED_DATE);
+    const seedId = await getTodaySeedId(token);
+    const keptKey = `replays/${userId}/${seedId}/kept.json`;
+    await env.R2.put(keptKey, '[]');
+    const bestId = await insertPlayScore({ userId, seedId, moveCount: 5, score: 100, isCleared: true, replayLogKey: keptKey });
 
-    const worse = await submitReplay(token, 'sprint', 1);
-    expect(worse.res.status).toBe(201);
-    expect((await worse.res.json() as { scoreId: string }).scoreId).toBe(bestId);
-    expect((await storedRows())[0].score).toBe(best.state.score);
-    expect(await replayObjectKeys()).toEqual(keysBefore);
+    const { body } = await submitClearedRun();
+    expect(body.scoreId).toBe(bestId);
+    expect((await storedRows())[0]).toMatchObject({ move_count: 5, score: 100 });
+    expect(await replayObjectKeys()).toEqual([keptKey]);
+  });
+
+  it('保存済みのクリアより少ない手数のクリアは記録を更新する', async () => {
+    useFakeToday(CLEARED_DATE);
+    const seedId = await getTodaySeedId(token);
+    await insertPlayScore({ userId, seedId, moveCount: 999, score: 100, isCleared: true });
+
+    const { state } = await submitClearedRun();
+    expect((await storedRows())[0]).toMatchObject({ move_count: state.moveCount, score: state.score });
+  });
+
+  it('クリアで clear_first と連鎖実績を解除する', async () => {
+    useFakeToday(CLEARED_DATE);
+    const { body, state } = await submitClearedRun();
+    // The cleared run's longest chain is 4: cascade_chain_3 unlocks, cascade_chain_5 does not
+    expect(state.maxChainIndex).toBe(4);
+    expect(body.newAchievements).toEqual(expect.arrayContaining(['clear_first', 'cascade_chain_3']));
+    expect(body.newAchievements).not.toContain('cascade_chain_5');
+    expect(body.newAchievements).not.toContain('clear_under_10');
+  });
+
+  it('プレイ日数は撤去したモードの行も数える', async () => {
+    // Two earlier days played only in removed modes, plus today's Clear submission = 3 days
+    for (const [mode, day] of [['sprint', '2026-01-01'], ['survival', '2026-01-02']]) {
+      await env.DB.prepare(
+        `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, created_at) VALUES (?, ?, 'old-seed', ?, 1, 1, ?)`
+      ).bind(crypto.randomUUID(), userId, mode, `${day} 12:00:00`).run();
+    }
+
+    const { res } = await submitReplay(token, 1);
+    const body = await res.json() as { newAchievements: string[] };
+    expect(body.newAchievements).toContain('play_days_3');
   });
 });
 
@@ -145,8 +212,8 @@ describe('POST /api/scores: 0 時をまたいだプレイ', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(`${iso}+09:00`));
     const { accessToken } = await registerUser(crypto.randomUUID());
-    const { replayLog } = buildReplay('sprint', 2, '2026-09-23');
-    const res = await submitScore(accessToken, { date: '2026-09-23', mode: 'sprint', moveLimit: 15, replayLog });
+    const { replayLog } = buildReplay(2, '2026-09-23');
+    const res = await submitScore(accessToken, { date: '2026-09-23', mode: 'clear', replayLog });
     return { status: res.status, body: await res.json() as { scoreId: string | null; pastDate?: boolean } };
   }
 
@@ -161,5 +228,45 @@ describe('POST /api/scores: 0 時をまたいだプレイ', () => {
     const { status, body } = await submitYesterdayAt('2026-09-24T00:40:00');
     expect(status).toBe(200);
     expect(body).toMatchObject({ scoreId: null, pastDate: true });
+  });
+});
+
+describe('撤去したモードの行は読み出さない', () => {
+  let token: string;
+  let userId: string;
+  let seedId: string;
+
+  beforeEach(async () => {
+    await resetDb();
+    ({ accessToken: token, userId } = await registerUser(crypto.randomUUID()));
+    seedId = await getTodaySeedId(token);
+  });
+
+  it('GET /api/scores/my は Clear の行だけを返し、moveLimit を含めない', async () => {
+    const clearId = await insertPlayScore({ userId, seedId, moveCount: 12, score: 300, isCleared: true });
+    await insertPlayScore({ userId, seedId, mode: 'sprint', moveCount: 15, score: 900 });
+    await insertPlayScore({ userId, seedId, mode: 'cascade', moveCount: 15, score: 900, cascadePoints: 30 });
+
+    const res = await SELF.fetch('http://localhost/api/scores/my', { headers: authHeader(token) });
+    const { scores } = await res.json() as { scores: Array<Record<string, unknown>> };
+    expect(scores).toHaveLength(1);
+    expect(scores[0]).toMatchObject({ id: clearId, seedId, mode: 'clear', moveCount: 12, score: 300, isCleared: true });
+    expect(scores[0]).not.toHaveProperty('moveLimit');
+  });
+
+  it('GET /api/scores/:scoreId/replay は Clear の行を返し、他モードの scoreId は 404', async () => {
+    await env.R2.put('replays/test/clear.json', JSON.stringify([{ type: 'tap', pos: { row: 0, col: 0 } }]));
+    await env.R2.put('replays/test/sprint.json', JSON.stringify([{ type: 'tap', pos: { row: 0, col: 0 } }]));
+    const clearId = await insertPlayScore({ userId, seedId, moveCount: 12, score: 300, isCleared: true, replayLogKey: 'replays/test/clear.json' });
+    const sprintId = await insertPlayScore({ userId, seedId, mode: 'sprint', moveCount: 15, score: 900, replayLogKey: 'replays/test/sprint.json' });
+
+    const ok = await SELF.fetch(`http://localhost/api/scores/${clearId}/replay`, { headers: authHeader(token) });
+    expect(ok.status).toBe(200);
+    const body = await ok.json() as Record<string, unknown>;
+    expect(Object.keys(body).sort()).toEqual(['displayName', 'finalScore', 'replayLog', 'seed']);
+    expect(body.finalScore).toBe(300);
+
+    const removed = await SELF.fetch(`http://localhost/api/scores/${sprintId}/replay`, { headers: authHeader(token) });
+    expect(removed.status).toBe(404);
   });
 });

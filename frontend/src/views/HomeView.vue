@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
@@ -11,10 +11,9 @@ import { todayJST, nextMidnightJST } from '@/utils/date';
 import { isTutorialFirstVisit, dismissTutorialPrompt } from '@/composables/useTutorialPlayer';
 import RankingModal from '@/components/RankingModal.vue';
 import VegetableIcon from '@/components/VegetableIcon.vue';
-import { MODE_ICONS } from '@/utils/constants';
 import SettingsModal from '@/components/SettingsModal.vue';
 import {
-  linkIcon, trophyIcon,
+  linkIcon, trophyIcon, brickIcon,
   mobileIcon, keyIcon, infoIcon,
   pencilIcon, questionIcon,
 } from '@/assets/icons';
@@ -131,13 +130,10 @@ const showCalendar = ref(false);
 // --- Daily seed ---
 const today = ref(todayJST());
 const todaySeed = computed(() => gameStore.generateDailySeed(today.value));
-const todayBestSprint = computed(() => gameStore.getBestScore(todaySeed.value, 'sprint'));
-const todayBestClear = computed(() => gameStore.getBestMoves(todaySeed.value, 'clear'));
-const todayBestSurvival = computed(() => gameStore.getBestMoves(todaySeed.value, 'survival'));
-const todayBestCascade = computed(() => gameStore.getBestCascadePoints(todaySeed.value));
+const todayBestMoves = computed(() => gameStore.getBestMoves(todaySeed.value));
 
-function playMode(mode: string) {
-  router.push(`/puzzle/${todaySeed.value}?mode=${mode}`);
+function playToday() {
+  router.push(`/puzzle/${todaySeed.value}`);
 }
 
 // --- Calendar ---
@@ -222,8 +218,7 @@ onUnmounted(() => {
 });
 
 // --- Ranking preview (from API) ---
-const rankingMode = ref<'sprint' | 'clear' | 'survival' | 'cascade'>('sprint');
-const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number; maxChain?: number; cascadePoints?: number }>>([]);
+const rankingPreview = ref<Array<{ rank: number; playerName: string; score: number; moves: number }>>([]);
 const rankingLoading = ref(false);
 
 let previewSeq = 0;
@@ -233,16 +228,14 @@ async function fetchRankingPreview() {
   rankingLoading.value = true;
   try {
     const data = await api<{
-      ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number; maxChain?: number; cascadePoints?: number }>;
-    }>(`/api/rankings/by-value/${todaySeed.value}?mode=${rankingMode.value}`);
+      ranking: Array<{ rank: number; displayName: string; score: number; moveCount: number }>;
+    }>(`/api/rankings/by-value/${todaySeed.value}`);
     if (seq !== previewSeq) return;
     rankingPreview.value = data.ranking.slice(0, 10).map(e => ({
       rank: e.rank,
       playerName: e.displayName,
       score: e.score,
       moves: e.moveCount,
-      maxChain: e.maxChain,
-      cascadePoints: e.cascadePoints,
     }));
   } catch {
     if (seq !== previewSeq) return;
@@ -251,31 +244,9 @@ async function fetchRankingPreview() {
   rankingLoading.value = false;
 }
 
-watch(rankingMode, () => fetchRankingPreview());
 onMounted(() => {
-  const last = sessionStorage.getItem('lastPlayedMode');
-  if (last && ['sprint', 'clear', 'survival', 'cascade'].includes(last)) {
-    rankingMode.value = last as typeof rankingMode.value;
-  }
   fetchRankingPreview();
 });
-
-function rankingDisplayValue(entry: { score: number; moves: number; maxChain?: number; cascadePoints?: number }) {
-  if (rankingMode.value === 'cascade') {
-    return `${t('mode.cascadePoints')} ${entry.cascadePoints ?? 0}`;
-  }
-  if (rankingMode.value === 'clear' || rankingMode.value === 'survival') {
-    return `${entry.moves} ${t('mode.moves')}`;
-  }
-  return entry.score.toLocaleString();
-}
-
-function rankingSubValue(entry: { score: number; moves: number; maxChain?: number; cascadePoints?: number }): string | null {
-  if (rankingMode.value === 'cascade' || rankingMode.value === 'clear' || rankingMode.value === 'survival') {
-    return entry.score.toLocaleString();
-  }
-  return null;
-}
 </script>
 
 <template>
@@ -331,43 +302,17 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
           <span class="countdown-label">{{ t('home.nextPuzzleIn') }}</span>
           <span class="countdown-time">{{ countdown }}</span>
         </div>
-        <div class="mode-buttons">
-          <button class="mode-btn" @click="playMode('sprint')">
-            <img class="mode-btn-icon" :src="MODE_ICONS.sprint" alt="" />
-            <span class="mode-btn-name">{{ t('mode.sprint') }}</span>
-            <span v-if="todayBestSprint > 0" class="mode-btn-best">{{ todayBestSprint.toLocaleString() }}</span>
-            <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
-          </button>
-          <button class="mode-btn" @click="playMode('clear')">
-            <img class="mode-btn-icon" :src="MODE_ICONS.clear" alt="" />
-            <span class="mode-btn-name">{{ t('mode.clear') }}</span>
-            <span v-if="todayBestClear > 0" class="mode-btn-best">{{ todayBestClear }}{{ t('mode.moves') }}</span>
-            <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
-          </button>
-          <button class="mode-btn" @click="playMode('survival')">
-            <img class="mode-btn-icon" :src="MODE_ICONS.survival" alt="" />
-            <span class="mode-btn-name">{{ t('mode.survival') }}</span>
-            <span v-if="todayBestSurvival > 0" class="mode-btn-best">{{ todayBestSurvival }}{{ t('mode.moves') }}</span>
-            <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
-          </button>
-          <button class="mode-btn" @click="playMode('cascade')">
-            <img class="mode-btn-icon" :src="MODE_ICONS.cascade" alt="" />
-            <span class="mode-btn-name">{{ t('mode.cascade') }}</span>
-            <span v-if="todayBestCascade > 0" class="mode-btn-best">{{ t('mode.cascadePoints') }} {{ todayBestCascade }}</span>
-            <span v-else class="mode-btn-play">{{ t('common.play') }}</span>
-          </button>
-        </div>
+        <button class="play-btn" @click="playToday">
+          <img class="play-btn-icon" :src="brickIcon" alt="" />
+          <span class="play-btn-desc">{{ t('home.clearGoal') }}</span>
+          <span v-if="todayBestMoves > 0" class="play-btn-best">{{ t('mode.clearMoves', { count: todayBestMoves }) }}</span>
+          <span v-else class="play-btn-play">{{ t('common.play') }}</span>
+        </button>
         <!-- Ranking preview -->
         <div class="ranking-preview">
           <div class="ranking-preview-header">
             <span class="ranking-preview-title"><img :src="trophyIcon" class="menu-icon" alt="" /> {{ t('home.rankingPreview') }}</span>
             <button class="ranking-see-all" @click="openRanking(todaySeed)">{{ t('home.seeAll') }}</button>
-          </div>
-          <div class="ranking-mode-tabs">
-            <button :class="['ranking-mode-tab', { active: rankingMode === 'sprint' }]" @click="rankingMode = 'sprint'">{{ t('mode.sprint') }}</button>
-            <button :class="['ranking-mode-tab', { active: rankingMode === 'clear' }]" @click="rankingMode = 'clear'">{{ t('mode.clear') }}</button>
-            <button :class="['ranking-mode-tab', { active: rankingMode === 'survival' }]" @click="rankingMode = 'survival'">{{ t('mode.survival') }}</button>
-            <button :class="['ranking-mode-tab', { active: rankingMode === 'cascade' }]" @click="rankingMode = 'cascade'">{{ t('mode.cascade') }}</button>
           </div>
           <template v-if="rankingLoading">
             <div v-for="i in 3" :key="i" class="ranking-preview-row skeleton-row">
@@ -380,8 +325,8 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
             <div v-for="(entry, i) in rankingPreview" :key="i" class="ranking-preview-row">
               <span class="ranking-preview-rank">{{ entry.rank }}</span>
               <span class="ranking-preview-name">{{ entry.playerName }}</span>
-              <span class="ranking-preview-score">{{ rankingDisplayValue(entry) }}</span>
-              <span v-if="rankingSubValue(entry)" class="ranking-preview-sub">{{ rankingSubValue(entry) }}</span>
+              <span class="ranking-preview-score">{{ t('ranking.moves', { count: entry.moves }) }}</span>
+              <span class="ranking-preview-sub">{{ entry.score.toLocaleString() }}</span>
             </div>
           </template>
           <div v-else class="ranking-preview-empty">{{ t('common.noRecords') }}</div>
@@ -421,7 +366,7 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
           >
             <template v-if="cell">
               <span class="cal-day">{{ parseInt(cell.date.slice(8)) }}</span>
-              <span v-if="!isFuture(cell.date) && cal.bestScore(cell.seed) > 0" class="cal-score">{{ cal.bestScore(cell.seed) }}</span>
+              <span v-if="!isFuture(cell.date) && cal.bestMoves(cell.seed) > 0" class="cal-score">{{ t('ranking.moves', { count: cal.bestMoves(cell.seed) }) }}</span>
               <span v-else-if="!isFuture(cell.date) && gameStore.hasPlayedDaily(cell.date)" class="cal-played-dot" />
             </template>
           </div>
@@ -572,7 +517,7 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
       </div>
     </Teleport>
 
-    <RankingModal :seed="rankingSeed" :open="showRanking" :mode="rankingMode" @close="showRanking = false" />
+    <RankingModal :seed="rankingSeed" :open="showRanking" @close="showRanking = false" />
   </div>
 </template>
 
@@ -906,52 +851,44 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
   color: var(--text-secondary);
   letter-spacing: 0.05em;
 }
-.mode-buttons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-@media (min-width: 600px) {
-  .mode-buttons {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-.mode-btn {
+.play-btn {
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 10px 6px;
+  gap: 4px;
+  padding: 14px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-card-alt);
   cursor: pointer;
   transition: border-color 0.15s, transform 0.1s;
 }
-.mode-btn:hover {
+.play-btn:hover {
   border-color: var(--brand);
 }
-.mode-btn:active {
-  transform: scale(0.96);
+.play-btn:active {
+  transform: scale(0.98);
 }
-.mode-btn-icon {
-  width: 20px;
-  height: 20px;
+.play-btn-icon {
+  width: 24px;
+  height: 24px;
 }
-.mode-btn-name {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-primary);
-  text-transform: uppercase;
-}
-.mode-btn-best {
-  font-size: 11px;
+.play-btn-desc {
+  font-size: 12px;
   font-weight: 600;
+  color: var(--text-primary);
+}
+.play-btn-best {
+  font-size: 13px;
+  font-weight: 700;
   color: var(--brand);
 }
-.mode-btn-play {
-  font-size: 11px;
-  font-weight: 600;
+.play-btn-play {
+  font-size: 13px;
+  font-weight: 700;
   color: var(--text-muted);
 }
 
@@ -1039,28 +976,6 @@ function rankingSubValue(entry: { score: number; moves: number; maxChain?: numbe
   font-size: 10px;
   color: var(--text-muted);
   font-weight: 500;
-}
-.ranking-mode-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 6px;
-}
-.ranking-mode-tab {
-  flex: 1;
-  padding: 4px 0;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: none;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-muted);
-  cursor: pointer;
-  text-transform: uppercase;
-}
-.ranking-mode-tab.active {
-  background: var(--brand);
-  color: #fff;
-  border-color: var(--brand);
 }
 .ranking-preview-empty {
   font-size: 11px;

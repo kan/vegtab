@@ -9,7 +9,6 @@ import ItemIcon from '@/components/ItemIcon.vue';
 import ObstacleTile from '@/components/ObstacleTile.vue';
 import type { ReplayAction } from '@/stores/puzzle';
 import { ctrlPrevTrackIcon, ctrlRewindIcon, ctrlPauseIcon, ctrlPlayIcon, ctrlForwardIcon, ctrlNextTrackIcon } from '@/assets/icons';
-import type { GameMode } from '@vegtab/engine';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -17,7 +16,6 @@ const router = useRouter();
 
 const loading = ref(true);
 const error = ref('');
-const replayMode = ref<GameMode>('sprint');
 const replaySeed = ref(0);
 const replayPlayerName = ref('');
 
@@ -37,22 +35,13 @@ onMounted(async () => {
     const data = await api<{
       replayLog: ReplayAction[];
       seed: number;
-      mode: GameMode;
-      moveLimit: number | null;
       finalScore?: number;
-      cascadePoints?: number;
       displayName?: string;
     }>(`/api/scores/${encodeURIComponent(scoreId)}/replay`);
 
-    replayMode.value = data.mode;
     replaySeed.value = data.seed;
     replayPlayerName.value = data.displayName ?? '';
-    player.load(data.seed, data.mode, data.replayLog, {
-      moveLimit: data.moveLimit ?? undefined,
-    }, {
-      finalScore: data.finalScore,
-      cascadePoints: data.cascadePoints,
-    });
+    player.load(data.seed, data.replayLog, { finalScore: data.finalScore });
     loading.value = false;
   } catch {
     error.value = t('replay.loadError');
@@ -85,9 +74,6 @@ function actionLabel(action: ReplayAction, index: number): string {
   if (action.type === 'scope_swap') {
     const dirLabel = t(`replay.dir_${action.dir}`);
     return `${num}. ${toChessCoord(action.pos.row, action.pos.col)} ${dirLabel} + ${t('replay.scope')}${chainSuffix}`;
-  }
-  if (action.type === 'auto_activate') {
-    return `${num}. ${t('replay.autoActivate')}`;
   }
   return `${num}. ???`;
 }
@@ -151,7 +137,7 @@ function getCellClass(row: number, col: number): string {
           <span class="replay-title">{{ t('replay.title') }}</span>
           <span class="replay-meta">
             <template v-if="replayPlayerName">{{ replayPlayerName }} &middot; </template>
-            {{ t('common.seed', { seed: replaySeed }) }} &middot; {{ t(`mode.${replayMode}`) }}
+            {{ t('common.seed', { seed: replaySeed }) }}
           </span>
         </div>
       </header>
@@ -215,7 +201,6 @@ function getCellClass(row: number, col: number): string {
       <!-- Score display -->
       <div class="replay-score-bar">
         <span class="replay-score">{{ t('puzzle.score', { score: player.currentScore.value }) }}</span>
-        <span v-if="replayMode === 'cascade'" class="replay-cp">{{ t('mode.cascadePoints') }}: {{ player.currentCascadePoints.value }}</span>
         <span class="replay-moves">{{ t('puzzle.moveCount', { count: player.currentMoveCount.value }) }}</span>
       </div>
 
@@ -410,11 +395,6 @@ function getCellClass(row: number, col: number): string {
   font-size: 16px;
   font-weight: 700;
   color: var(--brand);
-}
-.replay-cp {
-  font-size: 15px;
-  font-weight: 700;
-  color: #ff8f00;
 }
 .replay-moves {
   font-size: 13px;

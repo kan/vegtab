@@ -1,14 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import {
-  initializeGame, processAction, processScopeSynthesis,
-  cloneGameState, applyWave,
-} from '../src/engine.js';
+import { initializeGame, processAction, processScopeSynthesis } from '../src/engine.js';
 import type {
   TraceCollector, ChainStepData, ItemEffectData,
-  WaveStepData, SynthesisEffectData, DropMove, NewTileEntry,
+  SynthesisEffectData, DropMove, NewTileEntry,
 } from '../src/traceCollector.js';
 import { BOARD_SIZE, Cell, Color, Direction, GameState, Position } from '../src/types.js';
-import { SURVIVAL_WAVE_INTERVAL } from '../src/survival.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -18,7 +14,6 @@ import { SURVIVAL_WAVE_INTERVAL } from '../src/survival.js';
 interface CollectedEvents {
   chainSteps: ChainStepData[];
   itemEffects: ItemEffectData[];
-  waveSteps: WaveStepData[];
   synthEffects: SynthesisEffectData[];
   boardSnapshots: { label: string; board: (Cell | null)[][] }[];
   scopeAdjacentCalls: Position[][];
@@ -29,7 +24,6 @@ function createTestCollector(): { collector: TraceCollector; events: CollectedEv
   const events: CollectedEvents = {
     chainSteps: [],
     itemEffects: [],
-    waveSteps: [],
     synthEffects: [],
     boardSnapshots: [],
     scopeAdjacentCalls: [],
@@ -38,7 +32,6 @@ function createTestCollector(): { collector: TraceCollector; events: CollectedEv
   const collector: TraceCollector = {
     onChainStep(data) { events.chainSteps.push(data); },
     onItemEffect(data) { events.itemEffects.push(data); },
-    onWaveStep(data) { events.waveSteps.push(data); },
     onSynthesisEffect(data) { events.synthEffects.push(data); },
     onBoardSnapshot(label, board) { events.boardSnapshots.push({ label, board }); },
     onScopeAdjacent(targets) { events.scopeAdjacentCalls.push([...targets]); },
@@ -179,7 +172,7 @@ describe('collector 指定時の processAction(swap)', () => {
 // ---------------------------------------------------------------------------
 describe('collector 指定時の processAction(tap)', () => {
   it('アイテムタップで onItemEffect が呼ばれる', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
 
     const { collector, events } = createTestCollector();
@@ -192,7 +185,7 @@ describe('collector 指定時の processAction(tap)', () => {
   });
 
   it('ItemEffectData に targets, detonations, depth, score が含まれる', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[4][4] = { color: 0 as Color, item: 'burst' };
 
     const { collector, events } = createTestCollector();
@@ -209,7 +202,7 @@ describe('collector 指定時の processAction(tap)', () => {
   });
 
   it('onDropData が呼ばれる（アイテムタップ後のgravity情報）', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
 
     const { collector, events } = createTestCollector();
@@ -223,7 +216,7 @@ describe('collector 指定時の processAction(tap)', () => {
   });
 
   it('beforeItemActivation と afterItemDrop のスナップショットが生成される', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[4][4] = { color: 0 as Color, item: 'h_cut' };
 
     const { collector, events } = createTestCollector();
@@ -242,7 +235,7 @@ describe('collector 指定時の processAction(tap)', () => {
 // ---------------------------------------------------------------------------
 describe('collector 指定時の processAction(scope)', () => {
   it('scope アクションで onScopeAdjacent が呼ばれる', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[3][3] = { color: 0 as Color, item: 'scope' };
 
     const { collector, events } = createTestCollector();
@@ -261,7 +254,7 @@ describe('collector 指定時の processAction(scope)', () => {
   });
 
   it('scope で隣接アイテムを誘爆すると onItemEffect も呼ばれる', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[3][3] = { color: 0 as Color, item: 'scope' };
     state.board[3][4] = { color: 0 as Color, item: 'v_cut' }; // 隣接アイテム
 
@@ -285,7 +278,7 @@ describe('collector 指定時の processAction(scope)', () => {
 // ---------------------------------------------------------------------------
 describe('collector 指定時の processAction(synthesis)', () => {
   it('アイテム合成で onSynthesisEffect が呼ばれる', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
     state.board[4][5] = { color: 0 as Color, item: 'h_cut' };
 
@@ -306,7 +299,7 @@ describe('collector 指定時の processAction(synthesis)', () => {
   });
 
   it('flush+flush 合成で onSynthesisEffect が呼ばれる', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[4][4] = { color: 0 as Color, item: 'flush' };
     state.board[4][5] = { color: 0 as Color, item: 'flush' };
 
@@ -328,7 +321,7 @@ describe('collector 指定時の processAction(synthesis)', () => {
 // ---------------------------------------------------------------------------
 describe('collector 指定時の processScopeSynthesis', () => {
   it('scope+scope 合成で onScopeAdjacent と onSynthesisEffect が呼ばれる', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[4][4] = { color: 0 as Color, item: 'scope' };
     state.board[4][5] = { color: 0 as Color, item: 'scope' };
 
@@ -347,7 +340,7 @@ describe('collector 指定時の processScopeSynthesis', () => {
   });
 
   it('collector を指定しても processScopeSynthesis の結果が同一', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     state.board[4][4] = { color: 0 as Color, item: 'scope' };
     state.board[4][5] = { color: 0 as Color, item: 'burst' };
 
@@ -372,81 +365,11 @@ describe('collector 指定時の processScopeSynthesis', () => {
 });
 
 // ---------------------------------------------------------------------------
-// collector 指定時: applyWave で WaveStepData が収集される
-// ---------------------------------------------------------------------------
-describe('collector 指定時の applyWave', () => {
-  it('Survival でウェーブ発動時に onWaveStep が呼ばれる', () => {
-    const state = initializeGame(42, 'survival');
-    // SURVIVAL_WAVE_INTERVAL 手進める
-    let current = state;
-    for (let i = 0; i < SURVIVAL_WAVE_INTERVAL - 1; i++) {
-      const dirs: Array<{ dir: Direction; dr: number; dc: number }> = [
-        { dir: 'right', dr: 0, dc: 1 },
-        { dir: 'down', dr: 1, dc: 0 },
-      ];
-      let moved = false;
-      for (let r = 0; r < BOARD_SIZE && !moved; r++) {
-        for (let c = 0; c < BOARD_SIZE && !moved; c++) {
-          if (current.board[r][c]?.item) continue;
-          for (const { dir, dr, dc } of dirs) {
-            const nr = r + dr;
-            const nc = c + dc;
-            if (nr >= BOARD_SIZE || nc >= BOARD_SIZE) continue;
-            if (current.board[nr][nc]?.item) continue;
-            const result = processAction(current, { type: 'swap', pos: { row: r, col: c }, dir });
-            if (result !== current) {
-              current = result;
-              moved = true;
-              break;
-            }
-          }
-        }
-      }
-      if (!moved) return; // can't proceed
-    }
-    expect(current.moveCount).toBe(SURVIVAL_WAVE_INTERVAL - 1);
-
-    // 次の有効なスワイプでウェーブが発動する
-    const action = findValidSwap(current);
-    if (!action) return;
-
-    const { collector, events } = createTestCollector();
-    const result = processAction(
-      current,
-      { type: 'swap', pos: action.pos, dir: action.dir },
-      collector,
-    );
-
-    if (result === current) return;
-    if (result.moveCount % SURVIVAL_WAVE_INTERVAL !== 0) return;
-
-    // ウェーブが発動していれば onWaveStep が呼ばれている
-    expect(events.waveSteps.length).toBeGreaterThan(0);
-    for (const ws of events.waveSteps) {
-      expect(['place', 'bump', 'item_activate']).toContain(ws.kind);
-      expect(ws.boardAfter.length).toBe(BOARD_SIZE);
-      expect(typeof ws.score).toBe('number');
-    }
-  });
-
-  it('Sprint モードでは onWaveStep が呼ばれない', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
-    const action = findValidSwap(state);
-    if (!action) return;
-
-    const { collector, events } = createTestCollector();
-    processAction(state, { type: 'swap', pos: action.pos, dir: action.dir }, collector);
-
-    expect(events.waveSteps).toHaveLength(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // collector 指定時: 誘爆チェーンでの depth 追跡
 // ---------------------------------------------------------------------------
 describe('collector: アイテム誘爆の depth 追跡', () => {
   it('直接発動は depth=0、誘爆は depth >= 1', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42);
     // v_cut を配置し、その効果範囲に h_cut を配置して誘爆させる
     state.board[4][4] = { color: 0 as Color, item: 'v_cut' };
     // v_cut(4,4) は col=4 全体を消去するので、同じ列のアイテムを誘爆する
@@ -487,7 +410,7 @@ describe('collector: 複数シードでの一貫性', () => {
 
       expect(e1.chainSteps.length, `seed=${seed}: chainSteps count`).toBe(e2.chainSteps.length);
       expect(e1.itemEffects.length, `seed=${seed}: itemEffects count`).toBe(e2.itemEffects.length);
-      expect(e1.waveSteps.length, `seed=${seed}: waveSteps count`).toBe(e2.waveSteps.length);
+      expect(e1.boardSnapshots.length, `seed=${seed}: boardSnapshots count`).toBe(e2.boardSnapshots.length);
     }
   });
 });
@@ -511,8 +434,7 @@ describe('collector: ChainStepData の score 合計と engine の整合性', () 
 
     const chainScore = events.chainSteps.reduce((sum, s) => sum + s.score, 0);
     const itemScore = events.itemEffects.reduce((sum, e) => sum + e.score, 0);
-    const waveScore = events.waveSteps.reduce((sum, w) => sum + w.score, 0);
-    const totalCollected = chainScore + itemScore + waveScore;
+    const totalCollected = chainScore + itemScore;
     const engineDelta = result.score - state.score;
 
     expect(totalCollected).toBe(engineDelta);
@@ -524,7 +446,7 @@ describe('collector: ChainStepData の score 合計と engine の整合性', () 
 // ---------------------------------------------------------------------------
 describe('flush×おじゃまスワイプ時の collector 通知', () => {
   it('onItemEffect が itemType=flush で呼ばれ、targets に全おじゃま位置が含まれる', () => {
-    const state = initializeGame(42, 'survival');
+    const state = initializeGame(42, { obstacleCount: 0 });
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
     state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };
@@ -546,7 +468,7 @@ describe('flush×おじゃまスワイプ時の collector 通知', () => {
   });
 
   it('afterSwap, beforeItemActivation, boardAfterClear, afterItemDrop のスナップショットが記録される', () => {
-    const state = initializeGame(42, 'survival');
+    const state = initializeGame(42, { obstacleCount: 0 });
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
 
@@ -561,7 +483,7 @@ describe('flush×おじゃまスワイプ時の collector 通知', () => {
   });
 
   it('onDropData が呼ばれる', () => {
-    const state = initializeGame(42, 'survival');
+    const state = initializeGame(42, { obstacleCount: 0 });
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 1 } };
 
@@ -573,7 +495,7 @@ describe('flush×おじゃまスワイプ時の collector 通知', () => {
   });
 
   it('collector のスコア合計がエンジンのスコア差分と一致する', () => {
-    const state = initializeGame(42, 'survival');
+    const state = initializeGame(42, { obstacleCount: 0 });
     state.board[3][3] = { color: 0 as Color, item: 'flush' };
     state.board[3][4] = { color: 0 as Color, obstacle: { durability: 2 } };
     state.board[0][0] = { color: 0 as Color, obstacle: { durability: 1 } };

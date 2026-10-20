@@ -10,16 +10,14 @@
 import {
   type Cell, type Direction, type GameState,
   type ItemType, type Match, type Position, type SynthesisEffect,
-  BOARD_SIZE,
 } from './types.js';
 import { cloneBoard, isValidPosition } from './board.js';
 import { getSynthesisEffect } from './item.js';
 import {
-  processAction, processAutoActivationStep, processScopeSwapPreChains, processScopeSynthesis,
+  processAction, processScopeSwapPreChains, processScopeSynthesis,
 } from './engine.js';
-import { SURVIVAL_WAVE_INTERVAL } from './survival.js';
 import type {
-  TraceCollector, ChainStepData, ItemEffectData, WaveStepData,
+  TraceCollector, ChainStepData, ItemEffectData,
   SynthesisEffectData, DropMove, NewTileEntry,
 } from './traceCollector.js';
 
@@ -47,7 +45,6 @@ export interface ChainAnimData {
   itemGens: { pos: Position; item: ItemType }[];
   score: number;
   chainIndex: number;
-  sparkleCount?: number;
   dropMoves: { col: number; fromRow: number; toRow: number }[];
   newTileEntries: { row: number; col: number; segNulls: number }[];
   boardAfterDrop: (Cell | null)[][];
@@ -57,7 +54,6 @@ export interface SwapAnimPlan {
   boardAfterSwap: (Cell | null)[][];
   chains: ChainAnimData[];
   finalState: GameState;
-  waveAnim?: WaveAnimPlan;
 }
 
 export interface ItemEffectStep {
@@ -77,27 +73,6 @@ export interface ItemAnimPlan {
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
-  waveAnim?: WaveAnimPlan;
-}
-
-export interface WaveAnimStep {
-  pos: Position;
-  kind: 'place' | 'bump' | 'item_activate';
-  effects?: ItemEffectStep[];
-  dropMoves?: { col: number; fromRow: number; toRow: number }[];
-  newTileEntries?: { row: number; col: number; segNulls: number }[];
-  chainsAfter?: ChainAnimData[];
-  newDurability?: number;
-  boardAfter: (Cell | null)[][];
-  score: number;
-}
-
-export interface WaveAnimPlan {
-  waveNumber: number;
-  obstacleCount: number;
-  steps: WaveAnimStep[];
-  totalScore: number;
-  finalBoard: (Cell | null)[][];
 }
 
 export interface SynthesisEffectStep {
@@ -121,7 +96,6 @@ export interface SynthesisAnimPlan {
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
-  waveAnim?: WaveAnimPlan;
 }
 
 export interface ScopeAnimPlan {
@@ -136,7 +110,6 @@ export interface ScopeAnimPlan {
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
-  waveAnim?: WaveAnimPlan;
 }
 
 export interface ScopeSynthesisAnimPlan {
@@ -154,13 +127,12 @@ export interface ScopeSynthesisAnimPlan {
   boardAfterDrop: (Cell | null)[][];
   regularChains: ChainAnimData[];
   finalState: GameState;
-  waveAnim?: WaveAnimPlan;
 }
 
 export interface ScopeSwapPreChainResult {
   boardAfterSwap: (Cell | null)[][];
   preChains: ChainAnimData[];
-  /** 事前連鎖の後の状態（盤面・スコア・RNG に加え、CP・最大連鎖・マイルストーンも反映済み） */
+  /** 事前連鎖の後の状態（盤面・スコア・RNG に加え、最大連鎖も反映済み） */
   stateAfterPreChains: GameState;
   scopePos: Position;
 }
@@ -176,8 +148,7 @@ export function calcItemEffectScore(step: ItemEffectStep): number {
 
 /**
  * CollectorState tracks the events emitted by the engine during a single
- * processAction / processScopeSynthesis call.  It separates "regular"
- * chain/item events from "wave" events using the onWaveStep boundary.
+ * processAction / processScopeSynthesis call.
  */
 interface CollectorState {
   // Board snapshots
@@ -189,7 +160,6 @@ interface CollectorState {
   // Scope data
   adjacentTargets: Position[];
 
-  // Regular (non-wave) events
   chains: ChainAnimData[];
   itemEffects: ItemEffectStep[];
   synthEffects: SynthesisEffectStep[];
@@ -197,15 +167,6 @@ interface CollectorState {
   // Drop data (before gravity)
   dropMoves: DropMove[];
   newTileEntries: NewTileEntry[];
-
-  // Wave events
-  waveSteps: WaveAnimStep[];
-  /** true once the first onWaveStep is received */
-  insideWave: boolean;
-  /** item effects accumulated for the current wave step (before onWaveStep fires) */
-  pendingWaveEffects: ItemEffectStep[];
-  /** chain steps accumulated for the current wave step */
-  pendingWaveChains: ChainAnimData[];
 }
 
 function createCollectorState(): CollectorState {
@@ -216,10 +177,6 @@ function createCollectorState(): CollectorState {
     synthEffects: [],
     dropMoves: [],
     newTileEntries: [],
-    waveSteps: [],
-    insideWave: false,
-    pendingWaveEffects: [],
-    pendingWaveChains: [],
   };
 }
 
@@ -237,72 +194,34 @@ function createCollector(cs: CollectorState): TraceCollector {
           cs.boardAfterClear = board;
           break;
         case 'afterItemDrop':
-          if (!cs.insideWave) {
-            cs.boardAfterItemDrop = board;
-          }
+          cs.boardAfterItemDrop = board;
           break;
       }
     },
 
     onChainStep(data: ChainStepData) {
-      const chain: ChainAnimData = {
+      cs.chains.push({
         matches: data.matches,
         clearedPositions: data.clearedPositions,
         destroyedObstacles: data.destroyedObstacles,
         itemGens: data.itemGens,
         score: data.score,
         chainIndex: data.chainIndex,
-        sparkleCount: data.sparkleCount,
         dropMoves: data.dropMoves,
         newTileEntries: data.newTileEntries,
         boardAfterDrop: data.boardAfterDrop,
-      };
-      if (cs.insideWave) {
-        cs.pendingWaveChains.push(chain);
-      } else {
-        cs.chains.push(chain);
-      }
+      });
     },
 
     onItemEffect(data: ItemEffectData) {
-      const effect: ItemEffectStep = {
+      cs.itemEffects.push({
         itemType: data.itemType,
         itemPos: data.itemPos,
         targets: data.targets,
         detonations: data.detonations,
         depth: data.depth,
         score: data.score,
-      };
-      if (cs.insideWave) {
-        cs.pendingWaveEffects.push(effect);
-      } else {
-        cs.itemEffects.push(effect);
-      }
-    },
-
-    onWaveStep(data: WaveStepData) {
-      cs.insideWave = true;
-      const step: WaveAnimStep = {
-        pos: data.pos,
-        kind: data.kind,
-        newDurability: data.newDurability,
-        dropMoves: data.dropMoves,
-        newTileEntries: data.newTileEntries,
-        boardAfter: data.boardAfter,
-        score: data.score,
-      };
-      if (data.kind === 'item_activate') {
-        step.effects = cs.pendingWaveEffects.length > 0
-          ? [...cs.pendingWaveEffects]
-          : undefined;
-        step.chainsAfter = cs.pendingWaveChains.length > 0
-          ? [...cs.pendingWaveChains]
-          : undefined;
-      }
-      cs.waveSteps.push(step);
-      // Reset pending accumulators for next wave step
-      cs.pendingWaveEffects = [];
-      cs.pendingWaveChains = [];
+      });
     },
 
     onSynthesisEffect(data: SynthesisEffectData) {
@@ -323,25 +242,9 @@ function createCollector(cs: CollectorState): TraceCollector {
     },
 
     onDropData(moves: DropMove[], entries: NewTileEntry[]) {
-      if (!cs.insideWave) {
-        cs.dropMoves = moves;
-        cs.newTileEntries = entries;
-      }
+      cs.dropMoves = moves;
+      cs.newTileEntries = entries;
     },
-  };
-}
-
-function buildWaveAnimPlan(cs: CollectorState, finalState: GameState): WaveAnimPlan | undefined {
-  if (cs.waveSteps.length === 0) return undefined;
-  const waveNumber = finalState.moveCount > 0
-    ? Math.floor(finalState.moveCount / SURVIVAL_WAVE_INTERVAL)
-    : 0;
-  return {
-    waveNumber,
-    obstacleCount: cs.waveSteps.length,
-    steps: cs.waveSteps,
-    totalScore: cs.waveSteps.reduce((s, w) => s + w.score, 0),
-    finalBoard: cloneBoard(finalState.board),
   };
 }
 
@@ -350,14 +253,11 @@ function buildWaveAnimPlan(cs: CollectorState, finalState: GameState): WaveAnimP
  */
 function syncFinalBoard(
   finalState: GameState,
-  waveAnim: WaveAnimPlan | undefined,
   chains: ChainAnimData[],
   fallbackSetter: (board: (Cell | null)[][]) => void,
 ): void {
   const authBoard = cloneBoard(finalState.board);
-  if (waveAnim) {
-    waveAnim.finalBoard = authBoard;
-  } else if (chains.length > 0) {
+  if (chains.length > 0) {
     chains[chains.length - 1].boardAfterDrop = authBoard;
   } else {
     fallbackSetter(authBoard);
@@ -382,14 +282,12 @@ export function computeSwapPlan(state: GameState, pos: Position, dir: Direction)
   const finalState = processAction(state, { type: 'swap', pos, dir }, collector);
   if (finalState === state) return null;
 
-  const waveAnim = buildWaveAnimPlan(cs, finalState);
-  syncFinalBoard(finalState, waveAnim, cs.chains, () => {});
+  syncFinalBoard(finalState, cs.chains, () => {});
 
   return {
     boardAfterSwap: cs.boardAfterSwap!,
     chains: cs.chains,
     finalState,
-    waveAnim,
   };
 }
 
@@ -407,10 +305,9 @@ export function computeItemTapPlan(state: GameState, pos: Position): ItemAnimPla
   const finalState = processAction(state, { type: 'tap', pos }, collector);
   if (finalState === state) return null;
 
-  const waveAnim = buildWaveAnimPlan(cs, finalState);
   let boardAfterDrop = cs.boardAfterItemDrop ?? cloneBoard(finalState.board);
 
-  syncFinalBoard(finalState, waveAnim, cs.chains, (b) => { boardAfterDrop = b; });
+  syncFinalBoard(finalState, cs.chains, (b) => { boardAfterDrop = b; });
 
   return {
     boardBeforeActivation: cs.boardBeforeItemActivation ?? cloneBoard(state.board),
@@ -420,7 +317,6 @@ export function computeItemTapPlan(state: GameState, pos: Position): ItemAnimPla
     boardAfterDrop,
     regularChains: cs.chains,
     finalState,
-    waveAnim,
   };
 }
 
@@ -475,10 +371,9 @@ export function computeItemSwapPlan(state: GameState, pos: Position, dir: Direct
     }
   }
 
-  const waveAnim = buildWaveAnimPlan(cs, finalState);
   let boardAfterDrop = cs.boardAfterItemDrop ?? cloneBoard(finalState.board);
 
-  syncFinalBoard(finalState, waveAnim, regularChains, (b) => { boardAfterDrop = b; });
+  syncFinalBoard(finalState, regularChains, (b) => { boardAfterDrop = b; });
 
   return {
     boardAfterSwap: cs.boardAfterSwap!,
@@ -492,7 +387,6 @@ export function computeItemSwapPlan(state: GameState, pos: Position, dir: Direct
       boardAfterDrop,
       regularChains,
       finalState,
-      waveAnim,
     },
   };
 }
@@ -522,10 +416,9 @@ export function computeSynthesisPlan(state: GameState, pos: Position, dir: Direc
   for (const e of cs.synthEffects) effectScore += e.score;
   for (const e of cs.itemEffects) effectScore += e.score;
 
-  const waveAnim = buildWaveAnimPlan(cs, finalState);
   let boardAfterDrop = cs.boardAfterItemDrop ?? cloneBoard(finalState.board);
 
-  syncFinalBoard(finalState, waveAnim, cs.chains, (b) => { boardAfterDrop = b; });
+  syncFinalBoard(finalState, cs.chains, (b) => { boardAfterDrop = b; });
 
   return {
     boardAfterSwap: cs.boardAfterSwap!,
@@ -537,7 +430,6 @@ export function computeSynthesisPlan(state: GameState, pos: Position, dir: Direc
     boardAfterDrop,
     regularChains: cs.chains,
     finalState,
-    waveAnim,
   };
 }
 
@@ -556,13 +448,11 @@ export function computeScopePlan(state: GameState, scopePos: Position, targetCel
   if (finalState === state) return null;
 
   const effectScore = finalState.score - state.score
-    - cs.chains.reduce((s, c) => s + c.score, 0)
-    - (cs.waveSteps.length > 0 ? cs.waveSteps.reduce((s, w) => s + w.score, 0) : 0);
+    - cs.chains.reduce((s, c) => s + c.score, 0);
 
-  const waveAnim = buildWaveAnimPlan(cs, finalState);
   let boardAfterDrop = cs.boardAfterItemDrop ?? cloneBoard(finalState.board);
 
-  syncFinalBoard(finalState, waveAnim, cs.chains, (b) => { boardAfterDrop = b; });
+  syncFinalBoard(finalState, cs.chains, (b) => { boardAfterDrop = b; });
 
   return {
     scopePos,
@@ -576,7 +466,6 @@ export function computeScopePlan(state: GameState, scopePos: Position, targetCel
     boardAfterDrop,
     regularChains: cs.chains,
     finalState,
-    waveAnim,
   };
 }
 
@@ -621,13 +510,11 @@ export function computeScopeSynthesisPlan(state: GameState, pos1: Position, pos2
   const finalState = processScopeSynthesis(state, pos1, pos2, targetCells, collector);
 
   const effectScore = finalState.score - state.score
-    - cs.chains.reduce((s, c) => s + c.score, 0)
-    - (cs.waveSteps.length > 0 ? cs.waveSteps.reduce((s, w) => s + w.score, 0) : 0);
+    - cs.chains.reduce((s, c) => s + c.score, 0);
 
-  const waveAnim = buildWaveAnimPlan(cs, finalState);
   let boardAfterDrop = cs.boardAfterItemDrop ?? cloneBoard(finalState.board);
 
-  syncFinalBoard(finalState, waveAnim, cs.chains, (b) => { boardAfterDrop = b; });
+  syncFinalBoard(finalState, cs.chains, (b) => { boardAfterDrop = b; });
 
   return {
     pos1,
@@ -644,73 +531,5 @@ export function computeScopeSynthesisPlan(state: GameState, pos1: Position, pos2
     boardAfterDrop,
     regularChains: cs.chains,
     finalState,
-    waveAnim,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// computeAutoActivationPlan
-// ---------------------------------------------------------------------------
-
-/**
- * Auto-activation is special: it processes one item at a time with
- * no chains and no moveCount increment — matching processAutoActivationStep
- * exactly.
- *
- * Previously this used processAction('tap') which incorrectly incremented
- * moveCount and processed chains, causing score/moveCount mismatch between
- * the animation and the authoritative engine result.
- */
-export function computeAutoActivationPlan(state: GameState): { pos: Position; plan: ItemAnimPlan } | null {
-  if (state.mode !== 'sprint') return null;
-
-  // Find the first activatable item (same scan order as processAutoActivationStep)
-  let itemPos: Position | null = null;
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      const cell = state.board[r][c];
-      if (!cell?.item) continue;
-
-      if (cell.item === 'flush') {
-        const board = state.board;
-        let hasTargetColor = false;
-        for (let br = 0; br < BOARD_SIZE && !hasTargetColor; br++) {
-          for (let bc = 0; bc < BOARD_SIZE && !hasTargetColor; bc++) {
-            if (br === r && bc === c) continue;
-            const tc = board[br]?.[bc];
-            if (tc && !tc.item && !tc.obstacle) {
-              hasTargetColor = true;
-            }
-          }
-        }
-        if (!hasTargetColor) continue;
-      }
-
-      itemPos = { row: r, col: c };
-      break;
-    }
-    if (itemPos) break;
-  }
-  if (!itemPos) return null;
-
-  const cs = createCollectorState();
-  const collector = createCollector(cs);
-
-  const finalState = processAutoActivationStep(state, collector);
-  if (!finalState) return null;
-
-  const boardAfterDrop = cs.boardAfterItemDrop ?? cloneBoard(finalState.board);
-
-  return {
-    pos: itemPos,
-    plan: {
-      boardBeforeActivation: cs.boardBeforeItemActivation ?? cloneBoard(state.board),
-      effects: cs.itemEffects,
-      dropMoves: cs.dropMoves,
-      newTileEntries: cs.newTileEntries,
-      boardAfterDrop,
-      regularChains: [],
-      finalState,
-    },
   };
 }

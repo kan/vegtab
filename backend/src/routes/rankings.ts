@@ -1,14 +1,12 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 import { isRankingClosed } from '../lib/date';
+import { MODE } from '../lib/mode';
 
 const DEFAULT_DISPLAY_NAME = 'NO NAME';
 
 const RANKING_CACHE_TTL = 300; // 5 minutes
 const RANKING_LIMIT = 100;
-
-const VALID_MODES = ['sprint', 'clear', 'survival', 'cascade'] as const;
-type GameMode = (typeof VALID_MODES)[number];
 
 export const rankingRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -16,7 +14,8 @@ export const rankingRoutes = new Hono<{ Bindings: Bindings; Variables: Variables
 async function fetchRanking(
   db: D1Database, kv: KVNamespace, userId: string, seedId: string, mode: string,
 ) {
-  if (!VALID_MODES.includes(mode as GameMode)) {
+  // `mode` is optional and defaults to clear; the removed modes are rejected
+  if (mode !== MODE) {
     return { error: 'Invalid mode' as const };
   }
 
@@ -28,35 +27,35 @@ async function fetchRanking(
   if (!seedInfo) return { ranking: [], userRank: null };
   const rankingClosed = seedInfo.daily_date != null && isRankingClosed(seedInfo.daily_date);
 
-  const cacheKey = `ranking:${seedId}:${mode}`;
+  const cacheKey = `ranking:${seedId}:${MODE}`;
   const cached = await kv.get(cacheKey, 'json') as RankingData | null;
   if (cached) {
     // Once the ranking is closed, expose scoreId on all entries
-    const entries = rankingClosed
-      ? cached.entries.map(e => ({ ...e, scoreId: e.scoreId ?? e._scoreId }))
-      : cached.entries.map(e => ({ ...e, scoreId: e.userId === userId ? (e.scoreId ?? e._scoreId) : undefined }));
+    const entries = cached.entries.map(e => toPublicEntry(e, rankingClosed || e.userId === userId));
     const cachedEntry = cached.entries.find(e => e.userId === userId);
     const userRank = cachedEntry
-      ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount, cascadePoints: cachedEntry.cascadePoints }
-      : await getUserRank(db, userId, seedId, mode as GameMode);
+      ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount }
+      : await getUserRank(db, userId, seedId);
     return { ranking: entries, userRank };
   }
 
   const [rankingEntries, userRank] = await Promise.all([
-    queryRanking(db, seedId, mode as GameMode, userId, rankingClosed),
-    getUserRank(db, userId, seedId, mode as GameMode),
+    queryRanking(db, seedId),
+    getUserRank(db, userId, seedId),
   ]);
 
   // Cache always stores _scoreId so we can resolve per-user visibility on cache hit
-  const cacheEntries = rankingEntries.map(e => ({ ...e, _scoreId: e.scoreId }));
-  await kv.put(cacheKey, JSON.stringify({ entries: cacheEntries }), {
+  await kv.put(cacheKey, JSON.stringify({ entries: rankingEntries }), {
     expirationTtl: RANKING_CACHE_TTL,
   });
 
-  return { ranking: rankingEntries, userRank };
+  return {
+    ranking: rankingEntries.map(e => toPublicEntry(e, rankingClosed || e.userId === userId)),
+    userRank,
+  };
 }
 
-// GET /api/rankings/by-value/:seedValue?mode=sprint
+// GET /api/rankings/by-value/:seedValue?mode=clear
 rankingRoutes.get('/by-value/:seedValue', async (c) => {
   const seed = await c.env.DB.prepare(
     'SELECT id FROM puzzle_seeds WHERE seed_value = ?'
@@ -64,16 +63,16 @@ rankingRoutes.get('/by-value/:seedValue', async (c) => {
   if (!seed) return c.json({ ranking: [], userRank: null });
 
   const result = await fetchRanking(
-    c.env.DB, c.env.KV, c.get('userId'), seed.id, c.req.query('mode') ?? 'sprint',
+    c.env.DB, c.env.KV, c.get('userId'), seed.id, c.req.query('mode') ?? MODE,
   );
   if ('error' in result) return c.json({ error: result.error }, 400);
   return c.json(result);
 });
 
-// GET /api/rankings/:seedId?mode=sprint
+// GET /api/rankings/:seedId?mode=clear
 rankingRoutes.get('/:seedId', async (c) => {
   const result = await fetchRanking(
-    c.env.DB, c.env.KV, c.get('userId'), c.req.param('seedId'), c.req.query('mode') ?? 'sprint',
+    c.env.DB, c.env.KV, c.get('userId'), c.req.param('seedId'), c.req.query('mode') ?? MODE,
   );
   if ('error' in result) return c.json({ error: result.error }, 400);
   return c.json(result);
@@ -85,16 +84,23 @@ interface RankingEntry {
   displayName: string;
   score: number;
   moveCount: number;
-  isCleared?: boolean;
-  maxChain?: number;
-  cascadePoints?: number;
+  /** Always true: only cleared runs are ranked */
+  isCleared: true;
   scoreId?: string;
-  /** Internal: always present in cache, resolved to scoreId per visibility rules */
-  _scoreId?: string;
+}
+
+/** Cached form: always holds the score id, resolved to scoreId per visibility rules */
+interface CachedRankingEntry extends Omit<RankingEntry, 'scoreId' | 'isCleared'> {
+  _scoreId: string;
 }
 
 interface RankingData {
-  entries: RankingEntry[];
+  entries: CachedRankingEntry[];
+}
+
+function toPublicEntry(e: CachedRankingEntry, showScoreId: boolean): RankingEntry {
+  const { _scoreId, ...rest } = e;
+  return { ...rest, isCleared: true, scoreId: showScoreId ? _scoreId : undefined };
 }
 
 interface RankedRow {
@@ -102,47 +108,34 @@ interface RankedRow {
   user_id: string;
   score: number;
   move_count: number;
-  max_chain: number | null;
-  cascade_points: number;
   rank: number;
 }
 
-/**
- * モードごとの順位の基準。一覧・「あなたの順位」の両方がここから作る SQL を使うので、食い違わない。
- * - filter: ランキングに載る記録の条件
- * - order: 良い順。すべての項目が同じなら同順位
- */
-const RANKING_RULES: Record<GameMode, { filter: string; order: string }> = {
-  sprint: { filter: '', order: 'score DESC' },
-  clear: { filter: 'AND is_cleared = 1', order: 'move_count ASC, score DESC' },
-  survival: { filter: '', order: 'move_count DESC, score DESC' },
-  cascade: { filter: '', order: 'cascade_points DESC, score DESC' },
-};
+/** 良い順（少ない手数、同じ手数なら高いスコア）。すべての項目が同じなら同順位 */
+const RANKING_ORDER = 'move_count ASC, score DESC';
 
 /**
- * ユーザーごとのベスト 1 件に絞り、同点を同順位にした順位（1, 1, 3, ...）を付ける CTE。
+ * クリアした記録をユーザーごとのベスト 1 件に絞り、同点を同順位にした順位（1, 1, 3, ...）を付ける CTE。
+ * 一覧・「あなたの順位」の両方がこれを使うので、食い違わない。
  * created_at はその seed×mode に初めて送った時刻（ベスト更新では変わらない）で、同順位の中の並びと、
  * 同じ記録が複数行あるときの代表を決めるのに使う。バインド: seed_id, mode
  */
-function rankedCte(mode: GameMode): string {
-  const { filter, order } = RANKING_RULES[mode];
-  return `WITH best AS (
-       SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY ${order}, created_at, id) AS rn
+const RANKED_CTE = `WITH best AS (
+       SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY ${RANKING_ORDER}, created_at, id) AS rn
        FROM play_scores
-       WHERE seed_id = ? AND mode = ? ${filter}
+       WHERE seed_id = ? AND mode = ? AND is_cleared = 1
      ), ranked AS (
-       SELECT *, RANK() OVER (ORDER BY ${order}) AS rank FROM best WHERE rn = 1
+       SELECT *, RANK() OVER (ORDER BY ${RANKING_ORDER}) AS rank FROM best WHERE rn = 1
      )`;
-}
 
-async function queryRanking(db: D1Database, seedId: string, mode: GameMode, userId: string, rankingClosed = false): Promise<RankingEntry[]> {
+async function queryRanking(db: D1Database, seedId: string): Promise<CachedRankingEntry[]> {
   const { results } = await db.prepare(
-    `${rankedCte(mode)}
+    `${RANKED_CTE}
      SELECT r.*, u.display_name FROM ranked r
      JOIN users u ON u.id = r.user_id
      ORDER BY r.rank, r.created_at, r.id
      LIMIT ?`
-  ).bind(seedId, mode, RANKING_LIMIT).all<RankedRow & { display_name: string | null }>();
+  ).bind(seedId, MODE, RANKING_LIMIT).all<RankedRow & { display_name: string | null }>();
 
   return (results ?? []).map(e => ({
     rank: e.rank,
@@ -150,9 +143,7 @@ async function queryRanking(db: D1Database, seedId: string, mode: GameMode, user
     displayName: e.display_name ?? DEFAULT_DISPLAY_NAME,
     score: e.score,
     moveCount: e.move_count,
-    scoreId: (rankingClosed || e.user_id === userId) ? e.id : undefined,
-    ...(mode === 'clear' && { isCleared: true }),
-    ...(mode === 'cascade' && { maxChain: e.max_chain ?? 0, cascadePoints: e.cascade_points }),
+    _scoreId: e.id,
   }));
 }
 
@@ -160,18 +151,12 @@ async function getUserRank(
   db: D1Database,
   userId: string,
   seedId: string,
-  mode: GameMode
-): Promise<{ rank: number; score: number; moveCount?: number; maxChain?: number; cascadePoints?: number } | null> {
+): Promise<{ rank: number; score: number; moveCount: number } | null> {
   const row = await db.prepare(
-    `${rankedCte(mode)}
+    `${RANKED_CTE}
      SELECT * FROM ranked WHERE user_id = ?`
-  ).bind(seedId, mode, userId).first<RankedRow>();
+  ).bind(seedId, MODE, userId).first<RankedRow>();
   if (!row) return null;
 
-  return {
-    rank: row.rank,
-    score: row.score,
-    ...((mode === 'clear' || mode === 'survival') && { moveCount: row.move_count }),
-    ...(mode === 'cascade' && { maxChain: row.max_chain ?? 0, cascadePoints: row.cascade_points }),
-  };
+  return { rank: row.rank, score: row.score, moveCount: row.move_count };
 }

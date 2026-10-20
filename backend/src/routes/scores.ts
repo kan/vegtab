@@ -9,8 +9,12 @@ import { isDateNearToday, isRankingClosed } from '../lib/date';
 import { findOrCreateDailySeed } from '../lib/seed';
 import { evaluateAchievements } from '../lib/achievements';
 import { verifyReplay } from '../lib/replay-verify';
+import { MODE } from '../lib/mode';
 
-/** Upper bound on replay length; generous enough for long Survival runs */
+/**
+ * Upper bound on replay length. Clear has no move limit (it ends on clearing or a stuck board),
+ * so this is a generous cap well above any real run, not a game rule
+ */
 const MAX_REPLAY_ACTIONS = 1000;
 const MAX_SCORE_BODY_BYTES = 256 * 1024;
 
@@ -27,34 +31,25 @@ const replayActionSchema: z.ZodType<ReplayAction> = z.discriminatedUnion('type',
   z.object({ type: z.literal('scope'), pos: positionSchema, targetCells: targetCellsSchema }),
   z.object({ type: z.literal('scope_synthesis'), pos1: positionSchema, pos2: positionSchema, targetCells: targetCellsSchema }),
   z.object({ type: z.literal('scope_swap'), pos: positionSchema, dir: directionSchema, targetCells: targetCellsSchema }),
-  z.object({ type: z.literal('auto_activate') }),
 ]);
 
 // Client-reported score/moveCount/etc. are intentionally not part of the schema:
 // every result is re-simulated from the replay log.
 const submitScoreSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  mode: z.enum(['sprint', 'clear', 'survival', 'cascade']),
-  moveLimit: z.number().int().nullable().optional(),
+  mode: z.literal(MODE),
   generatedItemTypes: z.array(z.string().max(20)).max(10).optional().default([]),
   replayLog: z.array(replayActionSchema).min(1).max(MAX_REPLAY_ACTIONS),
 });
 
 /**
  * upsert の DO UPDATE の条件: 新しい記録（excluded）が保存済みのベスト（play_scores）より良いか。
- * Clear はクリアした記録を優先し、どちらもクリアなら少ない手数、同じ手数なら高いスコアを良いとする
+ * クリアした記録を優先し、どちらもクリアなら少ない手数、同じ手数なら高いスコアを良いとする
  */
-const BETTER_THAN_STORED: Record<z.infer<typeof submitScoreSchema>['mode'], string> = {
-  sprint: 'excluded.score > play_scores.score',
-  clear: `excluded.is_cleared > play_scores.is_cleared
+const BETTER_THAN_STORED = `excluded.is_cleared > play_scores.is_cleared
     OR (excluded.is_cleared = 1 AND play_scores.is_cleared = 1
       AND (excluded.move_count < play_scores.move_count
-        OR (excluded.move_count = play_scores.move_count AND excluded.score > play_scores.score)))`,
-  survival: `excluded.move_count > play_scores.move_count
-    OR (excluded.move_count = play_scores.move_count AND excluded.score > play_scores.score)`,
-  cascade: `excluded.cascade_points > play_scores.cascade_points
-    OR (excluded.cascade_points = play_scores.cascade_points AND excluded.score > play_scores.score)`,
-};
+        OR (excluded.move_count = play_scores.move_count AND excluded.score > play_scores.score)))`;
 
 export const scoreRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
@@ -80,7 +75,7 @@ scoreRoutes.post('/', bodyLimit({
   }
 
   // Replay verification: the result is always re-simulated from the replay log
-  const verified = verifyReplay(Number(seed.seed_value), data.mode, data.replayLog);
+  const verified = verifyReplay(Number(seed.seed_value), data.replayLog);
   if (!verified.valid) {
     return c.json({ error: 'Invalid replay' }, 400);
   }
@@ -89,19 +84,17 @@ scoreRoutes.post('/', bodyLimit({
     moveCount: verifiedMoveCount,
     isCleared: verifiedIsCleared,
     maxChain: verifiedMaxChain,
-    cascadePoints: verifiedCascadePoints,
   } = verified;
 
-  const betterThanStored = BETTER_THAN_STORED[data.mode];
   const isCleared = verifiedIsCleared ? 1 : 0;
 
   // Most submissions do not beat the stored best; those are answered without touching R2
   const stored = await c.env.DB.prepare(
-    `SELECT play_scores.id, play_scores.replay_log_key, (${betterThanStored}) AS better
-     FROM play_scores, (SELECT ? AS score, ? AS move_count, ? AS is_cleared, ? AS cascade_points) AS excluded
+    `SELECT play_scores.id, play_scores.replay_log_key, (${BETTER_THAN_STORED}) AS better
+     FROM play_scores, (SELECT ? AS score, ? AS move_count, ? AS is_cleared) AS excluded
      WHERE play_scores.user_id = ? AND play_scores.seed_id = ? AND play_scores.mode = ?`
   ).bind(
-    verifiedScore, verifiedMoveCount, isCleared, verifiedCascadePoints, userId, seed.id, data.mode,
+    verifiedScore, verifiedMoveCount, isCleared, userId, seed.id, MODE,
   ).first<{ id: string; replay_log_key: string | null; better: number }>();
 
   let scoreId: string;
@@ -113,20 +106,20 @@ scoreRoutes.post('/', bodyLimit({
     await c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog));
 
     // One statement keeps concurrent first submissions from creating duplicate rows:
-    // insert, or replace the stored best only when the new result is still better
+    // insert, or replace the stored best only when the new result is still better.
+    // move_limit and cascade_points (removed modes) are left to their column defaults
     const upserted = await c.env.DB.prepare(
-      `INSERT INTO play_scores (id, user_id, seed_id, mode, move_limit, move_count, score, is_cleared, max_chain, cascade_points, replay_log_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, is_cleared, max_chain, replay_log_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id, seed_id, mode) DO UPDATE SET
-         move_limit = excluded.move_limit, move_count = excluded.move_count, score = excluded.score,
-         is_cleared = excluded.is_cleared, max_chain = excluded.max_chain, cascade_points = excluded.cascade_points,
+         move_count = excluded.move_count, score = excluded.score,
+         is_cleared = excluded.is_cleared, max_chain = excluded.max_chain,
          replay_log_key = excluded.replay_log_key
-       WHERE ${betterThanStored}
+       WHERE ${BETTER_THAN_STORED}
        RETURNING id`
     ).bind(
-      generateId(), userId, seed.id, data.mode,
-      data.moveLimit ?? null, verifiedMoveCount, verifiedScore,
-      isCleared, verifiedMaxChain, verifiedCascadePoints, replayLogKey
+      generateId(), userId, seed.id, MODE,
+      verifiedMoveCount, verifiedScore, isCleared, verifiedMaxChain, replayLogKey
     ).first<{ id: string }>().catch(async (e) => {
       await c.env.R2.delete(replayLogKey);
       throw e;
@@ -136,7 +129,7 @@ scoreRoutes.post('/', bodyLimit({
       scoreId = upserted.id;
       await Promise.all([
         // Invalidate the ranking cache only after the DB write has committed
-        c.env.KV.delete(`ranking:${seed.id}:${data.mode}`),
+        c.env.KV.delete(`ranking:${seed.id}:${MODE}`),
         // The row now points at the new object, so the replaced best's replay is unreferenced
         stored?.replay_log_key ? c.env.R2.delete(stored.replay_log_key) : undefined,
       ]);
@@ -145,7 +138,7 @@ scoreRoutes.post('/', bodyLimit({
       await c.env.R2.delete(replayLogKey);
       const current = await c.env.DB.prepare(
         'SELECT id FROM play_scores WHERE user_id = ? AND seed_id = ? AND mode = ?'
-      ).bind(userId, seed.id, data.mode).first<{ id: string }>();
+      ).bind(userId, seed.id, MODE).first<{ id: string }>();
       scoreId = current!.id;
     }
   }
@@ -154,13 +147,9 @@ scoreRoutes.post('/', bodyLimit({
   let newAchievements: string[] = [];
   try {
     newAchievements = await evaluateAchievements(c.env.DB, userId, {
-      mode: data.mode,
-      score: verifiedScore,
       moveCount: verifiedMoveCount,
       isCleared: verifiedIsCleared,
-      date: data.date,
       maxChain: verifiedMaxChain,
-      cascadePoints: verifiedCascadePoints,
       generatedItemTypes: data.generatedItemTypes,
     });
   } catch {
@@ -175,11 +164,11 @@ scoreRoutes.get('/my', async (c) => {
   const userId = c.get('userId');
   const seedId = c.req.query('seedId');
 
-  let query = `SELECT ps.id, ps.seed_id, s.seed_value, ps.mode, ps.move_limit, ps.move_count, ps.score, ps.is_cleared, ps.created_at
+  let query = `SELECT ps.id, ps.seed_id, s.seed_value, ps.mode, ps.move_count, ps.score, ps.is_cleared, ps.created_at
     FROM play_scores ps
     JOIN puzzle_seeds s ON s.id = ps.seed_id
-    WHERE ps.user_id = ?`;
-  const params: unknown[] = [userId];
+    WHERE ps.user_id = ? AND ps.mode = ?`;
+  const params: unknown[] = [userId, MODE];
 
   if (seedId) {
     query += ' AND ps.seed_id = ?';
@@ -189,7 +178,7 @@ scoreRoutes.get('/my', async (c) => {
 
   const scores = await c.env.DB.prepare(query).bind(...params).all<{
     id: string; seed_id: string; seed_value: string; mode: string;
-    move_limit: number | null; move_count: number; score: number;
+    move_count: number; score: number;
     is_cleared: number; created_at: string;
   }>();
 
@@ -199,7 +188,6 @@ scoreRoutes.get('/my', async (c) => {
       seedId: s.seed_id,
       seedValue: Number(s.seed_value),
       mode: s.mode,
-      moveLimit: s.move_limit,
       moveCount: s.move_count,
       score: s.score,
       isCleared: !!s.is_cleared,
@@ -215,15 +203,14 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
   const scoreId = c.req.param('scoreId');
 
   const score = await c.env.DB.prepare(
-    `SELECT ps.replay_log_key, ps.mode, ps.move_limit, ps.score as final_score, ps.cascade_points,
+    `SELECT ps.replay_log_key, ps.score as final_score,
             ps.user_id, s.seed_value, s.daily_date, u.display_name
      FROM play_scores ps
      JOIN puzzle_seeds s ON s.id = ps.seed_id
      LEFT JOIN users u ON u.id = ps.user_id
-     WHERE ps.id = ?`
-  ).bind(scoreId).first<{
-    replay_log_key: string | null; mode: string; move_limit: number | null;
-    final_score: number; cascade_points: number; seed_value: string;
+     WHERE ps.id = ? AND ps.mode = ?`
+  ).bind(scoreId, MODE).first<{
+    replay_log_key: string | null; final_score: number; seed_value: string;
     user_id: string; daily_date: string | null; display_name: string | null;
   }>();
 
@@ -249,10 +236,7 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
   return c.json({
     replayLog,
     seed: Number(score.seed_value),
-    mode: score.mode,
-    moveLimit: score.move_limit,
     finalScore: score.final_score,
-    cascadePoints: score.cascade_points,
     displayName: score.display_name ?? 'NO NAME',
   });
 });

@@ -3,6 +3,8 @@ import { ref, computed } from 'vue';
 import { formatDateJST, todayJST } from '@/utils/date';
 import { api, register, isAuthenticated, showToast } from '@/api/client';
 import { setLocalItem } from '@/lib/storage';
+import { filterPlayRecords } from '@/lib/legacyData';
+import { isBetterResult, type ResultSummary } from '@/lib/bestResult';
 // 静的に import する（遅延 import だと、デプロイ後の旧バンドルのタブで旧チャンクが取れず実績の通知が消える）
 import { useAchievementStore } from '@/stores/achievements';
 import { generateDailySeed } from '@vegtab/engine';
@@ -11,19 +13,13 @@ import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
 
 // --- Types ---
 
-export type GameMode = 'sprint' | 'clear' | 'survival' | 'cascade';
-
 export interface PlayRecord {
   seed: number;
-  mode: GameMode;
   score: number;
   moves: number;
   playedAt: number;
   playerName: string;
   isCleared?: boolean;
-  moveLimit?: number;
-  maxChain?: number;
-  cascadePoints?: number;
   generatedItemTypes?: string[];
   replayLog?: ReplayAction[];
 }
@@ -32,7 +28,7 @@ export interface PlayRecord {
 
 export const useGameStore = defineStore('game', () => {
   const displayName = ref(loadStr('vegtab_display_name', ''));
-  const playRecords = ref<PlayRecord[]>(loadJson('vegtab_play_records', []));
+  const playRecords = ref<PlayRecord[]>(loadPlayRecords());
   const initialized = ref(false);
   // Cache: engine seed number → shareCode (populated from score submission response)
   const shareCodeCache = ref<Record<number, string>>(
@@ -70,8 +66,18 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  // Track which seed:mode combos are known to exist on the server
-  const serverScoreKeys = new Set<string>();
+  // seed → the best result stored on the server (from /api/scores/my)
+  const serverBest = new Map<number, ResultSummary>();
+
+  function toSummary(r: PlayRecord): ResultSummary {
+    return { isCleared: r.isCleared ?? false, moves: r.moves, score: r.score };
+  }
+
+  /** サーバーのベストがこの記録以上なので、送っても置き換わらない（失敗だけの日に後からクリアした記録は送る） */
+  function isCoveredByServer(r: PlayRecord): boolean {
+    const best = serverBest.get(r.seed);
+    return !!best && !isBetterResult(toSummary(r), best);
+  }
 
   /** Fetch user's scores from server and merge into local playRecords */
   async function syncScoresFromServer() {
@@ -79,8 +85,6 @@ export const useGameStore = defineStore('game', () => {
       const data = await api<{
         scores: Array<{
           seedValue: number;
-          mode: GameMode;
-          moveLimit: number | null;
           moveCount: number;
           score: number;
           isCleared: boolean;
@@ -88,28 +92,24 @@ export const useGameStore = defineStore('game', () => {
         }>;
       }>('/api/scores/my');
 
-      serverScoreKeys.clear();
-      const localKeys = new Set(
-        playRecords.value.map(r => `${r.seed}:${r.mode}`),
-      );
+      serverBest.clear();
+      const localSeeds = new Set(playRecords.value.map(r => r.seed));
       for (const s of data.scores) {
-        serverScoreKeys.add(`${s.seedValue}:${s.mode}`);
-        if (localKeys.has(`${s.seedValue}:${s.mode}`)) continue;
+        serverBest.set(s.seedValue, { isCleared: s.isCleared, moves: s.moveCount, score: s.score });
+        if (localSeeds.has(s.seedValue)) continue;
 
         playRecords.value.push({
           seed: s.seedValue,
-          mode: s.mode,
           score: s.score,
           moves: s.moveCount,
-          moveLimit: s.moveLimit ?? undefined,
           isCleared: s.isCleared,
           playedAt: new Date(s.createdAt + 'Z').getTime(),
           playerName: effectiveName.value,
         });
       }
-      // サーバーに記録のある seed×mode と、再送の期間を過ぎた日の記録は再送しないので、容量を食う replayLog はもう要らない
+      // サーバーのベストを超えない記録と、再送の期間を過ぎた日の記録は再送しないので、容量を食う replayLog はもう要らない
       for (const r of playRecords.value) {
-        if (r.replayLog && (serverScoreKeys.has(`${r.seed}:${r.mode}`) || findDailyDate(r.seed) === null)) {
+        if (r.replayLog && (isCoveredByServer(r) || findDailyDate(r.seed) === null)) {
           delete r.replayLog;
         }
       }
@@ -197,8 +197,7 @@ export const useGameStore = defineStore('game', () => {
   function buildScorePayload(record: Omit<PlayRecord, 'playedAt' | 'playerName'>, date: string) {
     return {
       date,
-      mode: record.mode,
-      moveLimit: record.moveLimit ?? null,
+      mode: 'clear',
       generatedItemTypes: record.generatedItemTypes ?? [],
       replayLog: record.replayLog,
     };
@@ -249,7 +248,7 @@ export const useGameStore = defineStore('game', () => {
   /** Re-submit local scores that are missing from the server (e.g., due to past findDailyDate bug). */
   async function resubmitUnsentScores() {
     const pending = playRecords.value.filter(r => {
-      if (serverScoreKeys.has(`${r.seed}:${r.mode}`) || !hasReplayLog(r)) return false;
+      if (isCoveredByServer(r) || !hasReplayLog(r)) return false;
       return findDailyDate(r.seed) !== null;
     });
     if (pending.length === 0) return;
@@ -260,7 +259,7 @@ export const useGameStore = defineStore('game', () => {
         method: 'POST',
         body: JSON.stringify(buildScorePayload(record, date)),
       });
-      serverScoreKeys.add(`${record.seed}:${record.mode}`);
+      serverBest.set(record.seed, toSummary(record));
       handleScoreResponse(res, record.seed);
       delete record.replayLog;
     }));
@@ -268,46 +267,24 @@ export const useGameStore = defineStore('game', () => {
     if (results.some(r => r.status === 'fulfilled')) saveRecords();
   }
 
-  function getRecordsForSeed(seed: number, mode?: GameMode): PlayRecord[] {
-    return playRecords.value.filter(r =>
-      r.seed === seed && (mode === undefined || r.mode === mode)
-    );
+  function getRecordsForSeed(seed: number): PlayRecord[] {
+    return playRecords.value.filter(r => r.seed === seed);
   }
 
-  function getBestScore(seed: number, mode: GameMode): number {
-    const records = getRecordsForSeed(seed, mode);
-    if (records.length === 0) return 0;
-    if (mode === 'clear') {
-      // Clearモード: 最少手数が最良
-      const clearedRecords = records.filter(r => r.score > 0); // score=moveCount for cleared
-      return clearedRecords.length > 0 ? Math.min(...clearedRecords.map(r => r.score)) : 0;
+  /** seed → クリアした記録の最少手数（カレンダーの各セルから引くので、記録が変わったときだけ作り直す） */
+  const bestMovesBySeed = computed(() => {
+    const map = new Map<number, number>();
+    for (const r of playRecords.value) {
+      if (!r.isCleared) continue;
+      const best = map.get(r.seed);
+      if (best === undefined || r.moves < best) map.set(r.seed, r.moves);
     }
-    return Math.max(...records.map(r => r.score));
-  }
+    return map;
+  });
 
-  function getBestMoves(seed: number, mode: GameMode): number {
-    const records = getRecordsForSeed(seed, mode);
-    if (records.length === 0) return 0;
-    if (mode === 'clear') {
-      const clearedRecords = records.filter(r => r.isCleared);
-      return clearedRecords.length > 0 ? Math.min(...clearedRecords.map(r => r.moves)) : 0;
-    }
-    if (mode === 'survival') {
-      return Math.max(...records.map(r => r.moves));
-    }
-    return 0;
-  }
-
-  function getBestMaxChain(seed: number): number {
-    const records = getRecordsForSeed(seed, 'cascade');
-    if (records.length === 0) return 0;
-    return Math.max(...records.map(r => r.maxChain ?? 0));
-  }
-
-  function getBestCascadePoints(seed: number): number {
-    const records = getRecordsForSeed(seed, 'cascade');
-    if (records.length === 0) return 0;
-    return Math.max(...records.map(r => r.cascadePoints ?? 0));
+  /** クリアした記録のうち最少の手数。クリアした記録がなければ 0 */
+  function getBestMoves(seed: number): number {
+    return bestMovesBySeed.value.get(seed) ?? 0;
   }
 
   // --- Calendar helpers ---
@@ -362,7 +339,7 @@ export const useGameStore = defineStore('game', () => {
     playRecords,
     generateDailySeed: dailySeed, randomSeed,
     isTodaysDailySeed,
-    addPlayRecord, getRecordsForSeed, getBestScore, getBestMoves, getBestMaxChain, getBestCascadePoints,
+    addPlayRecord, getRecordsForSeed, getBestMoves,
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, syncScoresFromServer, initialized,
     getShareCode,
@@ -378,6 +355,11 @@ function loadStr(key: string, fallback: string): string {
   } catch {
     return fallback;
   }
+}
+
+/** 撤去したモード（Sprint / Survival / Cascade）の記録は読み込まない（次の保存で消える） */
+function loadPlayRecords(): PlayRecord[] {
+  return filterPlayRecords<PlayRecord>(loadJson<unknown>('vegtab_play_records', []));
 }
 
 function loadJson<T>(key: string, fallback: T): T {

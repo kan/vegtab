@@ -87,40 +87,20 @@ describe('computeDropMoves', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // おじゃまタイル（セグメントバリア）
+  // おじゃまタイル（固定され、他のタイルはすり抜けて落下する）
   // ---------------------------------------------------------------------------
-  describe('おじゃまタイル（segment barrier モード）', () => {
-    it('おじゃまタイルの上下でセグメントが分離される', () => {
-      const board = fullBoard();
-      // row=3, col=1 におじゃまタイルを配置
-      board[3][1] = { color: 0 as Color, obstacle: { durability: 1 } };
-      // row=5 を null にする（おじゃまの下セグメント内）
-      board[5][1] = null;
-
-      const { moves } = computeDropMoves(board, false);
-      // col=1 のおじゃまの下セグメント（row=4..7）内で row=4 が row=5 に落下
-      const colMoves = moves.filter(m => m.col === 1);
-      expect(colMoves).toHaveLength(1);
-      expect(colMoves[0].fromRow).toBe(4);
-      expect(colMoves[0].toRow).toBe(5);
-    });
-
+  describe('おじゃまタイル', () => {
     it('おじゃまタイル自体は移動しない', () => {
       const board = fullBoard();
       board[3][0] = { color: 0 as Color, obstacle: { durability: 2 } };
       board[BOARD_SIZE - 1][0] = null;
 
-      const { moves } = computeDropMoves(board, false);
+      const { moves } = computeDropMoves(board);
       // おじゃまタイル (row=3) は移動リストに含まれない
       const obsMove = moves.find(m => m.col === 0 && m.fromRow === 3);
       expect(obsMove).toBeUndefined();
     });
-  });
 
-  // ---------------------------------------------------------------------------
-  // passThroughObstacles モード
-  // ---------------------------------------------------------------------------
-  describe('passThroughObstacles=true', () => {
     it('おじゃまタイルを固定して通常タイルがすり抜け落下する', () => {
       const board = fullBoard();
       // row=2, col=0 におじゃまタイル
@@ -128,26 +108,14 @@ describe('computeDropMoves', () => {
       // row=6 を null にする
       board[6][0] = null;
 
-      const { moves } = computeDropMoves(board, true);
+      const { moves } = computeDropMoves(board);
       // おじゃまタイル（row=2）は freeRows に含まれないので移動しない
       const obsMove = moves.find(m => m.col === 0 && m.fromRow === 2);
       expect(obsMove).toBeUndefined();
-      // row=6 の null を埋めるために上のフリータイルが1つ下にずれる
-      expect(moves.length).toBeGreaterThan(0);
-    });
-
-    it('おじゃまタイルが存在しない列では通常と同じ動作', () => {
-      const board = fullBoard();
-      board[BOARD_SIZE - 1][3] = null;
-      const result1 = computeDropMoves(board, false);
-      // 再作成（computeDropMoves は board を変更しないが念のため）
-      const board2 = fullBoard();
-      board2[BOARD_SIZE - 1][3] = null;
-      const result2 = computeDropMoves(board2, true);
-
-      const col3Moves1 = result1.moves.filter(m => m.col === 3);
-      const col3Moves2 = result2.moves.filter(m => m.col === 3);
-      expect(col3Moves1).toEqual(col3Moves2);
+      // おじゃまの上の row=1 のタイルは、おじゃまをすり抜けて row=3 に入る
+      expect(moves).toContainEqual({ col: 0, fromRow: 1, toRow: 3 });
+      // おじゃまの下のタイルは 1 行ずつ下にずれる
+      expect(moves).toContainEqual({ col: 0, fromRow: 5, toRow: 6 });
     });
   });
 

@@ -13,7 +13,7 @@ import { BOARD_SIZE, Cell, Color, GameState } from '../src/types.js';
 
 /** burst+flush の共通シナリオを実行 */
 function runBurstFlushScenario(): GameState {
-  const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+  const state = initializeGame(42, { obstacleCount: 0 });
   const cloned = cloneGameState(state);
   cloned.board[3][3] = { color: 0 as Color, item: 'burst' };
   cloned.board[3][5] = { color: 1 as Color, item: 'flush' };
@@ -22,7 +22,7 @@ function runBurstFlushScenario(): GameState {
 
 describe('flush chain-activation (pre-clear snapshot)', () => {
   it('burst が誘爆した flush は消去前の隣接色でターゲットを決定する', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42, { obstacleCount: 0 });
     const cloned = cloneGameState(state);
 
     // flush の上隣 (2,5) の色を記録 — これが flush のターゲット色になる
@@ -44,7 +44,7 @@ describe('flush chain-activation (pre-clear snapshot)', () => {
   });
 
   it('flush の全隣接セルが burst 範囲内でも snapshot から色を取得できる', () => {
-    const state = initializeGame(99, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(99, { obstacleCount: 0 });
     const cloned = cloneGameState(state);
 
     const targetColor = cloned.board[3][5]!.color;
@@ -60,7 +60,7 @@ describe('flush chain-activation (pre-clear snapshot)', () => {
   });
 
   it('flush の隣接に非アイテムセルがない場合は snapshot でも色取得できない', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42, { obstacleCount: 0 });
     const cloned = cloneGameState(state);
 
     cloned.board[2][2] = { color: 0 as Color, item: 'burst' };
@@ -96,7 +96,7 @@ describe('flush chain-activation (pre-clear snapshot)', () => {
   });
 
   it('flush を直接タップした場合も隣接色から正しくターゲットを決定する', () => {
-    const state = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const state = initializeGame(42, { obstacleCount: 0 });
     const cloned = cloneGameState(state);
 
     const targetColor = cloned.board[3][4]!.color;

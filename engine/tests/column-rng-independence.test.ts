@@ -5,7 +5,6 @@ import { initializeGame } from '../src/engine.js';
 import { hasMatches } from '../src/match.js';
 import { generateDailySeed } from '../src/seed.js';
 import { playGame } from '../src/autoPlayer.js';
-import { GameMode } from '../src/types.js';
 
 /**
  * 列ごとのRNGストリームが独立していることを保証する回帰テスト。
@@ -26,8 +25,6 @@ function stepsUntilCollision(a: number, b: number, maxSteps: number): number | n
   }
   return null;
 }
-
-const MODES: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
 
 describe('列RNGの独立性', () => {
   it('列同士のRNG状態が近接しない（同一ストリームの隣接オフセットにならない）', () => {
@@ -61,52 +58,43 @@ describe('初期化が必ず収束する', () => {
   const REGRESSION_DATES = ['2026-02-19', '2026-07-26', '2027-01-19', '2027-07-09'];
 
   for (const date of REGRESSION_DATES) {
-    for (const mode of MODES) {
-      it(`${date} (${mode}) の初期盤面がマッチなしで生成される`, () => {
-        const state = initializeGame(generateDailySeed(date), mode);
-        expect(hasMatches(state.board)).toBe(false);
-      });
-    }
+    it(`${date} の初期盤面がマッチなしで生成される`, () => {
+      const state = initializeGame(generateDailySeed(date));
+      expect(hasMatches(state.board)).toBe(false);
+    });
   }
 
   it('連続する日次シードで初期盤面が安定する', () => {
     const start = Date.UTC(2026, 0, 1);
     for (let i = 0; i < 400; i++) {
       const date = new Date(start + i * 86400000).toISOString().slice(0, 10);
-      const state = initializeGame(generateDailySeed(date), 'sprint');
+      const state = initializeGame(generateDailySeed(date));
       expect(hasMatches(state.board)).toBe(false);
     }
   });
 
   it('任意シードでも初期盤面が安定する', () => {
     for (let seed = 1; seed <= 2000; seed++) {
-      expect(hasMatches(initializeGame(seed, 'sprint').board)).toBe(false);
+      expect(hasMatches(initializeGame(seed).board)).toBe(false);
     }
   });
 });
 
 describe('ゲーム進行が必ず終了する', () => {
-  // 修正前に連鎖の安定化ループが終わらなくなっていたシード
-  const REGRESSION_SEEDS: { seed: number; mode: GameMode }[] = [
-    { seed: 78, mode: 'clear' },
-    { seed: 147, mode: 'cascade' },
-    { seed: 981, mode: 'sprint' },
-  ];
+  // 修正前に連鎖の安定化ループが終わらなくなっていたシード（当時は 78 が Clear、147 が Cascade、981 が Sprint）
+  const REGRESSION_SEEDS = [78, 147, 981];
 
-  for (const { seed, mode } of REGRESSION_SEEDS) {
-    it(`seed ${seed} (${mode}) が最後までプレイできる`, () => {
-      expect(playGame(seed, mode).moveCount).toBeGreaterThanOrEqual(0);
+  for (const seed of REGRESSION_SEEDS) {
+    it(`seed ${seed} が最後までプレイできる`, () => {
+      expect(playGame(seed).moveCount).toBeGreaterThanOrEqual(0);
     });
   }
 
-  // clear はオートプレイ1件あたりが重いため範囲を絞る
-  const SWEEP: Record<GameMode, number> = { sprint: 500, clear: 100, survival: 300, cascade: 500 };
-  for (const mode of MODES) {
-    const n = SWEEP[mode];
-    it(`${mode}: 1〜${n} の全シードで最後までプレイできる`, () => {
-      for (let seed = 1; seed <= n; seed++) {
-        expect(playGame(seed, mode).moveCount).toBeGreaterThanOrEqual(0);
-      }
-    }, 120_000);
-  }
+  // オートプレイ1件あたりが重いため範囲を絞る
+  const SWEEP = 100;
+  it(`1〜${SWEEP} の全シードで最後までプレイできる`, () => {
+    for (let seed = 1; seed <= SWEEP; seed++) {
+      expect(playGame(seed).moveCount).toBeGreaterThanOrEqual(0);
+    }
+  }, 120_000);
 });

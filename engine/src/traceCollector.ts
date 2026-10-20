@@ -35,7 +35,6 @@ export interface ChainStepData {
   destroyedObstacles: Position[];
   itemGens: { pos: Position; item: ItemType }[];
   score: number;
-  sparkleCount?: number;
   /** gravity 前の board から計算した落下移動（アニメ用） */
   dropMoves: DropMove[];
   /** gravity 前の board から計算した新タイル出現情報（アニメ用） */
@@ -51,21 +50,6 @@ export interface ItemEffectData {
   targets: Position[];
   detonations: { pos: Position; item: ItemType }[];
   depth: number;
-  score: number;
-}
-
-/** applyWave 内で各侵食位置ごとに通知されるデータ */
-export interface WaveStepData {
-  pos: Position;
-  kind: 'place' | 'bump' | 'item_activate';
-  /** bump の場合: 上昇後の耐久値 */
-  newDurability?: number;
-  /** item_activate の場合: 落下移動 */
-  dropMoves?: DropMove[];
-  /** item_activate の場合: 新タイル出現情報 */
-  newTileEntries?: NewTileEntry[];
-  /** 本ステップ完了後の盤面 */
-  boardAfter: (Cell | null)[][];
   score: number;
 }
 
@@ -89,9 +73,6 @@ export interface TraceCollector {
 
   /** アイテム効果（activateItem 内、各 detonation ごと） */
   onItemEffect?(data: ItemEffectData): void;
-
-  /** ウェーブ侵食ステップ（applyWave 内、各位置ごと） */
-  onWaveStep?(data: WaveStepData): void;
 
   /** 合成効果（processSynthesis 内） */
   onSynthesisEffect?(data: SynthesisEffectData): void;

@@ -2,10 +2,8 @@
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { type GameMode } from '@/stores/game';
 import { api, getUserId } from '@/api/client';
-import { goldMedalIcon, silverMedalIcon, bronzeMedalIcon, playIcon } from '@/assets/icons';
-import { MODE_ICONS } from '@/utils/constants';
+import { goldMedalIcon, silverMedalIcon, bronzeMedalIcon, playIcon, brickIcon } from '@/assets/icons';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -13,14 +11,12 @@ const router = useRouter();
 const props = defineProps<{
   seed: number;
   open: boolean;
-  mode?: GameMode;
 }>();
 
 const emit = defineEmits<{
   close: [];
 }>();
 
-const activeMode = ref<GameMode>(props.mode ?? 'sprint');
 const loading = ref(false);
 
 interface RankEntry {
@@ -30,24 +26,12 @@ interface RankEntry {
   playerName: string;
   isMe: boolean;
   scoreId?: string;
-  maxChain?: number;
-  cascadePoints?: number;
 }
 
 const rankings = ref<RankEntry[]>([]);
-const myRank = ref<{ rank: number; score: number; moveCount?: number; maxChain?: number; cascadePoints?: number } | null>(null);
+const myRank = ref<{ rank: number; score: number; moveCount: number } | null>(null);
 
-watch(() => props.mode, (m) => { if (m) activeMode.value = m; });
-watch(() => props.open, (o) => {
-  if (o) {
-    if (props.mode && props.mode !== activeMode.value) {
-      activeMode.value = props.mode; // triggers activeMode watcher
-    } else {
-      fetchRanking();
-    }
-  }
-});
-watch(activeMode, () => { if (props.open) fetchRanking(); });
+watch(() => props.open, (o) => { if (o) fetchRanking(); });
 
 let fetchSeq = 0;
 
@@ -63,13 +47,10 @@ async function fetchRanking() {
         displayName: string;
         score: number;
         moveCount: number;
-        isCleared?: boolean;
-        maxChain?: number;
-        cascadePoints?: number;
         scoreId?: string;
       }>;
-      userRank: { rank: number; score: number; moveCount?: number; maxChain?: number; cascadePoints?: number } | null;
-    }>(`/api/rankings/by-value/${props.seed}?mode=${activeMode.value}`);
+      userRank: { rank: number; score: number; moveCount: number } | null;
+    }>(`/api/rankings/by-value/${props.seed}`);
 
     if (seq !== fetchSeq) return; // stale response
     rankings.value = data.ranking.map(e => ({
@@ -79,8 +60,6 @@ async function fetchRanking() {
       playerName: e.displayName,
       isMe: e.userId === userId,
       scoreId: e.scoreId,
-      maxChain: e.maxChain,
-      cascadePoints: e.cascadePoints,
     }));
     myRank.value = data.userRank;
   } catch {
@@ -91,24 +70,7 @@ async function fetchRanking() {
   loading.value = false;
 }
 
-const myRankDisplay = computed(() => {
-  if (!myRank.value) return '';
-  if (activeMode.value === 'cascade') {
-    return `${t('mode.cascadePoints')} ${myRank.value.cascadePoints ?? 0}`;
-  }
-  if (activeMode.value === 'clear' || activeMode.value === 'survival') {
-    return `${myRank.value.moveCount ?? 0} ${t('mode.moves')}`;
-  }
-  return myRank.value.score.toLocaleString();
-});
-
-const myRankSubDisplay = computed(() => {
-  if (!myRank.value) return '';
-  if (activeMode.value === 'cascade' || activeMode.value === 'clear' || activeMode.value === 'survival') {
-    return myRank.value.score.toLocaleString();
-  }
-  return '';
-});
+const myRankDisplay = computed(() => myRank.value ? t('ranking.moves', { count: myRank.value.moveCount }) : '');
 
 function rankMedalIcon(rank: number): string | null {
   if (rank === 1) return goldMedalIcon;
@@ -117,29 +79,10 @@ function rankMedalIcon(rank: number): string | null {
   return null;
 }
 
-function displayValue(entry: RankEntry): string {
-  if (activeMode.value === 'cascade') {
-    return `${t('mode.cascadePoints')} ${entry.cascadePoints ?? 0}`;
-  }
-  if (activeMode.value === 'clear' || activeMode.value === 'survival') {
-    return `${entry.moves} ${t('mode.moves')}`;
-  }
-  return entry.score.toLocaleString();
-}
-
-function subDisplayValue(entry: RankEntry): string | null {
-  if (activeMode.value === 'cascade' || activeMode.value === 'clear' || activeMode.value === 'survival') {
-    return entry.score.toLocaleString();
-  }
-  return null;
-}
-
 function goToReplay(scoreId: string) {
   emit('close');
   router.push(`/replay/${scoreId}`);
 }
-
-const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
 </script>
 
 <template>
@@ -147,19 +90,9 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
     <div v-if="open" class="ranking-overlay" @click.self="emit('close')">
       <div class="ranking-modal">
         <div class="ranking-header">
-          <h2 class="ranking-title"><img class="ranking-title-icon" :src="MODE_ICONS[activeMode]" alt="" /> {{ t('common.ranking') }}</h2>
+          <h2 class="ranking-title"><img class="ranking-title-icon" :src="brickIcon" alt="" /> {{ t('common.ranking') }}</h2>
           <span class="ranking-seed">{{ t('common.seed', { seed }) }}</span>
           <button class="ranking-close" @click="emit('close')">&times;</button>
-        </div>
-
-        <!-- Mode tabs -->
-        <div class="mode-tabs">
-          <button
-            v-for="m in modes"
-            :key="m"
-            :class="['mode-tab', { active: activeMode === m }]"
-            @click="activeMode = m"
-          >{{ t(`mode.${m}`) }}</button>
         </div>
 
         <!-- Loading skeleton -->
@@ -189,7 +122,7 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
           </div>
           <div class="my-rank-right">
             <span class="my-rank-score">{{ myRankDisplay }}</span>
-            <span v-if="myRankSubDisplay" class="my-rank-sub">{{ myRankSubDisplay }}</span>
+            <span class="my-rank-sub">{{ myRank.score.toLocaleString() }}</span>
           </div>
         </div>
         <div v-else class="my-rank-card my-rank-empty">
@@ -206,11 +139,10 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
             <span class="rank-num"><img v-if="rankMedalIcon(entry.rank)" :src="rankMedalIcon(entry.rank)!" class="rank-medal" alt="" /><template v-else>#{{ entry.rank }}</template></span>
             <div class="rank-main">
               <span class="rank-name">{{ entry.playerName }}</span>
-              <span class="rank-meta">{{ t('ranking.moves', { count: entry.moves }) }}</span>
             </div>
             <div class="rank-right">
-              <span class="rank-score">{{ displayValue(entry) }}</span>
-              <span v-if="subDisplayValue(entry)" class="rank-sub">{{ subDisplayValue(entry) }}</span>
+              <span class="rank-score">{{ t('ranking.moves', { count: entry.moves }) }}</span>
+              <span class="rank-sub">{{ entry.score.toLocaleString() }}</span>
             </div>
             <button
               v-if="entry.scoreId"
@@ -283,30 +215,6 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
   cursor: pointer;
   line-height: 1;
   padding: 0 4px;
-}
-
-/* Mode tabs */
-.mode-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-.mode-tab {
-  flex: 1;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: none;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  cursor: pointer;
-  text-transform: uppercase;
-}
-.mode-tab.active {
-  background: var(--brand);
-  color: #fff;
-  border-color: var(--brand);
 }
 
 /* My rank card */
@@ -403,10 +311,6 @@ const modes: GameMode[] = ['sprint', 'clear', 'survival', 'cascade'];
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.rank-meta {
-  font-size: 10px;
-  color: var(--text-disabled);
 }
 .rank-right {
   text-align: right;

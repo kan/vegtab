@@ -80,7 +80,7 @@ describe('Item swap position - findItemPosition receives post-swap position', ()
    * しかし左方向や右方向では問題が顕在化するので、そちらもテストする。
    */
   it('上方向スワイプ: v_cut を上方向にスワイプしたとき、スワイプしたアイテムが発動する', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // col 3 に v_cut を 2 つ配置
@@ -129,7 +129,7 @@ describe('Item swap position - findItemPosition receives post-swap position', ()
    *   → (3,3) に v_cut がある → 正しくアイテムAが返る
    */
   it('右方向スワイプ: 同列に同種アイテムがあっても、スワイプしたアイテムが発動する', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // (3, 4): v_cut (アイテムA)
@@ -161,7 +161,7 @@ describe('Item swap position - findItemPosition receives post-swap position', ()
    * flush でも v_cut でも同じロジックを通る。
    */
   it('上方向スワイプ: flush を上方向にスワイプしたとき、スワイプしたアイテムが発動する', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // (1, 5): flush (アイテムA)
@@ -195,7 +195,7 @@ describe('Item swap position - findItemPosition receives post-swap position', ()
    * 修正後: findItemPosition(board, 'v_cut', {row:3, col:3}) → (3,3) で正しく発見
    */
   it('左方向スワイプ: 同列に同種アイテムがあっても、スワイプしたアイテムが発動する', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     state.board[3][2] = { color: 0 as Color, item: 'v_cut' };
@@ -219,7 +219,7 @@ describe('Item swap position - findItemPosition receives post-swap position', ()
    * 修正が正しく動作することの回帰テストとして含める。
    */
   it('下方向スワイプ: アイテムが正しく発動する', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // (4, 3): v_cut (アイテムA) ← スワイプ先
@@ -264,7 +264,7 @@ describe('Item swap position - wrong item activation regression', () => {
    * 消去パターンから判別できる。
    */
   it('h_cut の右方向スワイプで、スワイプしたアイテムの行が消去される', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // h_cut を 2 箇所に配置（離れた行）
@@ -321,7 +321,7 @@ describe('Item swap position - wrong item activation regression', () => {
    * 修正後: (2, 2) を渡す → (2,2) に burst(A) がある → 正しく (2,2) で発動
    */
   it('burst の右方向スワイプで、スワイプしたアイテム位置を中心に消去が起きる', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // burst を 2 箇所に配置（完全に離れた位置）
@@ -363,7 +363,7 @@ describe('Item swap position - wrong item activation regression', () => {
    */
   it('同一セットアップ・同一操作で同一結果（決定性）', () => {
     function run(): GameState {
-      const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+      const base = initializeGame(42, { obstacleCount: 0 });
       const state = cloneGameState(base);
       state.board[2][3] = { color: 0 as Color, item: 'v_cut' };
       state.board[6][3] = { color: 1 as Color, item: 'v_cut' };
@@ -409,7 +409,7 @@ describe('Item swap position - findItemPosition search direction edge case', () 
    * 全体走査時に別アイテムを先に見つける危険がある。
    */
   it('行0のアイテムを上方向スワイプ — 盤面端のエッジケース', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // (0, 3): v_cut (アイテムA) ← スワイプ先
@@ -446,7 +446,7 @@ describe('Item swap position - findItemPosition search direction edge case', () 
    * cell2 がアイテムの場合は修正前後で動作が変わらないことを確認。
    */
   it('スワイプ先(cell2)にアイテムがある場合も正しく発動する', () => {
-    const base = initializeGame(42, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(42, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // (3, 3): 野菜 ← スワイプ元, dir=right
@@ -472,7 +472,7 @@ describe('Item swap position - findItemPosition search direction edge case', () 
    * scope (スプーン) はスワイプ起動不可なので、scope 以外で検証。
    */
   it('h_cut と野菜の上方向スワイプ — h_cut の発動行を検証', () => {
-    const base = initializeGame(99, 'sprint', { moveLimit: 30 });
+    const base = initializeGame(99, { obstacleCount: 0 });
     const state = cloneGameState(base);
 
     // (1, 5): h_cut (アイテムA)

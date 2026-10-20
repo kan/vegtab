@@ -10,7 +10,6 @@ const { t } = useI18n();
 
 function goToPuzzle() {
   const seed = gameStore.generateDailySeed();
-  // Navigate without mode query so the mode selector shows
   router.push(`/puzzle/${seed}`);
 }
 </script>

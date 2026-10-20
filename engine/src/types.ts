@@ -12,7 +12,6 @@ export type Cell = {
   color: Color;
   item?: ItemType;
   obstacle?: Obstacle;
-  sparkle?: boolean;   // Cascade: キラキラ野菜（消去時+1 CP）
 };
 
 /** 盤面座標 */
@@ -30,12 +29,11 @@ export type Action =
   | { type: 'tap'; pos: Position }
   | { type: 'scope'; pos: Position; targetCells: Position[] };
 
-/** リプレイログに記録する操作（Action に、選択を伴うスプーン操作と終了時の自動発動を加えたもの） */
+/** リプレイログに記録する操作（Action に、選択を伴うスプーン操作を加えたもの） */
 export type ReplayAction =
   | Action
   | { type: 'scope_synthesis'; pos1: Position; pos2: Position; targetCells: Position[] }
-  | { type: 'scope_swap'; pos: Position; dir: Direction; targetCells: Position[] }
-  | { type: 'auto_activate' };
+  | { type: 'scope_swap'; pos: Position; dir: Direction; targetCells: Position[] };
 
 /** マッチ情報 */
 export type Match = {
@@ -51,11 +49,7 @@ export type ChainStep = {
   clearedPositions: Position[];
   generatedItems: { pos: Position; item: ItemType }[];
   score: number;
-  sparkleCount?: number;  // Cascade: 消去されたキラキラ数
 };
-
-/** ゲームモード */
-export type GameMode = 'sprint' | 'clear' | 'survival' | 'cascade';
 
 /** 合成効果の種類 */
 export type SynthesisEffect =
@@ -67,9 +61,7 @@ export type SynthesisEffect =
 
 /** ゲーム初期化パラメータ */
 export type GameInitParams = {
-  moveLimit?: number;        // Sprint/Cascade: default 15
-  obstacleCount?: number;    // Clear: default seed-dependent 10-20
-  numColors?: number;        // Cascade: default 4
+  obstacleCount?: number;    // default seed-dependent 10-20
 };
 
 /** ゲーム状態 */
@@ -80,16 +72,10 @@ export type GameState = {
   rngState: number[];
   moveCount: number;
   isGameOver: boolean;
-  mode: GameMode;
-  /** ベースシード値（Survivalのウェーブ侵食位置算出などに利用） */
+  /** ベースシード値 */
   seed?: number;
-  moveLimit?: number;        // Sprint only
-  isCleared?: boolean;       // Clear: true when all obstacles removed
-  numColors?: number;        // Cascade: number of colors (default NUM_COLORS)
-  maxChainIndex?: number;    // Cascade: max chain achieved so far
-  cascadePoints?: number;    // Cascade: cumulative chain points (sum of chainIndex for chainIndex >= 2)
-  milestonesClaimed?: number[];  // Cascade: chain milestones already claimed this game
-  sparkleRngState?: number[];    // Cascade: per-column sparkle RNG
+  isCleared?: boolean;       // true when all obstacles removed
+  maxChainIndex?: number;    // max chain achieved so far
   lastChainCount?: number;   // Chain count of the last action (for replay display)
 };
 

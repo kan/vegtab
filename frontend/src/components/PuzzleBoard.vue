@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan, type WaveAnimPlan, type WaveAnimStep } from '@/stores/puzzle';
-import { BOARD_SIZE, cloneBoard, getSynthesisEffect, CASCADE_MILESTONES, type Position, type Direction, type Cell, type Color, type ItemType, type GameState } from '@vegtab/engine';
+import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
+import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type Color, type ItemType, type GameState } from '@vegtab/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
 import { playSE, vibrate } from '@/sound';
@@ -40,7 +40,6 @@ onUnmounted(() => {
   floatingTimers.forEach(t => clearTimeout(t));
   floatingTimers.length = 0;
   floatingScores.length = 0;
-  floatingChainLabels.length = 0;
 });
 
 function updateCellSize() {
@@ -49,9 +48,6 @@ function updateCellSize() {
   }
 }
 const boardSize = computed(() => cellSize.value * BOARD_SIZE);
-const PREVIEW_COUNT = 4;
-const previewTileSize = computed(() => Math.max(0, Math.round(cellSize.value * 0.28)));
-const previewHeight = computed(() => store.nextTilePreview ? previewTileSize.value * PREVIEW_COUNT + 4 : 0);
 
 // --- Visual board ---
 const visualBoard = ref<(Cell | null)[][] | null>(null);
@@ -84,13 +80,6 @@ const dropTransitioning = ref(false);
 // --- Screen shake ---
 const shaking = ref(false);
 
-// --- Survival wave banner + cell states ---
-const waveBanner = ref<{ waveNumber: number } | null>(null);
-/** Cells newly placed as obstacles during wave animation (for pop-in effect) */
-const waveObstacleAppearing = reactive<Set<string>>(new Set());
-/** Cells whose obstacle durability is being bumped (+1) during wave animation */
-const waveBumpCells = reactive<Set<string>>(new Set());
-
 // --- Scope tap hint ---
 const showScopeTapHint = ref(false);
 const scopeTapHintText = ref('');
@@ -98,21 +87,6 @@ let scopeHintTimer: ReturnType<typeof setTimeout> | undefined;
 
 // --- Floating score ---
 const floatingScores = reactive<{ id: number; x: number; y: number; text: string }[]>([]);
-// --- Floating chain labels (Cascade mode) ---
-const floatingChainLabels = reactive<{ id: number; x: number; y: number; chainText: string; cpText: string }[]>([]);
-// --- Floating milestone labels (Cascade mode) ---
-const floatingMilestoneLabels = reactive<{ id: number; x: number; y: number; text: string }[]>([]);
-const milestoneShown = new Set<number>();
-// --- NEW BEST overlay ---
-const newBestOverlay = ref<string | null>(null);
-let prevMaxChainIndex = 0;
-
-/** マイルストーン・NEW BEST の表示済みの記録を現在の状態に合わせる（新しいゲームの開始や、スプーン入れ替えのキャンセルで状態を戻したとき） */
-function syncChainDisplay() {
-  milestoneShown.clear();
-  for (const chain of store.milestonesClaimed) milestoneShown.add(chain);
-  prevMaxChainIndex = store.maxChainIndex;
-}
 let floatingId = 0;
 const floatingTimers: ReturnType<typeof setTimeout>[] = [];
 
@@ -143,36 +117,6 @@ function addFloatingScore(positions: Position[], score: number) {
   });
 }
 
-function addFloatingChainLabel(positions: Position[], chainIndex: number) {
-  if (positions.length === 0) return;
-  const { x, y } = centroidPx(positions);
-  const id = floatingId++;
-  const chainText = t('mode.chainLabel', { count: chainIndex });
-  const cpText = t('mode.chainCascadeGain', { points: chainIndex });
-  floatingChainLabels.push({ id, x, y: y - 16, chainText, cpText });
-  addFloatingTimer(scaled(1200), () => {
-    const idx = floatingChainLabels.findIndex(f => f.id === id);
-    if (idx !== -1) floatingChainLabels.splice(idx, 1);
-  });
-}
-
-function addFloatingMilestoneLabel(positions: Position[], chain: number, bonus: number) {
-  if (positions.length === 0) return;
-  const { x, y } = centroidPx(positions);
-  const id = floatingId++;
-  const text = t('mode.milestoneBonus', { chain, bonus });
-  floatingMilestoneLabels.push({ id, x, y: y - 32, text });
-  addFloatingTimer(scaled(1800), () => {
-    const idx = floatingMilestoneLabels.findIndex(f => f.id === id);
-    if (idx !== -1) floatingMilestoneLabels.splice(idx, 1);
-  });
-}
-
-function showNewBestOverlay(chainCount: number) {
-  newBestOverlay.value = t('mode.cascadeNewBest', { count: chainCount });
-  addFloatingTimer(scaled(2000), () => { newBestOverlay.value = null; });
-}
-
 function showItemEffectScore(effect: ItemEffectStep) {
   addFloatingScore(effect.targets.length > 0 ? effect.targets : [effect.itemPos], calcItemEffectScore(effect));
 }
@@ -200,29 +144,6 @@ function onPointerUpWithDebug(e: PointerEvent) {
 // --- Utilities ---
 function wait(ms: number) { return new Promise<void>(r => setTimeout(r, ms)); }
 function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))); }
-
-// --- Sprint auto-activation of remaining items ---
-async function autoActivateItems() {
-  if (!store.isGameOver || store.mode !== 'sprint') return;
-
-  store.autoActivating = true;
-  await wait(scaled(400)); // brief pause before auto-activation starts
-
-  // computeAutoActivationPlan now uses processAutoActivationStep internally,
-  // so finalState has correct moveCount (not incremented) and score (no chains).
-  let autoPlan = store.computeAutoActivationPlan();
-  while (autoPlan) {
-    visualBoard.value = autoPlan.plan.boardBeforeActivation;
-    await animateItemEffects(autoPlan.plan);
-    await animateDropAndChains(autoPlan.plan);
-    store.recordPlanStats(autoPlan.plan.regularChains);
-    store.applyState(autoPlan.plan.finalState);
-    visualBoard.value = null;
-    autoPlan = store.computeAutoActivationPlan();
-  }
-
-  store.autoActivating = false;
-}
 
 // --- Tap ---
 async function handleTap(pos: Position) {
@@ -252,11 +173,14 @@ async function handleTap(pos: Position) {
 
   await animateItemEffects(plan);
   await animateDropAndChains(plan);
-  await animateWaveIfPresent(plan.waveAnim, plan.finalState.score);
 
-  store.recordPlanStats(plan.regularChains);
-  store.applyState(plan.finalState);
-  await autoActivateItems();
+  finishMove(plan.regularChains, plan.finalState);
+}
+
+/** アニメーションを終えた操作の結果を確定し、次の操作を受け付ける */
+function finishMove(chains: ChainAnimData[], finalState: GameState) {
+  store.recordPlanStats(chains);
+  store.applyState(finalState);
   visualBoard.value = null;
   drag.setLocked(false);
 }
@@ -278,7 +202,6 @@ function cancelScopeSelection() {
   // スプーンの入れ替えは選択を確定するまで操作として記録しないので、入れ替え（と事前連鎖）の前の状態に戻す
   if (pendingScopeSwap) {
     store.applyState(pendingScopeSwap.stateBefore);
-    syncChainDisplay();
   }
   pendingScopeSwap = null;
   visualBoard.value = null;
@@ -296,8 +219,6 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
     visualBoard.value = null;
   }
 
-  store.resetChainMeter();
-  syncChainDisplay();
   const plan = store.computeScopePlan(scopePos, targetCells);
   if (!plan) {
     // Fallback: apply instantly, logging the action only if it changed the board
@@ -376,13 +297,8 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   // Drop + regular chains
   await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
   await animateChainsWithScore(plan.regularChains, plan.finalState.score);
-  await animateWaveIfPresent(plan.waveAnim, plan.finalState.score);
 
-  store.recordPlanStats(plan.regularChains);
-  store.applyState(plan.finalState);
-  await autoActivateItems();
-  visualBoard.value = null;
-  drag.setLocked(false);
+  finishMove(plan.regularChains, plan.finalState);
 }
 
 async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells: Position[]) {
@@ -461,13 +377,8 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   // Drop + regular chains
   await animateDrop(plan.dropMoves, plan.newTileEntries, plan.boardAfterDrop);
   await animateChainsWithScore(plan.regularChains, plan.finalState.score);
-  await animateWaveIfPresent(plan.waveAnim, plan.finalState.score);
 
-  store.recordPlanStats(plan.regularChains);
-  store.applyState(plan.finalState);
-  await autoActivateItems();
-  visualBoard.value = null;
-  drag.setLocked(false);
+  finishMove(plan.regularChains, plan.finalState);
 }
 
 // --- Swap ---
@@ -475,8 +386,6 @@ async function commitSwap(pos: Position, dir: Direction) {
   // Block swipes while scope selection is active (waiting for user to tap target)
   if (scope.scopeSelecting.value) return;
   drag.setLocked(true);
-  store.resetChainMeter();
-  syncChainDisplay();
   const cs = cellSize.value;
   const nb = adj(pos, dir);
   const fullX = (nb.col - pos.col) * cs, fullY = (nb.row - pos.row) * cs;
@@ -494,12 +403,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     clearOff(pos.row, pos.col); clearOff(nb.row, nb.col);
     visualBoard.value = swapPlan.boardAfterSwap;
     await animateChainsWithScore(swapPlan.chains, swapPlan.finalState.score);
-    await animateWaveIfPresent(swapPlan.waveAnim, swapPlan.finalState.score);
-    store.recordPlanStats(swapPlan.chains);
-    store.applyState(swapPlan.finalState);
-    await autoActivateItems();
-    visualBoard.value = null;
-    drag.setLocked(false);
+    finishMove(swapPlan.chains, swapPlan.finalState);
     return;
   }
 
@@ -526,7 +430,7 @@ async function commitSwap(pos: Position, dir: Direction) {
         if (preChainResult.preChains.length > 0) {
           await animateChainsWithScore(preChainResult.preChains, stateAfterPreChains.score);
         }
-        // CP・最大連鎖・マイルストーンも事前連鎖の分を反映した状態（サーバーの processScopeSwap と一致する）
+        // 最大連鎖も事前連鎖の分を反映した状態（サーバーの processScopeSwap と一致する）
         store.applyState(stateAfterPreChains);
         visualBoard.value = null;
 
@@ -552,12 +456,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     visualBoard.value = itemSwap.plan.boardBeforeActivation;
     await animateItemEffects(itemSwap.plan);
     await animateDropAndChains(itemSwap.plan);
-    await animateWaveIfPresent(itemSwap.plan.waveAnim, itemSwap.plan.finalState.score);
-    store.recordPlanStats([...itemSwap.preChains, ...itemSwap.plan.regularChains]);
-    store.applyState(itemSwap.plan.finalState);
-    await autoActivateItems();
-    visualBoard.value = null;
-    drag.setLocked(false);
+    finishMove([...itemSwap.preChains, ...itemSwap.plan.regularChains], itemSwap.plan.finalState);
     return;
   }
 
@@ -596,12 +495,7 @@ async function commitSwap(pos: Position, dir: Direction) {
     visualBoard.value = synthPlan.boardBeforeActivation;
     await animateSynthesisEffects(synthPlan);
     await animateSynthesisDropAndChains(synthPlan);
-    await animateWaveIfPresent(synthPlan.waveAnim, synthPlan.finalState.score);
-    store.recordPlanStats(synthPlan.regularChains);
-    store.applyState(synthPlan.finalState);
-    await autoActivateItems();
-    visualBoard.value = null;
-    drag.setLocked(false);
+    finishMove(synthPlan.regularChains, synthPlan.finalState);
     return;
   }
 
@@ -967,104 +861,6 @@ async function animateDropAndChains(plan: ItemAnimPlan) {
   await animateChainsWithScore(plan.regularChains, plan.finalState.score);
 }
 
-// --- Survival wave animation ---
-
-/** ウェーブステップ1つ分のアイテム発動アニメ */
-async function animateWaveItemStep(step: WaveAnimStep) {
-  if (step.kind !== 'item_activate' || !step.effects) return;
-
-  // 各アイテム効果を順次発動（animateItemEffects と同じ流れ）
-  for (const effect of step.effects) {
-    playSE('item_use'); vibrate(20);
-    vbRemove(effect.itemPos);
-    await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
-    for (const t of effect.targets) vbRemove(t);
-    itemClearingCells.clear();
-    cellItemOverlay.clear();
-  }
-
-  // 発動後の落下・補充
-  if (step.dropMoves && step.newTileEntries && step.chainsAfter !== undefined) {
-    // 連鎖中のdropMoves前に入れ替えられた最後の盤面を合成: 連鎖後の最初の盤面を使う
-    // もし連鎖があればchain last の boardAfterDrop、なければ step の中間盤面を作るのが必要
-    // 簡易版: step.boardAfter から逆算せず、連鎖があればそれを順に再生
-    if (step.chainsAfter.length === 0) {
-      // 連鎖なし: dropアニメは省略し、後続の animateWaveObstaclePlace で
-      // step.boardAfter をまとめて反映する（アイテム発動 → おじゃまポップの流れ）
-    } else {
-      // 連鎖がある場合は既存 animateChainStep を使う
-      for (const chain of step.chainsAfter) {
-        await animateChainStep(chain);
-      }
-    }
-  }
-}
-
-/** ウェーブステップ1つの obstacle 出現アニメ */
-async function animateWaveObstaclePlace(pos: Position, boardAfter: (Cell | null)[][]) {
-  // visualBoardに新しいboardAfterを反映
-  visualBoard.value = cloneBoard(boardAfter);
-  const k = pk(pos.row, pos.col);
-  waveObstacleAppearing.add(k);
-  playSE('match'); vibrate(15);
-  await wait(scaled(220));
-  waveObstacleAppearing.delete(k);
-}
-
-/** ウェーブステップ1つの durability bump アニメ */
-async function animateWaveBump(pos: Position, boardAfter: (Cell | null)[][]) {
-  visualBoard.value = cloneBoard(boardAfter);
-  const k = pk(pos.row, pos.col);
-  waveBumpCells.add(k);
-  playSE('chain'); vibrate(25);
-  await wait(scaled(300));
-  waveBumpCells.delete(k);
-}
-
-async function animateWave(plan: WaveAnimPlan, finalScore: number) {
-  // 初期スコア: ウェーブ直前のスコア（= finalScore - plan.totalScore）
-  const preWaveScore = finalScore - plan.totalScore;
-  let running = preWaveScore;
-  store.setDisplayScore(running);
-
-  // バナー表示
-  waveBanner.value = { waveNumber: plan.waveNumber };
-  playSE('chain'); vibrate(40);
-  shaking.value = true;
-  setTimeout(() => { shaking.value = false; }, scaled(400));
-  await wait(scaled(500));
-
-  // 各ステップを順次再生
-  for (const step of plan.steps) {
-    if (step.kind === 'bump') {
-      await animateWaveBump(step.pos, step.boardAfter);
-    } else if (step.kind === 'item_activate') {
-      await animateWaveItemStep(step);
-      // アイテム発動でスコアを逐次加算
-      let stepScore = 0;
-      for (const e of step.effects ?? []) stepScore += calcItemEffectScore(e);
-      for (const ch of step.chainsAfter ?? []) stepScore += ch.score;
-      running += stepScore;
-      store.setDisplayScore(running);
-      // 発動後の盤面を反映（おじゃまは再設置されない）
-      visualBoard.value = cloneBoard(step.boardAfter);
-    } else {
-      // place: 普通のタイルを obstacle で上書き
-      await animateWaveObstaclePlace(step.pos, step.boardAfter);
-    }
-  }
-
-  // 最終的にスコアを揃える
-  store.setDisplayScore(finalScore);
-  waveBanner.value = null;
-  visualBoard.value = cloneBoard(plan.finalBoard);
-}
-
-async function animateWaveIfPresent(waveAnim: WaveAnimPlan | undefined, finalScore: number) {
-  if (!waveAnim) return;
-  await animateWave(waveAnim, finalScore);
-}
-
 async function animateChainStep(chain: ChainAnimData) {
   const cs = cellSize.value;
 
@@ -1072,38 +868,8 @@ async function animateChainStep(chain: ChainAnimData) {
   if (chain.chainIndex >= 2) {
     playSE('chain'); vibrate(25);
     shaking.value = true; setTimeout(() => { shaking.value = false; }, scaled(300));
-    // Cascade mode: show chain label + CP gain + meter + milestone
-    if (store.mode === 'cascade') {
-      addFloatingChainLabel(chain.clearedPositions, chain.chainIndex);
-      store.setChainMeterLevel(chain.chainIndex);
-      // マイルストーンボーナス表示
-      for (const ms of CASCADE_MILESTONES) {
-        if (chain.chainIndex >= ms.chain && !milestoneShown.has(ms.chain)) {
-          milestoneShown.add(ms.chain);
-          addFloatingMilestoneLabel(chain.clearedPositions, ms.chain, ms.bonus);
-        }
-      }
-      // NEW BEST演出
-      if (chain.chainIndex > prevMaxChainIndex && chain.chainIndex >= 2) {
-        prevMaxChainIndex = chain.chainIndex;
-        showNewBestOverlay(chain.chainIndex);
-      }
-    }
   } else {
     playSE('match'); vibrate(15);
-  }
-  // キラキラCP表示（連鎖数に関わらず）
-  if (store.mode === 'cascade' && chain.sparkleCount && chain.sparkleCount > 0) {
-    addFloatingScore(chain.clearedPositions, 0); // placeholder for position
-    // sparkle用の専用フローティング
-    const { x, y } = centroidPx(chain.clearedPositions);
-    const id = floatingId++;
-    const text = t('mode.sparkleBonus', { count: chain.sparkleCount });
-    floatingMilestoneLabels.push({ id, x, y: y + 16, text });
-    addFloatingTimer(scaled(1200), () => {
-      const idx = floatingMilestoneLabels.findIndex(f => f.id === id);
-      if (idx !== -1) floatingMilestoneLabels.splice(idx, 1);
-    });
   }
   for (const p of chain.clearedPositions) matchedCells.add(pk(p.row, p.col));
   addFloatingScore(chain.clearedPositions, chain.score);
@@ -1187,24 +953,6 @@ function tileTransition(r: number, c: number) {
 
 <template>
   <div ref="wrapperEl" class="board-wrapper">
-    <!-- Next tile preview (Cascade mode) -->
-    <div v-if="store.nextTilePreview" class="next-preview" :style="{ width: boardSize + 'px', height: previewHeight + 'px' }">
-      <div
-        v-for="col in BOARD_SIZE"
-        :key="'preview-' + col"
-        class="next-preview-col"
-        :style="{ width: cellSize + 'px' }"
-      >
-        <div
-          v-for="(tile, i) in store.nextTilePreview[col - 1]"
-          :key="i"
-          class="next-preview-tile"
-        >
-          <VegetableIcon :color="tile.color" :size="previewTileSize" :sparkle="tile.sparkle" />
-        </div>
-      </div>
-    </div>
-
     <div class="board-with-coords">
       <div class="rank-labels" :style="{ height: boardSize + 'px' }">
         <div v-for="r in 8" :key="r" class="coord-label" :style="{ height: cellSize + 'px' }">{{ 9 - r }}</div>
@@ -1244,8 +992,6 @@ function tileTransition(r: number, c: number) {
                   :class="{
                     'is-obstacle-clearing': obstacleClearingCells.has(pk(row - 1, col - 1)),
                     'is-obstacle-damaged': obstacleDamagedCells.has(pk(row - 1, col - 1)),
-                    'is-wave-appearing': waveObstacleAppearing.has(pk(row - 1, col - 1)),
-                    'is-wave-bumping': waveBumpCells.has(pk(row - 1, col - 1)),
                   }"
                 >
                   <ObstacleTile
@@ -1272,7 +1018,6 @@ function tileTransition(r: number, c: number) {
                   <VegetableIcon
                     :color="activeBoard[row - 1][col - 1]!.color"
                     :size="Math.max(0, cellSize - 5)"
-                    :sparkle="activeBoard[row - 1][col - 1]!.sparkle"
                   />
                   <span
                     v-if="matchedCells.has(pk(row - 1, col - 1)) || clearingCells.has(pk(row - 1, col - 1))"
@@ -1292,17 +1037,6 @@ function tileTransition(r: number, c: number) {
                 :size="Math.round(cellSize * 0.5)"
               />
             </div>
-
-            <!-- Survival wave preview marker -->
-            <div
-              v-if="store.wavePreviewKeySet.has(pk(row - 1, col - 1))"
-              class="wave-preview-marker"
-              :class="{
-                'wave-preview-urgent': (store.movesUntilWave ?? 99) <= 1,
-                'wave-preview-lethal': store.wavePreviewLethalKeySet.has(pk(row - 1, col - 1)),
-              }"
-              :style="{ width: (cellSize - 6) + 'px', height: (cellSize - 6) + 'px' }"
-            />
           </div>
         </div>
       </template>
@@ -1328,33 +1062,6 @@ function tileTransition(r: number, c: number) {
         class="floating-score"
         :style="{ left: fs.x + 'px', top: fs.y + 'px' }"
       >{{ fs.text }}</div>
-
-      <!-- Floating chain labels (Cascade mode) -->
-      <div
-        v-for="cl in floatingChainLabels"
-        :key="cl.id"
-        class="floating-chain-label"
-        :style="{ left: cl.x + 'px', top: cl.y + 'px' }"
-      >
-        <span class="chain-text">{{ cl.chainText }}</span>
-        <span class="chain-cp-text">{{ cl.cpText }}</span>
-      </div>
-
-      <!-- Floating milestone labels (Cascade mode) -->
-      <div
-        v-for="ml in floatingMilestoneLabels"
-        :key="ml.id"
-        class="floating-milestone-label"
-        :style="{ left: ml.x + 'px', top: ml.y + 'px' }"
-      >{{ ml.text }}</div>
-
-      <!-- NEW BEST overlay (Cascade mode) -->
-      <div v-if="newBestOverlay" class="new-best-overlay">{{ newBestOverlay }}</div>
-
-      <!-- Survival wave banner -->
-      <div v-if="waveBanner" class="wave-banner">
-        WAVE {{ waveBanner.waveNumber }}
-      </div>
 
       <!-- Scope selection overlay -->
       <template v-if="scope.scopeSelecting.value">
@@ -1476,12 +1183,6 @@ function tileTransition(r: number, c: number) {
 .obstacle-cell.is-obstacle-clearing {
   animation: obstacle-destroy calc(0.35s / var(--anim-duration-factor, 1)) ease-out forwards;
 }
-.obstacle-cell.is-wave-appearing {
-  animation: wave-obstacle-pop calc(0.22s / var(--anim-duration-factor, 1)) ease-out both;
-}
-.obstacle-cell.is-wave-bumping {
-  animation: wave-obstacle-bump calc(0.3s / var(--anim-duration-factor, 1)) ease-out both;
-}
 @keyframes obstacle-shake {
   0%, 100% { transform: translate(0, 0); }
   15% { transform: translate(-3px, 0); }
@@ -1495,17 +1196,6 @@ function tileTransition(r: number, c: number) {
   30%  { transform: scale(1.1) rotate(5deg); opacity: 0.8; }
   60%  { transform: scale(0.8) rotate(-3deg); opacity: 0.5; }
   100% { transform: scale(0) rotate(10deg); opacity: 0; }
-}
-@keyframes wave-obstacle-pop {
-  0%   { transform: scale(0) rotate(-30deg); opacity: 0; filter: brightness(1.8) drop-shadow(0 0 8px var(--danger, #f44336)); }
-  60%  { transform: scale(1.25) rotate(4deg); opacity: 1; filter: brightness(1.4); }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; filter: brightness(1); }
-}
-@keyframes wave-obstacle-bump {
-  0%, 100% { transform: scale(1); filter: brightness(1); }
-  25%      { transform: scale(1.2); filter: brightness(1.6) drop-shadow(0 0 8px var(--danger, #f44336)); }
-  50%      { transform: scale(0.95); filter: brightness(1.3); }
-  75%      { transform: scale(1.1); filter: brightness(1.2); }
 }
 
 /* Item cell */
@@ -1598,56 +1288,6 @@ function tileTransition(r: number, c: number) {
   70%  { transform: scale(1.2); opacity: 0.9; }
   100% { transform: scale(1); opacity: 0.8; }
 }
-/* Survival wave invasion preview marker — warns the player where obstacles will appear */
-.wave-preview-marker {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border: 2px dashed var(--warning, #ff9800);
-  border-radius: 8px;
-  pointer-events: none;
-  z-index: 12;
-  box-sizing: border-box;
-  animation: wave-preview-pulse 1.6s ease-in-out infinite;
-}
-.wave-preview-marker::after {
-  content: '';
-  position: absolute;
-  inset: 2px;
-  border-radius: 6px;
-  background: rgba(255, 152, 0, 0.12);
-}
-.wave-preview-urgent {
-  border-color: var(--danger, #f44336);
-  animation-duration: 0.7s;
-}
-.wave-preview-urgent::after {
-  background: rgba(244, 67, 54, 0.18);
-}
-/* Lethal: durability 3 obstacle at preview position — next wave = instant death */
-.wave-preview-lethal {
-  border: 3px solid var(--danger, #f44336);
-  border-style: solid;
-  animation: wave-preview-lethal-flash 0.45s ease-in-out infinite;
-  box-shadow: 0 0 8px 2px rgba(244, 67, 54, 0.5);
-}
-.wave-preview-lethal::after {
-  background: rgba(244, 67, 54, 0.3);
-  animation: wave-preview-lethal-bg 0.45s ease-in-out infinite;
-}
-@keyframes wave-preview-lethal-flash {
-  0%, 100% { opacity: 0.7; box-shadow: 0 0 8px 2px rgba(244, 67, 54, 0.5); }
-  50% { opacity: 1; box-shadow: 0 0 14px 4px rgba(244, 67, 54, 0.7); }
-}
-@keyframes wave-preview-lethal-bg {
-  0%, 100% { background: rgba(244, 67, 54, 0.15); }
-  50% { background: rgba(244, 67, 54, 0.35); }
-}
-@keyframes wave-preview-pulse {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 1; }
-}
 /* Floating score */
 .floating-score {
   position: absolute;
@@ -1725,128 +1365,6 @@ function tileTransition(r: number, c: number) {
 @keyframes hint-fade {
   0%, 70% { opacity: 1; }
   100% { opacity: 0; }
-}
-
-/* Next tile preview */
-.next-preview {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 4px;
-  opacity: 0.6;
-}
-.next-preview-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 1px;
-}
-.next-preview-tile {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Floating chain label */
-.floating-chain-label {
-  position: absolute;
-  pointer-events: none;
-  z-index: 35;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-  transform: translate(-50%, -50%);
-  animation: chain-label-float calc(1.2s / var(--anim-duration-factor, 1)) ease-out forwards;
-  white-space: nowrap;
-}
-.chain-text {
-  font-size: 18px;
-  font-weight: 900;
-  color: #ff8f00;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 8px rgba(255,143,0,0.5);
-  line-height: 1.1;
-}
-.chain-cp-text {
-  font-size: 13px;
-  font-weight: 700;
-  color: #ff6f00;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-  line-height: 1.1;
-}
-@keyframes chain-label-float {
-  0%   { opacity: 0; transform: translate(-50%, -50%) scale(1.5); }
-  15%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  60%  { opacity: 1; transform: translate(-50%, -50%) translateY(-12px); }
-  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-36px) scale(0.8); }
-}
-
-/* Floating milestone labels (Cascade mode) */
-.floating-milestone-label {
-  position: absolute;
-  pointer-events: none;
-  z-index: 36;
-  transform: translate(-50%, -50%);
-  font-size: 15px;
-  font-weight: 900;
-  color: #ffd600;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.4), 0 0 12px rgba(255,214,0,0.6);
-  white-space: nowrap;
-  animation: milestone-float calc(1.8s / var(--anim-duration-factor, 1)) ease-out forwards;
-}
-@keyframes milestone-float {
-  0%   { opacity: 0; transform: translate(-50%, -50%) scale(2); }
-  12%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-  55%  { opacity: 1; transform: translate(-50%, -50%) translateY(-16px); }
-  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-48px) scale(0.7); }
-}
-/* NEW BEST overlay (Cascade mode) */
-.new-best-overlay {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 22px;
-  font-weight: 900;
-  color: #ffd600;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.5), 0 0 20px rgba(255,214,0,0.5);
-  z-index: 40;
-  pointer-events: none;
-  white-space: nowrap;
-  animation: new-best-pop calc(2s / var(--anim-duration-factor, 1)) ease-out forwards;
-}
-@keyframes new-best-pop {
-  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-  10%  { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
-  20%  { transform: translate(-50%, -50%) scale(1); }
-  70%  { opacity: 1; }
-  100% { opacity: 0; transform: translate(-50%, -50%) translateY(-20px); }
-}
-
-/* Survival wave banner */
-.wave-banner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 44px;
-  font-weight: 900;
-  color: #fff;
-  background: linear-gradient(135deg, rgba(244, 67, 54, 0.95), rgba(255, 152, 0, 0.95));
-  padding: 12px 28px;
-  border-radius: 10px;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-  box-shadow: 0 4px 20px rgba(244, 67, 54, 0.5), 0 0 40px rgba(255, 152, 0, 0.3);
-  z-index: 40;
-  pointer-events: none;
-  animation: wave-banner-in calc(0.5s / var(--anim-duration-factor, 1)) ease-out both;
-}
-@keyframes wave-banner-in {
-  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-  50%  { opacity: 1; transform: translate(-50%, -50%) scale(1.15); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 /* Screen shake */

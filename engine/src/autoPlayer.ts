@@ -1,22 +1,17 @@
 import {
-  Action, GameMode, GameState, GameInitParams, Position, BOARD_SIZE,
+  Action, GameState, GameInitParams, Position, BOARD_SIZE,
 } from './types.js';
-import { initializeGame, processAction, processAutoActivation } from './engine.js';
+import { initializeGame, processAction } from './engine.js';
 import { getScopeAdjacentTargets } from './item.js';
 import { countObstacles } from './obstacle.js';
-import { currentWaveNumber } from './survival.js';
 
 export type GameMetrics = {
   seed: number;
-  mode: GameMode;
   finalScore: number;
   moveCount: number;
   isCleared?: boolean;
-  remainingObstacles?: number;
-  /** Survival: 生存できたウェーブ数（currentWaveNumber(moveCount)と同義） */
-  wavesSurvived?: number;
+  remainingObstacles: number;
   maxChainIndex?: number;
-  cascadePoints?: number;
 };
 
 const SWAP_DIRS = [
@@ -72,9 +67,9 @@ function findBestAction(state: GameState): { action: Action; newState: GameState
 /** 自動プレイの最大手数（無限ループ防止） */
 const MAX_MOVES = 500;
 
-/** 指定シード・モードで自動プレイし、メトリクスを返す */
-export function playGame(seed: number, mode: GameMode, params?: GameInitParams): GameMetrics {
-  let state = initializeGame(seed, mode, params);
+/** 指定シードで自動プレイし、メトリクスを返す */
+export function playGame(seed: number, params?: GameInitParams): GameMetrics {
+  let state = initializeGame(seed, params);
 
   while (!state.isGameOver && state.moveCount < MAX_MOVES) {
     const found = findBestAction(state);
@@ -82,21 +77,12 @@ export function playGame(seed: number, mode: GameMode, params?: GameInitParams):
     state = found.newState;
   }
 
-  // Sprint終了後: 残存アイテム自動発動（processAutoActivationは非sprintでは即returnする）
-  if (mode === 'sprint') {
-    state = processAutoActivation(state);
-  }
-
   return {
     seed,
-    mode,
     finalScore: state.score,
     moveCount: state.moveCount,
     isCleared: state.isCleared,
-    remainingObstacles: (mode === 'clear' || mode === 'survival')
-      ? countObstacles(state.board) : undefined,
-    wavesSurvived: mode === 'survival' ? currentWaveNumber(state.moveCount) : undefined,
+    remainingObstacles: countObstacles(state.board),
     maxChainIndex: state.maxChainIndex,
-    cascadePoints: state.cascadePoints,
   };
 }

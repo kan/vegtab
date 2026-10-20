@@ -1,4 +1,5 @@
 import { setLocalItem } from '@/lib/storage';
+import { isRemovedModeScoreSubmission } from '@/lib/legacyData';
 
 const QUEUE_KEY = 'offline_queue';
 const MAX_RETRIES = 3;
@@ -21,8 +22,8 @@ function loadQueue(): QueueEntry[] {
     if (!raw) return [];
     const entries: QueueEntry[] = JSON.parse(raw);
     const now = Date.now();
-    // Remove expired entries
-    return entries.filter(e => now - e.createdAt < EXPIRY_MS);
+    // Remove expired entries and score submissions of removed modes (queued before #102)
+    return entries.filter(e => now - e.createdAt < EXPIRY_MS && !isRemovedModeScoreSubmission(e));
   } catch {
     return [];
   }
