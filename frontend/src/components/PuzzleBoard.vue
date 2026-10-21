@@ -42,9 +42,16 @@ onUnmounted(() => {
   floatingScores.length = 0;
 });
 
+/**
+ * Room around the cells: the ink frame on both sides (--board-frame-width in theme.css), the gap
+ * to the coordinate labels and the labels themselves
+ */
+const BOARD_CHROME_PX = 30;
+
 function updateCellSize() {
   if (wrapperEl.value) {
-    cellSize.value = Math.floor(Math.min(wrapperEl.value.clientWidth, wrapperEl.value.clientHeight) / BOARD_SIZE);
+    const room = Math.min(wrapperEl.value.clientWidth, wrapperEl.value.clientHeight) - BOARD_CHROME_PX;
+    cellSize.value = Math.floor(Math.max(0, room) / BOARD_SIZE);
   }
 }
 const boardSize = computed(() => cellSize.value * BOARD_SIZE);
@@ -967,7 +974,7 @@ function tileTransition(r: number, c: number) {
       <div class="board-and-files">
     <div
       ref="boardEl"
-      :class="['puzzle-board', { shaking }]"
+      :class="['puzzle-board', 'board-frame', { shaking }]"
       :style="{ width: boardSize + 'px', height: boardSize + 'px' }"
       @pointerdown="drag.onPointerDown"
       @pointermove="drag.onPointerMove"
@@ -1121,13 +1128,13 @@ function tileTransition(r: number, c: number) {
 .board-with-coords {
   display: flex;
   align-items: flex-start;
-  gap: 2px;
+  gap: 8px;
   margin: 0 auto;
 }
 .board-and-files {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
 }
 .rank-labels {
   display: flex;
@@ -1149,7 +1156,6 @@ function tileTransition(r: number, c: number) {
   touch-action: none;
   user-select: none;
   background: var(--board-bg);
-  border-radius: 8px;
   overflow: hidden;
   position: relative;
   isolation: isolate;
@@ -1365,7 +1371,6 @@ function tileTransition(r: number, c: number) {
   background: var(--bg-card);
   padding: 6px 16px;
   border-radius: 6px;
-  box-shadow: var(--shadow-card);
   margin-top: 8px;
   animation: hint-fade calc(3s / var(--anim-duration-factor, 1)) ease-out forwards;
 }

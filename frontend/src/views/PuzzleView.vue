@@ -5,14 +5,13 @@ import { useI18n } from 'vue-i18n';
 import { usePuzzleStore } from '@/stores/puzzle';
 import { useGameStore } from '@/stores/game';
 import { playSE, vibrate, startBGM, stopBGM, useSound } from '@/sound';
-import { useAnim } from '@/anim';
-import { speakerLoudIcon, speakerMutedIcon, musicNoteIcon, speedIcon } from '@/assets/icons';
+import { speakerLoudIcon, speakerMutedIcon, trophyIcon } from '@/assets/icons';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import RankingModal from '@/components/RankingModal.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
-import SettingsModal from '@/components/SettingsModal.vue';
+import MenuSheet from '@/components/MenuSheet.vue';
 import NameDialog from '@/components/NameDialog.vue';
-import { shareIcon as shareIconUrl, trophyIcon } from '@/assets/icons';
+import { showToast } from '@/api/client';
 import { buildShareUrl } from '@/utils/shareUrl';
 import { isRemovedMode } from '@/lib/legacyData';
 import { formatPlayTime } from '@/lib/playTime';
@@ -174,7 +173,6 @@ watch(() => store.isGameOver, (ended) => {
 });
 
 // --- Share ---
-const shareToast = ref(false);
 const shareCode = ref<string | null>(null);
 const shareUrl = computed(() => shareCode.value ? buildShareUrl(shareCode.value) : null);
 
@@ -196,8 +194,7 @@ async function shareScore() {
     } catch { /* user cancelled */ }
   } else {
     await navigator.clipboard.writeText(url ? `${text}\n${url}` : text);
-    shareToast.value = true;
-    setTimeout(() => { shareToast.value = false; }, 2000);
+    showToast('success', 'common.copiedToClipboard');
   }
 }
 
@@ -216,9 +213,8 @@ onUnmounted(() => {
 const showRanking = ref(false);
 const rankingSeed = computed(() => store.seed || Number(route.params.seed) || 0);
 
-const { seEnabled, bgmEnabled, toggleSE, toggleBGM } = useSound();
-const { animSpeed, cycleSpeed } = useAnim();
-const showSettings = ref(false);
+// Under the board only what is used while playing; BGM and the animation speed are in the settings
+const { seEnabled, toggleSE } = useSound();
 
 // --- Game over display ---
 const peekingBoard = ref(false);
@@ -248,24 +244,28 @@ const gameOverScore = computed(() => store.isCleared
     </Teleport>
 
     <template v-if="viewPhase === 'playing'">
+      <!-- Status line and the menu, as TAKO-SEN's top line -->
       <header class="puzzle-header">
-        <div class="header-row">
-          <div class="seed-label">
-            {{ t('puzzle.seed', { seed: store.seed }) }}
-            <button class="btn-ranking" @click="showRanking = true" :title="t('common.ranking')"><img :src="trophyIcon" class="btn-ranking-icon" alt="" /></button>
+        <dl class="status">
+          <div class="status-item status-obstacles">
+            <dt>{{ t('puzzle.statusObstacles') }}</dt>
+            <dd>{{ store.obstacleCount }}</dd>
           </div>
-          <div class="score-area">
-            <div class="score-label">{{ t('mode.obstacles', { count: store.obstacleCount }) }}</div>
-            <div class="move-label">{{ t('puzzle.score', { score: store.score }) }}</div>
+          <div class="status-item">
+            <dt>{{ t('puzzle.statusMoves') }}</dt>
+            <dd>{{ store.moveCount }}</dd>
           </div>
-        </div>
-        <div class="header-row">
-          <div class="move-label">
-            {{ t('puzzle.moveCount', { count: store.moveCount }) }}
+          <div class="status-item">
+            <dt>{{ t('puzzle.statusTime') }}</dt>
+            <dd class="status-time">{{ formatPlayTime(timer.elapsedMs.value) }}</dd>
           </div>
-          <div class="move-label time-label">{{ t('puzzle.time', { time: formatPlayTime(timer.elapsedMs.value) }) }}</div>
-        </div>
+        </dl>
+        <MenuSheet :account="false" />
       </header>
+      <p class="puzzle-sub">
+        {{ t('puzzle.seed', { seed: store.seed }) }}
+        <span class="puzzle-score">{{ t('puzzle.score', { score: store.score }) }}</span>
+      </p>
 
       <div class="board-area">
         <PuzzleBoard ref="puzzleBoard" :debug-panel="debugPanel" />
@@ -280,47 +280,39 @@ const gameOverScore = computed(() => store.isCleared
         @pointerup.self="peekingBoard = false"
         @pointerleave="peekingBoard = false"
       >
-        <div class="game-over-card">
-          <h2>{{ gameOverTitle }}</h2>
+        <div class="modal game-over-card">
+          <h2 :class="{ failed: !store.isCleared }">{{ gameOverTitle }}</h2>
           <p class="final-score">{{ gameOverScore }}</p>
-          <p v-if="clearTimeMs !== null" class="clear-time-info">{{ t('puzzle.time', { time: formatPlayTime(clearTimeMs) }) }}</p>
+          <p v-if="clearTimeMs !== null" class="clear-time-info">{{ formatPlayTime(clearTimeMs) }}</p>
           <p class="score-info">{{ t('puzzle.pts', { score: store.score }) }}</p>
-          <div class="game-over-actions actions-col">
-            <button class="btn" @click="restart"><span class="btn-icon">&#x21BB;</span> {{ t('common.retry') }}</button>
-            <button class="btn btn-share" @click="shareScore"><img :src="shareIconUrl" class="btn-icon-svg" alt="" /> {{ t('common.share') }}</button>
-            <button class="btn btn-home" @click="router.push('/')"><span class="btn-icon">&#x2302;</span> {{ t('common.home') }}</button>
+          <div class="game-over-actions">
+            <!-- The result leads straight to where it ranks -->
+            <button class="btn btn-primary" @click="showRanking = true">
+              <img :src="trophyIcon" class="btn-img" alt="" /> {{ t('puzzle.seeRanking') }}
+            </button>
+            <button class="btn" @click="restart">{{ t('common.retry') }}</button>
+            <button class="btn" @click="shareScore">{{ t('common.share') }}</button>
+            <button class="btn" @click="router.push('/')">{{ t('common.home') }}</button>
           </div>
         </div>
       </div>
 
+      <!-- Under the board: what is used while playing, as TAKO-SEN's round buttons -->
       <footer class="puzzle-footer">
-        <div class="footer-sound">
-          <button :class="['sound-toggle', { off: !seEnabled }]" @click="toggleSE" :title="t('home.soundSE')">
-            <img :src="seEnabled ? speakerLoudIcon : speakerMutedIcon" class="sound-icon" alt="" />
-          </button>
-          <button :class="['sound-toggle', { off: !bgmEnabled }]" @click="toggleBGM" :title="t('home.soundBGM')">
-            <img :src="musicNoteIcon" class="sound-icon" alt="" />
-          </button>
-          <button class="sound-toggle speed-toggle" @click="cycleSpeed" :title="t('home.animSpeed')">
-            <img :src="speedIcon" class="sound-icon" alt="" />
-            <span class="speed-label">{{ animSpeed }}x</span>
-          </button>
-        </div>
-        <button class="btn btn-small" @click="restart">{{ t('common.retry') }}</button>
-        <button v-if="isDev" class="btn btn-small btn-debug" @click="debugPanel?.show()">{{ t('puzzle.debug') }}</button>
+        <button class="icon-btn icon-btn-next" :aria-label="t('common.retry')" @click="restart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.6-5.9" /><path d="M4 4v5h5" /></svg>
+        </button>
+        <button class="icon-btn" :aria-label="t('home.soundSE')" :aria-pressed="seEnabled" @click="toggleSE">
+          <img :src="seEnabled ? speakerLoudIcon : speakerMutedIcon" alt="" />
+        </button>
+        <button class="icon-btn" :aria-label="t('common.ranking')" @click="showRanking = true">
+          <img :src="trophyIcon" alt="" />
+        </button>
+        <button v-if="isDev" class="btn btn-debug" @click="debugPanel?.show()">{{ t('puzzle.debug') }}</button>
       </footer>
 
-      <!-- Settings gear button (fixed, bottom-right) -->
-      <button class="gear-fab" @click="showSettings = true" :title="t('home.settingsTitle')">
-        <svg class="gear-fab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      </button>
-
-      <!-- Share toast -->
-      <div v-if="shareToast" class="share-toast">{{ t('common.copiedToClipboard') }}</div>
 
       <NameDialog :open="showNamePrompt" @close="showNamePrompt = false" />
-
-      <SettingsModal :open="showSettings" @close="showSettings = false" />
       <DebugPanel v-if="isDev" ref="debugPanel" />
     </template>
 
@@ -333,67 +325,59 @@ const gameOverScore = computed(() => store.isCleared
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  padding: 10px 12px 12px;
   overflow: hidden;
   position: relative;
 }
 .puzzle-header {
-  margin-bottom: 12px;
-}
-.header-row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
+  gap: 8px;
+  min-height: 44px;
 }
-.seed-label {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  font-family: monospace;
+.status {
   display: flex;
-  align-items: center;
+  gap: 18px;
+  margin: 0;
+}
+.status-item {
+  display: flex;
+  align-items: baseline;
   gap: 4px;
 }
-.btn-ranking {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0 2px;
-}
-.btn-ranking-icon {
-  width: 18px;
-  height: 18px;
-  vertical-align: middle;
-}
-.score-area {
-  text-align: right;
-}
-.score-label {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--brand);
-}
-.move-label {
+.status-item dt {
   font-size: 13px;
+  font-weight: 800;
   color: var(--text-secondary);
 }
-.time-label {
-  font-weight: 600;
+.status-item dd {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
+}
+.status-obstacles dd {
+  color: var(--brand);
+}
+.status-time {
+  min-width: 3.2em;
+}
+.puzzle-sub {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 .score-info {
   font-size: 13px;
   color: var(--text-muted);
-  margin-bottom: 12px;
+  margin: 0 0 14px;
 }
-.btn-icon {
-  margin-right: 4px;
-}
-.btn-icon-svg {
-  width: 16px;
-  height: 16px;
-  vertical-align: -2px;
-  margin-right: 4px;
+.btn-img {
+  width: 20px;
+  height: 20px;
 }
 .board-area {
   flex: 1;
@@ -404,106 +388,29 @@ const gameOverScore = computed(() => store.isCleared
 }
 .puzzle-footer {
   display: flex;
-  gap: 8px;
+  gap: 12px;
   justify-content: center;
   align-items: center;
   padding: 12px 0 0;
 }
-.footer-sound {
-  display: flex;
-  gap: 4px;
+/* Retry stands out in the kan-game.app "next" orange, as TAKO-SEN's skip */
+.icon-btn-next {
+  background: var(--accent-next);
 }
-.sound-toggle {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-card);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-}
-.sound-icon {
-  width: 18px;
-  height: 18px;
-}
-.sound-toggle.off {
-  opacity: 0.4;
-}
-.speed-toggle {
-  gap: 2px;
-}
-.speed-label {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--brand);
-  line-height: 1;
-}
-.gear-fab {
-  position: fixed;
-  bottom: 80px;
-  right: max(16px, calc((100vw - 480px) / 2 + 16px));
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-card);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-}
-.gear-fab-icon {
-  width: 22px;
-  height: 22px;
-  color: var(--text-secondary);
-}
-.btn {
-  padding: 10px 24px;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--brand);
-  color: #fff;
-  font-size: 14px;
-}
-.btn-secondary {
-  background: var(--secondary);
-}
-.btn-share {
-  background: var(--info);
-}
-.btn-home {
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-}
-.share-toast {
-  position: fixed;
-  bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.8);
-  color: #fff;
-  padding: 8px 20px;
-  border-radius: 20px;
-  font-size: 13px;
-  z-index: 2000;
-}
-.btn-small {
-  padding: 6px 16px;
-  font-size: 12px;
+.icon-btn[aria-pressed="false"] img {
+  opacity: 0.5;
 }
 .btn-debug {
-  background: var(--slate);
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 12px;
 }
 .clear-time-info {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--brand);
-  margin-bottom: 4px;
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  margin: 0 0 4px;
 }
 .game-over-overlay {
   position: absolute;
@@ -521,31 +428,30 @@ const gameOverScore = computed(() => store.isCleared
   opacity: 0;
   pointer-events: none;
 }
+/* A .modal over the board only (the overlay is the board area's, so the board can be peeked) */
 .game-over-card {
-  background: var(--bg-card);
-  border-radius: 12px;
-  padding: 32px;
+  width: min(100% - 24px, 320px);
+  border-radius: 24px;
+  padding: 24px 20px;
   text-align: center;
-  box-shadow: var(--shadow-modal);
 }
 .game-over-card h2 {
-  font-size: 24px;
+  font-size: 30px;
+  font-weight: 800;
   color: var(--brand);
-  margin-bottom: 8px;
+  margin: 0 0 4px;
+}
+.game-over-card h2.failed {
+  color: var(--danger);
 }
 .final-score {
-  font-size: 36px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 8px;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0 0 2px;
 }
 .game-over-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-.actions-col {
-  flex-direction: column;
+  display: grid;
   gap: 10px;
 }
 </style>

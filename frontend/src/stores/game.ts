@@ -336,6 +336,16 @@ export const useGameStore = defineStore('game', () => {
     return playRecords.value.filter(r => r.seed === seed);
   }
 
+  /** その seed の自分の記録のうち最もよいもの（クリア優先 → 手数 → 時間）。記録がなければ null */
+  function getBestResult(seed: number): ResultSummary | null {
+    let best: ResultSummary | null = null;
+    for (const r of getRecordsForSeed(seed)) {
+      const summary = toSummary(r);
+      if (!best || isBetterResult(summary, best)) best = summary;
+    }
+    return best;
+  }
+
   /** seed → クリアした記録の最少手数（カレンダーの各セルから引くので、記録が変わったときだけ作り直す） */
   const bestMovesBySeed = computed(() => {
     const map = new Map<number, number>();
@@ -390,7 +400,7 @@ export const useGameStore = defineStore('game', () => {
     playRecords,
     generateDailySeed: dailySeed, randomSeed,
     isTodaysDailySeed,
-    addPlayRecord, getRecordsForSeed, getBestMoves,
+    addPlayRecord, getRecordsForSeed, getBestResult, getBestMoves,
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, syncScoresFromServer, initialized,
     getShareCode,

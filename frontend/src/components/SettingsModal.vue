@@ -2,20 +2,19 @@
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { setLocale } from '@/i18n';
-import { useTheme } from '@/theme';
+import CloseButton from './CloseButton.vue';
 import { useSound } from '@/sound';
 import { useAnim } from '@/anim';
 import { getVapidPublicKey, subscribePush, unsubscribePush, showToast } from '@/api/client';
 import {
   speakerLoudIcon, speakerMutedIcon, musicNoteIcon, vibrationIcon,
-  sunIcon, moonIcon, globeIcon, speedIcon,
+  globeIcon, speedIcon,
 } from '@/assets/icons';
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const { t, locale } = useI18n();
-const { isDark, toggle: doToggleTheme } = useTheme();
 const { seEnabled, bgmEnabled, vibrationEnabled, toggleSE, toggleBGM, toggleVibration } = useSound();
 const { animSpeed, cycleSpeed } = useAnim();
 
@@ -84,45 +83,39 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="settings-overlay" @click.self="emit('close')">
-      <div class="settings-panel">
-        <div class="settings-header">
-          <h3 class="settings-title">{{ t('home.settingsTitle') }}</h3>
-          <button class="settings-close" @click="emit('close')">&times;</button>
+    <div v-if="open" class="modal-overlay" @click.self="emit('close')">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="modal-header">
+          <h3 id="settings-title" class="modal-title">{{ t('home.settingsTitle') }}</h3>
+          <CloseButton @click="emit('close')" />
         </div>
         <div class="settings-items">
-          <button :class="['s-item', { off: !seEnabled }]" @click="toggleSE">
+          <button class="row-btn" @click="toggleSE">
             <img class="s-icon" :src="seEnabled ? speakerLoudIcon : speakerMutedIcon" alt="" />
             <span class="s-label">{{ t('home.soundSE') }}</span>
             <span :class="['s-status', { on: seEnabled }]">{{ seEnabled ? 'ON' : 'OFF' }}</span>
           </button>
-          <button :class="['s-item', { off: !bgmEnabled }]" @click="toggleBGM">
+          <button class="row-btn" @click="toggleBGM">
             <img class="s-icon" :src="musicNoteIcon" alt="" />
             <span class="s-label">{{ t('home.soundBGM') }}</span>
             <span :class="['s-status', { on: bgmEnabled }]">{{ bgmEnabled ? 'ON' : 'OFF' }}</span>
           </button>
-          <button :class="['s-item', { off: !vibrationEnabled }]" @click="toggleVibration">
+          <button class="row-btn" @click="toggleVibration">
             <img class="s-icon" :src="vibrationIcon" alt="" />
             <span class="s-label">{{ t('home.soundVibration') }}</span>
             <span :class="['s-status', { on: vibrationEnabled }]">{{ vibrationEnabled ? 'ON' : 'OFF' }}</span>
           </button>
-          <button v-if="pushSupported" :class="['s-item', { off: !pushEnabled }]" @click="togglePush" :disabled="pushLoading">
+          <button v-if="pushSupported" class="row-btn" @click="togglePush" :disabled="pushLoading">
             <span class="s-icon notif-icon">&#x1F514;</span>
             <span class="s-label">{{ t('home.notification') }}</span>
             <span :class="['s-status', { on: pushEnabled }]">{{ pushLoading ? '...' : pushEnabled ? 'ON' : 'OFF' }}</span>
           </button>
-          <button class="s-item" @click="cycleSpeed">
+          <button class="row-btn" @click="cycleSpeed">
             <img class="s-icon" :src="speedIcon" alt="" />
             <span class="s-label">{{ t('home.animSpeed') }}</span>
             <span class="s-status on">{{ animSpeed }}x</span>
           </button>
-          <div class="s-divider" />
-          <button class="s-item" @click="doToggleTheme">
-            <img class="s-icon" :src="isDark ? sunIcon : moonIcon" alt="" />
-            <span class="s-label">{{ t('home.darkMode') }}</span>
-            <span :class="['s-status', { on: isDark }]">{{ isDark ? 'ON' : 'OFF' }}</span>
-          </button>
-          <button class="s-item" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
+          <button class="row-btn" @click="setLocale(locale === 'ja' ? 'en' : 'ja')">
             <img class="s-icon" :src="globeIcon" alt="" />
             <span class="s-label">{{ t('home.language') }}</span>
             <span class="s-status on">{{ locale === 'ja' ? '日本語' : 'English' }}</span>
@@ -134,64 +127,10 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
 </template>
 
 <style scoped>
-.settings-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay-bg);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.settings-panel {
-  background: var(--bg-card);
-  border-radius: 16px;
-  width: 340px;
-  max-width: 90vw;
-  padding: 20px;
-  box-shadow: var(--shadow-modal);
-}
-.settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.settings-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-.settings-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0 4px;
-}
 .settings-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-.s-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.s-item:hover {
-  background: var(--bg-hover);
-}
-.s-item.off {
-  opacity: 0.6;
+  gap: 10px;
 }
 .s-icon {
   width: 22px;
@@ -206,21 +145,23 @@ function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
 .s-label {
   flex: 1;
   text-align: left;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: 16px;
+  color: var(--ink);
 }
+/* ON is a green pill, OFF a plain one: the state reads by its words, not only its colour */
 .s-status {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-disabled);
+  min-width: 52px;
+  padding: 2px 10px;
+  border: var(--frame-thin);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  color: var(--text-secondary);
+  background: var(--bg-card);
 }
 .s-status.on {
-  color: var(--brand);
-}
-.s-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 4px 12px;
+  color: var(--on-brand);
+  background: var(--brand);
 }
 </style>

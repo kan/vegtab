@@ -126,13 +126,13 @@ function getCellClass(row: number, col: number): string {
     <!-- Error -->
     <div v-else-if="error" class="replay-center">
       <p>{{ error }}</p>
-      <button class="btn" @click="router.push('/')">{{ t('common.home') }}</button>
+      <button class="btn btn-primary" @click="router.push('/')">{{ t('common.home') }}</button>
     </div>
 
     <!-- Replay -->
     <template v-else>
       <header class="replay-header">
-        <button class="btn-back" @click="router.back()">&larr;</button>
+        <button class="btn btn-sm btn-back" @click="router.back()">&larr;</button>
         <div class="replay-info">
           <span class="replay-title">{{ t('replay.title') }}</span>
           <span class="replay-meta">
@@ -157,7 +157,7 @@ function getCellClass(row: number, col: number): string {
             >{{ rank }}</div>
           </div>
           <div class="board-and-files">
-            <div class="replay-board" :style="{ width: CELL_SIZE * 8 + 'px', height: CELL_SIZE * 8 + 'px' }">
+            <div class="replay-board board-frame" :style="{ width: CELL_SIZE * 8 + 'px', height: CELL_SIZE * 8 + 'px' }">
               <template v-if="player.currentBoard.value">
                 <div
                   v-for="(row, r) in player.currentBoard.value"
@@ -206,13 +206,13 @@ function getCellClass(row: number, col: number): string {
 
       <!-- Controls -->
       <div class="replay-controls">
-        <button class="ctrl-btn" @click="player.goTo(0)" :disabled="player.currentStep.value === 0 || player.isAnimating.value"><img :src="ctrlPrevTrackIcon" class="ctrl-icon" alt="" /></button>
-        <button class="ctrl-btn" @click="player.prev()" :disabled="player.currentStep.value === 0 || player.isAnimating.value"><img :src="ctrlRewindIcon" class="ctrl-icon" alt="" /></button>
-        <button class="ctrl-btn ctrl-play" @click="player.isPlaying.value ? player.pause() : player.play()">
+        <button class="icon-btn" @click="player.goTo(0)" :disabled="player.currentStep.value === 0 || player.isAnimating.value"><img :src="ctrlPrevTrackIcon" class="ctrl-icon" alt="" /></button>
+        <button class="icon-btn" @click="player.prev()" :disabled="player.currentStep.value === 0 || player.isAnimating.value"><img :src="ctrlRewindIcon" class="ctrl-icon" alt="" /></button>
+        <button class="icon-btn ctrl-play" @click="player.isPlaying.value ? player.pause() : player.play()">
           <img :src="player.isPlaying.value ? ctrlPauseIcon : ctrlPlayIcon" class="ctrl-icon" alt="" />
         </button>
-        <button class="ctrl-btn" @click="player.next()" :disabled="player.currentStep.value >= player.totalSteps.value || player.isAnimating.value"><img :src="ctrlForwardIcon" class="ctrl-icon" alt="" /></button>
-        <button class="ctrl-btn" @click="player.goTo(player.totalSteps.value)" :disabled="player.currentStep.value >= player.totalSteps.value || player.isAnimating.value"><img :src="ctrlNextTrackIcon" class="ctrl-icon" alt="" /></button>
+        <button class="icon-btn" @click="player.next()" :disabled="player.currentStep.value >= player.totalSteps.value || player.isAnimating.value"><img :src="ctrlForwardIcon" class="ctrl-icon" alt="" /></button>
+        <button class="icon-btn" @click="player.goTo(player.totalSteps.value)" :disabled="player.currentStep.value >= player.totalSteps.value || player.isAnimating.value"><img :src="ctrlNextTrackIcon" class="ctrl-icon" alt="" /></button>
       </div>
 
       <!-- Slider -->
@@ -276,13 +276,9 @@ function getCellClass(row: number, col: number): string {
   margin-bottom: 12px;
 }
 .btn-back {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 16px;
-  cursor: pointer;
-  color: var(--text-primary);
+  min-width: 40px;
+  padding: 0 10px;
+  font-size: 18px;
 }
 .replay-info {
   display: flex;
@@ -317,6 +313,8 @@ function getCellClass(row: number, col: number): string {
 .rank-labels {
   display: flex;
   flex-direction: column;
+  /* Level with the board, which has a margin for its frame */
+  margin-top: var(--board-frame-width);
 }
 .file-labels {
   display: flex;
@@ -343,8 +341,9 @@ function getCellClass(row: number, col: number): string {
 .replay-board {
   display: flex;
   flex-direction: column;
-  background: var(--bg-card-alt);
-  border-radius: 8px;
+  background: var(--board-bg);
+  /* Room for the frame, which is drawn outside */
+  margin: var(--board-frame-width);
   overflow: hidden;
 }
 .replay-row {
@@ -406,32 +405,16 @@ function getCellClass(row: number, col: number): string {
   gap: 8px;
   margin-bottom: 8px;
 }
-.ctrl-btn {
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-card);
-  font-size: 16px;
-  cursor: pointer;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* The controls are .icon-btn; play is the larger green one */
 .ctrl-icon {
   width: 20px;
   height: 20px;
 }
-.ctrl-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
 .ctrl-play {
   background: var(--brand);
-  color: #fff;
-  border-color: var(--brand);
-  width: 48px;
+  color: var(--on-brand);
+  width: 52px;
+  height: 52px;
 }
 .replay-slider {
   display: flex;
@@ -458,19 +441,19 @@ function getCellClass(row: number, col: number): string {
   margin-bottom: 8px;
 }
 .speed-btn {
-  padding: 4px 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: none;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
+  min-height: 32px;
+  padding: 2px 12px;
+  border: var(--frame-thin);
+  border-radius: 999px;
+  background: var(--bg-card);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--ink);
   cursor: pointer;
 }
 .speed-btn.active {
   background: var(--brand);
-  color: #fff;
-  border-color: var(--brand);
+  color: var(--on-brand);
 }
 .replay-actions-list {
   flex: 1;
@@ -499,15 +482,5 @@ function getCellClass(row: number, col: number): string {
 .action-item.next {
   background: rgba(46, 125, 50, 0.08);
   border-left: 2px solid var(--brand);
-}
-.btn {
-  padding: 10px 24px;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--brand);
-  color: #fff;
-  font-size: 14px;
 }
 </style>

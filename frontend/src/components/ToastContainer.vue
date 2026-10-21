@@ -79,22 +79,25 @@ function dismissToast(id: number) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
+  padding: 10px 16px 10px 12px;
+  border: var(--frame-thin);
+  border-left-width: 8px;
+  border-radius: 14px;
+  background: var(--bg-card);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
   pointer-events: auto;
   cursor: pointer;
   animation: toast-in 0.3s ease-out;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 .toast-leaving {
   animation: toast-out 0.3s ease-in forwards;
 }
-.toast-error { background: var(--danger, #f44336); }
-.toast-success { background: var(--success, #4caf50); }
-.toast-info { background: var(--info, #2196f3); }
+/* The kind shows in the thick left edge and the icon, on the same light surface */
+.toast-error { border-left-color: var(--danger); }
+.toast-success { border-left-color: var(--brand); }
+.toast-info { border-left-color: var(--info); }
 .toast-icon {
   width: 18px;
   height: 18px;

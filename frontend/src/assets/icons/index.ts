@@ -11,9 +11,6 @@ export { default as scissorsIcon } from './2702.svg';
 export { default as forkKnifeIcon } from './1F37D.svg';
 export { default as saladIcon } from './1F957.svg';
 
-// Clear (obstacle) icon
-export { default as brickIcon } from './1F9F1.svg';
-
 // Ranking / Achievement
 export { default as trophyIcon } from './1F3C6.svg';
 export { default as goldMedalIcon } from './1F947.svg';
@@ -29,28 +26,14 @@ export { default as speakerLoudIcon } from './1F50A.svg';
 export { default as speakerMutedIcon } from './1F507.svg';
 export { default as musicNoteIcon } from './1F3B5.svg';
 export { default as vibrationIcon } from './1F4F3.svg';
-
-// Menu items
-export { default as linkIcon } from './1F517.svg';
-export { default as sunIcon } from './2600.svg';
-export { default as moonIcon } from './1F319.svg';
 export { default as globeIcon } from './1F310.svg';
-export { default as mobileIcon } from './1F4F2.svg';
-export { default as keyIcon } from './1F511.svg';
-export { default as infoIcon } from './2139.svg';
+export { default as speedIcon } from './speed.svg';
 
 // UI controls
-export { default as shareIcon } from './E253.svg';
+export { default as infoIcon } from './2139.svg';
 export { default as playIcon } from './25B6.svg';
-export { default as pencilIcon } from './1F58A.svg';
-export { default as prevTrackIcon } from './23EE.svg';
-export { default as rewindIcon } from './23EA.svg';
-export { default as pauseIcon } from './23F8.svg';
-export { default as fastForwardIcon } from './23E9.svg';
-export { default as speedIcon } from './speed.svg';
-export { default as nextTrackIcon } from './23ED.svg';
 
-// Replay controls (filled + stroked, dark-mode friendly)
+// Replay controls
 export { default as ctrlPrevTrackIcon } from './ctrl-prev-track.svg';
 export { default as ctrlRewindIcon } from './ctrl-rewind.svg';
 export { default as ctrlPauseIcon } from './ctrl-pause.svg';

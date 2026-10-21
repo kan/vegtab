@@ -50,42 +50,50 @@ const items = computed(() =>
 .achievement-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .achievement-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 44px;
+  margin-bottom: 4px;
 }
 .achievement-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--ink);
 }
 .achievement-count {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--brand);
+  padding: 2px 12px;
+  border: var(--frame-thin);
+  border-radius: 999px;
+  background: var(--brand-light);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
 }
+/* Locked: a light frame and faded. Unlocked: the ink frame on green */
 .achievement-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 10px 14px;
   background: var(--bg-card);
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  opacity: 0.55;
-  transition: opacity 0.2s;
+  border-radius: 14px;
+  border: 2px solid var(--border);
+  color: var(--text-muted);
 }
 .achievement-item.unlocked {
-  opacity: 1;
-  border-color: var(--brand);
+  border-color: var(--ink);
+  background: var(--brand-light);
+  color: var(--ink);
+}
+.achievement-item:not(.unlocked) .achievement-icon {
+  opacity: 0.5;
 }
 .achievement-item.secret {
-  opacity: 0.35;
+  border-style: dashed;
 }
 .achievement-icon {
   width: 24px;
@@ -100,13 +108,11 @@ const items = computed(() =>
   min-width: 0;
 }
 .achievement-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 800;
 }
 .achievement-desc {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: 13px;
 }
 .achievement-check {
   width: 18px;

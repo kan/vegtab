@@ -47,7 +47,7 @@ onMounted(async () => {
     <div v-if="error" class="share-error">
       <h2>{{ t('shareRedirect.notFound') }}</h2>
       <p>{{ t('shareRedirect.notFoundMessage') }}</p>
-      <button class="btn" @click="router.push('/')">{{ t('shareRedirect.goHome') }}</button>
+      <button class="btn btn-primary" @click="router.push('/')">{{ t('shareRedirect.goHome') }}</button>
     </div>
 
     <!-- PC: show landing page with QR -->
@@ -59,7 +59,7 @@ onMounted(async () => {
         <QrCode :value="shareUrl" :size="180" />
       </div>
       <p class="landing-hint">{{ t('shareRedirect.scanToPlay') }}</p>
-      <button class="btn" @click="goToPuzzle">{{ t('shareRedirect.playInBrowser') }}</button>
+      <button class="btn btn-primary" @click="goToPuzzle">{{ t('shareRedirect.playInBrowser') }}</button>
     </div>
 
     <div v-else class="share-loading">
@@ -75,7 +75,6 @@ onMounted(async () => {
   justify-content: center;
   height: 100dvh;
   background: var(--bg-page);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 .share-error, .share-loading {
   text-align: center;
@@ -88,16 +87,6 @@ onMounted(async () => {
 .share-error p {
   color: var(--text-secondary);
   margin-bottom: 16px;
-}
-.btn {
-  padding: 10px 28px;
-  border: none;
-  border-radius: 8px;
-  background: var(--brand);
-  color: #fff;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
 }
 .share-loading p {
   color: var(--text-muted);

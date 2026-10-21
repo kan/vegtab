@@ -13,7 +13,7 @@ import AchievementList from '@/components/AchievementList.vue';
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 10px 12px 20px;
   overflow-y: auto;
 }
 </style>

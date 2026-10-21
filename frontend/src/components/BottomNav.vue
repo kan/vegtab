@@ -43,9 +43,10 @@ function goToPuzzle() {
 <style scoped>
 .bottom-nav {
   display: flex;
-  border-top: 1px solid var(--board-nav-border);
+  gap: 6px;
+  border-top: var(--frame);
   background: var(--bg-card);
-  padding: 4px 0;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   flex-shrink: 0;
 }
 .nav-btn {
@@ -54,22 +55,29 @@ function goToPuzzle() {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 8px 0;
-  border: none;
+  min-height: 48px;
+  padding: 6px 0;
+  border: 2px solid transparent;
+  border-radius: 14px;
   background: none;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 11px;
   cursor: pointer;
-  transition: color 0.15s;
 }
+/* The current screen: a green pill with the ink frame, so it reads by shape too */
 .nav-btn.active {
+  border-color: var(--ink);
+  background: var(--brand-light);
+  color: var(--ink);
+}
+.nav-btn.active .nav-icon-svg {
   color: var(--brand);
 }
 .nav-label {
-  font-weight: 600;
+  font-weight: 800;
 }
 .nav-icon-svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 </style>

@@ -82,7 +82,7 @@ const arrowMap: Record<Direction, { char: string; dx: number; dy: number }> = {
   <div ref="wrapperEl" class="tutorial-board-wrapper">
     <div
       ref="boardEl"
-      class="tutorial-board"
+      class="tutorial-board board-frame"
       :style="{ width: boardSize + 'px', height: boardSize + 'px' }"
       @pointerdown="drag.onPointerDown"
       @pointermove="drag.onPointerMove"
@@ -170,7 +170,6 @@ const arrowMap: Record<Direction, { char: string; dx: number; dy: number }> = {
   touch-action: none;
   user-select: none;
   background: var(--board-bg);
-  border-radius: 8px;
   overflow: hidden;
   margin: 0 auto;
   position: relative;

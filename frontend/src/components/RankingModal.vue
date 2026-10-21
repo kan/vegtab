@@ -5,7 +5,9 @@ import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
 import { getUserId } from '@/api/id';
 import { formatRecordTime } from '@/lib/playTime';
-import { goldMedalIcon, silverMedalIcon, bronzeMedalIcon, playIcon, brickIcon } from '@/assets/icons';
+import { playIcon, trophyIcon } from '@/assets/icons';
+import { rankMedalIcon } from '@/lib/rankMedal';
+import CloseButton from './CloseButton.vue';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -74,13 +76,6 @@ async function fetchRanking() {
 
 const myRankDisplay = computed(() => myRank.value ? t('ranking.moves', { count: myRank.value.moveCount }) : '');
 
-function rankMedalIcon(rank: number): string | null {
-  if (rank === 1) return goldMedalIcon;
-  if (rank === 2) return silverMedalIcon;
-  if (rank === 3) return bronzeMedalIcon;
-  return null;
-}
-
 function goToReplay(scoreId: string) {
   emit('close');
   router.push(`/replay/${scoreId}`);
@@ -89,12 +84,14 @@ function goToReplay(scoreId: string) {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="ranking-overlay" @click.self="emit('close')">
-      <div class="ranking-modal">
-        <div class="ranking-header">
-          <h2 class="ranking-title"><img class="ranking-title-icon" :src="brickIcon" alt="" /> {{ t('common.ranking') }}</h2>
-          <span class="ranking-seed">{{ t('common.seed', { seed }) }}</span>
-          <button class="ranking-close" @click="emit('close')">&times;</button>
+    <div v-if="open" class="modal-overlay" @click.self="emit('close')">
+      <div class="modal ranking-modal" role="dialog" aria-modal="true" aria-labelledby="ranking-title">
+        <div class="modal-header">
+          <div class="ranking-heading">
+            <h2 id="ranking-title" class="modal-title"><img class="ranking-title-icon" :src="trophyIcon" alt="" /> {{ t('common.ranking') }}</h2>
+            <span class="ranking-seed">{{ t('common.seed', { seed }) }}</span>
+          </div>
+          <CloseButton @click="emit('close')" />
         </div>
 
         <!-- Loading skeleton -->
@@ -104,7 +101,7 @@ function goToReplay(scoreId: string) {
             <div class="skeleton-line skeleton-wide" />
           </div>
           <div class="ranking-list">
-            <div v-for="i in 5" :key="i" class="ranking-row skeleton-row">
+            <div v-for="i in 5" :key="i" class="rank-row skeleton-row">
               <span class="skeleton-circle" />
               <div class="skeleton-text">
                 <div class="skeleton-line skeleton-wide" />
@@ -136,22 +133,18 @@ function goToReplay(scoreId: string) {
           <div
             v-for="(entry, i) in rankings"
             :key="i"
-            :class="['ranking-row', { me: entry.isMe }]"
+            :class="['rank-row', { me: entry.isMe }]"
           >
-            <span class="rank-num"><img v-if="rankMedalIcon(entry.rank)" :src="rankMedalIcon(entry.rank)!" class="rank-medal" alt="" /><template v-else>#{{ entry.rank }}</template></span>
-            <div class="rank-main">
-              <span class="rank-name">{{ entry.playerName }}</span>
-            </div>
-            <div class="rank-right">
-              <span class="rank-score">{{ t('ranking.moves', { count: entry.moves }) }}</span>
-              <span class="rank-score rank-time">{{ formatRecordTime(entry.clearTimeMs) }}</span>
-            </div>
+            <span class="rank-row-num"><img v-if="rankMedalIcon(entry.rank)" :src="rankMedalIcon(entry.rank)!" class="rank-row-medal" alt="" /><template v-else>#{{ entry.rank }}</template></span>
+            <span class="rank-row-name">{{ entry.playerName }}</span>
+            <span class="rank-row-val">{{ t('ranking.moves', { count: entry.moves }) }}</span>
+            <span class="rank-row-val rank-row-time">{{ formatRecordTime(entry.clearTimeMs) }}</span>
             <button
               v-if="entry.scoreId"
-              class="btn-replay"
+              class="icon-btn icon-btn-sm btn-replay"
               @click="goToReplay(entry.scoreId!)"
-              :title="t('replay.viewReplay')"
-            ><img :src="playIcon" class="replay-icon" alt="" /></button>
+              :aria-label="t('replay.viewReplay')"
+            ><img :src="playIcon" alt="" /></button>
           </div>
         </div>
         <div v-else class="ranking-empty">
@@ -164,59 +157,27 @@ function goToReplay(scoreId: string) {
 </template>
 
 <style scoped>
-.ranking-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
+/* The title and the close button stay put; only the list scrolls */
 .ranking-modal {
-  background: var(--bg-card);
-  border-radius: 16px;
-  padding: 20px;
-  width: 360px;
-  max-width: 95vw;
-  max-height: 80vh;
+  width: min(100%, 400px);
+  max-height: min(84dvh, 700px);
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-modal);
+  overflow: hidden;
 }
-.ranking-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.ranking-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
+.ranking-heading .modal-title {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin: 0;
 }
 .ranking-title-icon {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
 }
 .ranking-seed {
-  flex: 1;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  font-family: monospace;
-}
-.ranking-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  color: var(--text-muted);
-  cursor: pointer;
-  line-height: 1;
-  padding: 0 4px;
 }
 
 /* My rank card */
@@ -225,13 +186,15 @@ function goToReplay(scoreId: string) {
   align-items: center;
   justify-content: space-between;
   background: var(--rank-highlight-bg);
-  border-radius: 10px;
-  padding: 12px 16px;
+  border: var(--frame-thin);
+  border-radius: 14px;
+  padding: 10px 16px;
   margin-bottom: 12px;
 }
 .my-rank-card.my-rank-empty {
   justify-content: center;
-  background: var(--bg-card-alt);
+  border-style: dashed;
+  background: var(--bg-card);
 }
 .my-rank-left {
   display: flex;
@@ -239,15 +202,13 @@ function goToReplay(scoreId: string) {
   gap: 2px;
 }
 .my-rank-label {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 800;
 }
 .my-rank-num {
   font-size: 28px;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--brand);
 }
 .my-rank-total {
@@ -271,10 +232,6 @@ function goToReplay(scoreId: string) {
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
-.my-rank-name {
-  font-size: 12px;
-  color: var(--text-tertiary);
-}
 
 /* List */
 .ranking-list {
@@ -284,79 +241,9 @@ function goToReplay(scoreId: string) {
   flex-direction: column;
   gap: 4px;
 }
-.ranking-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--bg-card-alt);
-  border-radius: 6px;
-  font-size: 13px;
-}
-.ranking-row.me {
-  background: var(--rank-me-bg);
-  border: 1px solid var(--rank-me-border);
-}
-.rank-num {
-  width: 32px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-  font-size: 14px;
-}
-.rank-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.rank-name {
-  font-weight: 600;
-  color: var(--text-primary);
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rank-right {
-  flex-shrink: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.rank-time {
-  min-width: 3.5em;
-  text-align: right;
-}
-.rank-score {
-  font-weight: 700;
-  color: var(--text-primary);
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
+/* Rows are the shared .rank-row (theme.css); the replay button is the accent one */
 .btn-replay {
-  background: var(--brand);
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  width: 28px;
-  height: 28px;
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.rank-medal {
-  width: 22px;
-  height: 22px;
-  vertical-align: middle;
-}
-.replay-icon {
-  width: 16px;
-  height: 16px;
+  background: var(--accent);
 }
 .ranking-empty {
   text-align: center;

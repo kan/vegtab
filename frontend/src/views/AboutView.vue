@@ -48,8 +48,8 @@ const { t } = useI18n();
 }
 .about-title {
   font-size: 24px;
-  font-weight: 700;
-  color: var(--brand);
+  font-weight: 800;
+  color: var(--title-color);
   margin: 0 0 24px;
 }
 .about-section {
@@ -57,12 +57,12 @@ const { t } = useI18n();
 }
 .about-section h2 {
   font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: var(--ink);
   margin: 0 0 12px;
 }
 .about-text {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
   margin: 0 0 12px;
 }
@@ -70,11 +70,13 @@ const { t } = useI18n();
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  background: var(--bg-card-alt);
-  border-radius: 8px;
-  font-size: 14px;
-  color: var(--text-primary);
+  min-height: 48px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: var(--frame-thin);
+  border-radius: 14px;
+  font-size: 15px;
+  color: var(--ink);
 }
 .credit-item a {
   color: var(--brand);

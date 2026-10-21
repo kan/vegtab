@@ -1,144 +1,53 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
 import { showToast, api } from '@/api/client';
-import { issueTransferCode, redeemTransferCode, portalUrl } from '@/api/id';
 import NameDialog from '@/components/NameDialog.vue';
+import MenuSheet from '@/components/MenuSheet.vue';
 import { useSound } from '@/sound';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
 import { isTutorialFirstVisit, dismissTutorialPrompt } from '@/composables/useTutorialPlayer';
 import RankingModal from '@/components/RankingModal.vue';
 import { formatRecordTime } from '@/lib/playTime';
+import { rankMedalIcon } from '@/lib/rankMedal';
+import { getUserId } from '@/api/id';
+import { trophyIcon } from '@/assets/icons';
 import VegetableIcon from '@/components/VegetableIcon.vue';
-import SettingsModal from '@/components/SettingsModal.vue';
-import {
-  linkIcon, trophyIcon, brickIcon,
-  mobileIcon, keyIcon, infoIcon,
-  pencilIcon, questionIcon,
-} from '@/assets/icons';
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
 const { soundPromptNeeded, acceptSound, declineSound } = useSound();
 
-// Title vegetable icons (random pair, different left/right)
-const titleVegeLeft = Math.floor(Math.random() * 5) as 0 | 1 | 2 | 3 | 4;
-const titleVegeRight = ((titleVegeLeft + 1 + Math.floor(Math.random() * 4)) % 5) as 0 | 1 | 2 | 3 | 4;
+// Title vegetable icon (random)
+const titleVege = Math.floor(Math.random() * 5) as 0 | 1 | 2 | 3 | 4;
 
-// Hamburger menu
-const menuOpen = ref(false);
-
-// Settings modal
-const showSettings = ref(false);
+const showNameDialog = ref(false);
 
 // Ranking modal
-const rankingSeed = ref(0);
 const showRanking = ref(false);
 
-// Share code input
-const showShareCodeInput = ref(false);
-const shareCodeInput = ref('');
-
-function openShareCodeInput() {
-  menuOpen.value = false;
-  shareCodeInput.value = '';
-  showShareCodeInput.value = true;
-}
-
-async function submitShareCode() {
-  const code = shareCodeInput.value.trim().toUpperCase();
-  if (!code) return;
-  router.push(`/s/${code}`);
-  showShareCodeInput.value = false;
-}
-
-// --- Account transfer ---
-const showTransferMenu = ref(false);
-const transferCode = ref('');
-const transferLoading = ref(false);
-const showRedeemInput = ref(false);
-const redeemCodeInput = ref('');
-const redeemLoading = ref(false);
-
-function openTransferMenu() {
-  menuOpen.value = false;
-  transferCode.value = '';
-  showTransferMenu.value = true;
-}
-
-async function copyTransferCode() {
-  if (!transferCode.value) return;
-  try {
-    await navigator.clipboard.writeText(transferCode.value);
-    showToast('success', 'common.copiedToClipboard');
-  } catch {
-    // Clipboard API not available
-  }
-}
-
-async function doGenerateCode() {
-  transferLoading.value = true;
-  const result = await issueTransferCode();
-  if (result.ok) {
-    transferCode.value = result.code;
-  } else {
-    showToast('error', result.reason === 'offline' ? 'toast.networkError' : 'transfer.failed');
-    showTransferMenu.value = false;
-  }
-  transferLoading.value = false;
-}
-
-function openRedeemInput() {
-  menuOpen.value = false;
-  redeemCodeInput.value = '';
-  showRedeemInput.value = true;
-}
-
-async function doRedeem() {
-  const code = redeemCodeInput.value.trim();
-  if (!code) return;
-  redeemLoading.value = true;
-  // On success the stores switch to the new ID's records (onIdChange in stores/game.ts)
-  const result = await redeemTransferCode(code);
-  if (result.ok) {
-    showRedeemInput.value = false;
-    showToast('success', 'transfer.success');
-  } else {
-    showToast('error', result.reason === 'rate_limited' ? 'transfer.tooManyAttempts'
-      : result.reason === 'offline' ? 'toast.networkError' : 'transfer.failed');
-  }
-  redeemLoading.value = false;
-}
-
-/** Recovery codes and withdrawal are on the kan-game.app portal, shared by its games */
-function openAccountPortal() {
-  menuOpen.value = false;
-  window.open(portalUrl('/account'), '_blank', 'noopener');
-}
-
-function openRanking(seed: number) {
-  rankingSeed.value = seed;
-  showRanking.value = true;
-}
-
-// Calendar
-const cal = useCalendar();
-const showCalendar = ref(false);
-
-// --- Daily seed ---
+// --- Today's daily ---
 const today = ref(todayJST());
 const todaySeed = computed(() => gameStore.generateDailySeed(today.value));
-const todayBestMoves = computed(() => gameStore.getBestMoves(todaySeed.value));
+
+/** This device's best result of today: cleared first, then fewest moves, then the shortest time */
+const todayBest = computed(() => gameStore.getBestResult(todaySeed.value));
 
 function playToday() {
   router.push(`/puzzle/${todaySeed.value}`);
 }
 
+// --- Daily help ---
+const showDailyHelp = ref(false);
+
 // --- Calendar ---
+const cal = useCalendar();
+const showCalendar = ref(false);
+
 function playCalendarSeed(dateStr: string, seed: number) {
   if (dateStr > today.value) return;
   router.push(`/puzzle/${seed}`);
@@ -152,17 +61,8 @@ function isFuture(dateStr: string): boolean {
   return dateStr > today.value;
 }
 
-// --- User name (set once: kan-game.app names cannot change) ---
-const showNameDialog = ref(false);
-
 // --- Tutorial first visit ---
 const showTutorialPrompt = ref(false);
-
-function checkFirstVisit() {
-  if (isTutorialFirstVisit()) {
-    showTutorialPrompt.value = true;
-  }
-}
 
 function acceptTutorial() {
   showTutorialPrompt.value = false;
@@ -174,18 +74,12 @@ function declineTutorial() {
   dismissTutorialPrompt();
 }
 
-// Daily notification is now handled by backend push (Cron Trigger)
-
-// --- Daily help ---
-const showDailyHelp = ref(false);
-
 // --- Daily countdown (time until JST midnight) ---
 const countdown = ref('');
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
 function updateCountdown() {
-  const now = new Date();
-  const diff = nextMidnightJST() - now.getTime();
+  const diff = nextMidnightJST() - Date.now();
   if (diff <= 0) {
     // Midnight passed — refresh daily seed
     const newToday = todayJST();
@@ -203,18 +97,10 @@ function updateCountdown() {
   countdown.value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-onMounted(() => {
-  updateCountdown();
-  countdownTimer = setInterval(updateCountdown, 1000);
-  checkFirstVisit();
-});
-
-onUnmounted(() => {
-  clearInterval(countdownTimer);
-});
-
-// --- Ranking preview (from API) ---
-const rankingPreview = ref<Array<{ rank: number; playerName: string; moves: number; clearTimeMs: number | null }>>([]);
+// --- Ranking preview (from API): the top few and this ID's place ---
+const PREVIEW_ENTRIES = 3;
+const rankingPreview = ref<Array<{ rank: number; playerName: string; moves: number; clearTimeMs: number | null; isMe: boolean }>>([]);
+const myRank = ref<number | null>(null);
 const rankingLoading = ref(false);
 
 let previewSeq = 0;
@@ -224,112 +110,125 @@ async function fetchRankingPreview() {
   rankingLoading.value = true;
   try {
     const data = await api<{
-      ranking: Array<{ rank: number; displayName: string; moveCount: number; clearTimeMs: number | null }>;
+      ranking: Array<{ rank: number; userId: string; displayName: string; moveCount: number; clearTimeMs: number | null }>;
+      userRank: { rank: number } | null;
     }>(`/api/rankings/by-value/${todaySeed.value}`);
     if (seq !== previewSeq) return;
-    rankingPreview.value = data.ranking.slice(0, 10).map(e => ({
+    const me = getUserId();
+    rankingPreview.value = data.ranking.slice(0, PREVIEW_ENTRIES).map(e => ({
       rank: e.rank,
       playerName: e.displayName,
       moves: e.moveCount,
       clearTimeMs: e.clearTimeMs,
+      isMe: e.userId === me,
     }));
+    myRank.value = data.userRank?.rank ?? null;
   } catch {
     if (seq !== previewSeq) return;
     rankingPreview.value = [];
+    myRank.value = null;
   }
   rankingLoading.value = false;
 }
 
 onMounted(() => {
+  updateCountdown();
+  countdownTimer = setInterval(updateCountdown, 1000);
+  if (isTutorialFirstVisit()) showTutorialPrompt.value = true;
   fetchRankingPreview();
+});
+
+// A transfer code switches the ID, and naming it puts its records in the ranking (getUserId reads a ref)
+watch(() => [getUserId(), gameStore.displayName], () => fetchRankingPreview());
+
+onUnmounted(() => {
+  clearInterval(countdownTimer);
 });
 </script>
 
 <template>
   <div class="home-view">
-    <!-- Alpha banner -->
-    <div class="alpha-banner">
-      <span class="alpha-tag">{{ t('alpha.tag') }}</span>
-      {{ t('alpha.message') }}
-    </div>
-
-    <!-- Hero -->
-    <div class="hero">
+    <header class="home-header">
       <h1 class="app-title">
-        <VegetableIcon :color="titleVegeLeft" :size="32" class="title-vege" />
+        <VegetableIcon :color="titleVege" :size="30" />
         {{ t('common.appName') }}
-        <VegetableIcon :color="titleVegeRight" :size="32" class="title-vege" />
       </h1>
-      <p class="app-subtitle">{{ t('home.subtitle') }}</p>
-      <div class="user-name-row">
-        <span v-if="gameStore.displayName" class="user-name user-name-fixed">{{ gameStore.displayName }}</span>
-        <span v-else class="user-name" @click="showNameDialog = true">
-          {{ t('name.set') }}
-          <img class="name-edit-icon" :src="pencilIcon" alt="" />
-        </span>
-      </div>
-    </div>
+      <MenuSheet />
+    </header>
 
-    <!-- Daily Puzzle -->
-    <div class="section">
-      <div class="section-title-row">
-        <h2 class="section-title">{{ t('home.dailyPuzzle') }}</h2>
-        <button class="help-btn" @click="showDailyHelp = !showDailyHelp" title="?">?</button>
+    <!-- Today's daily: the main thing on HOME -->
+    <section class="card today-card">
+      <div class="today-head">
+        <div>
+          <p class="today-label">{{ t('home.dailyPuzzle') }}</p>
+          <p class="today-date">{{ today }}</p>
+        </div>
+        <button class="icon-btn icon-btn-sm help-btn" :aria-label="t('home.dailyHelpLabel')" @click="showDailyHelp = !showDailyHelp">?</button>
       </div>
-      <div v-if="showDailyHelp" class="daily-help-box">{{ t('home.dailyHelp') }}</div>
-      <div class="daily-card-v2">
-        <div class="daily-header">
-          <span class="daily-date">{{ today }}</span>
-          <span class="daily-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
-          <button class="btn-ranking-small" @click.stop="openRanking(todaySeed)" :title="t('common.ranking')"><img :src="trophyIcon" class="menu-icon" alt="" /></button>
-        </div>
-        <div class="daily-countdown">
-          <span class="countdown-label">{{ t('home.nextPuzzleIn') }}</span>
-          <span class="countdown-time">{{ countdown }}</span>
-        </div>
-        <button class="play-btn" @click="playToday">
-          <img class="play-btn-icon" :src="brickIcon" alt="" />
-          <span class="play-btn-desc">{{ t('home.clearGoal') }}</span>
-          <span v-if="todayBestMoves > 0" class="play-btn-best">{{ t('mode.clearMoves', { count: todayBestMoves }) }}</span>
-          <span v-else class="play-btn-play">{{ t('common.play') }}</span>
-        </button>
-        <!-- Ranking preview -->
-        <div class="ranking-preview">
-          <div class="ranking-preview-header">
-            <span class="ranking-preview-title"><img :src="trophyIcon" class="menu-icon" alt="" /> {{ t('home.rankingPreview') }}</span>
-            <button class="ranking-see-all" @click="openRanking(todaySeed)">{{ t('home.seeAll') }}</button>
+      <p v-if="showDailyHelp" class="daily-help-box">{{ t('home.dailyHelp') }}</p>
+
+      <div class="today-status">
+        <template v-if="todayBest?.isCleared">
+          <p class="status-cleared">{{ t('home.todayCleared') }}</p>
+          <p class="status-best">
+            <span class="best-moves">{{ t('ranking.moves', { count: todayBest.moves }) }}</span>
+            <span class="best-time">{{ formatRecordTime(todayBest.timeMs) }}</span>
+            <span v-if="myRank" class="best-rank">{{ t('home.myRank', { rank: myRank }) }}</span>
+          </p>
+        </template>
+        <p v-else class="status-goal">{{ todayBest ? t('home.notClearedYet') : t('home.clearGoal') }}</p>
+      </div>
+
+      <button class="btn btn-primary play-btn" @click="playToday">
+        {{ todayBest ? t('home.playAgain') : t('common.play') }}
+      </button>
+
+      <p class="today-meta">
+        {{ t('home.nextPuzzleIn') }} <span class="countdown-time">{{ countdown }}</span>
+        <span class="today-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
+      </p>
+    </section>
+
+    <!-- Ranking preview -->
+    <section class="card ranking-card">
+      <h2 class="section-title ranking-heading"><img class="ranking-title-icon" :src="trophyIcon" alt="" /> {{ t('home.rankingPreview') }}</h2>
+      <!-- The same rows as the ranking dialog (RankingModal.vue): medals for 1 to 3, this ID's row framed -->
+      <div class="ranking-list">
+        <template v-if="rankingLoading">
+          <div v-for="i in PREVIEW_ENTRIES" :key="i" class="rank-row">
+            <span class="skeleton-block skeleton-rank" />
+            <span class="skeleton-block skeleton-name" />
+            <span class="skeleton-block skeleton-val" />
           </div>
-          <template v-if="rankingLoading">
-            <div v-for="i in 3" :key="i" class="ranking-preview-row skeleton-row">
-              <span class="ranking-preview-rank skeleton-block skeleton-rank" />
-              <span class="skeleton-block skeleton-name" />
-              <span class="skeleton-block skeleton-val" />
-            </div>
-          </template>
-          <template v-else-if="rankingPreview.length > 0">
-            <div v-for="(entry, i) in rankingPreview" :key="i" class="ranking-preview-row">
-              <span class="ranking-preview-rank">{{ entry.rank }}</span>
-              <span class="ranking-preview-name">{{ entry.playerName }}</span>
-              <span class="ranking-preview-score">{{ t('ranking.moves', { count: entry.moves }) }}</span>
-              <span class="ranking-preview-score ranking-preview-time">{{ formatRecordTime(entry.clearTimeMs) }}</span>
-            </div>
-          </template>
-          <div v-else class="ranking-preview-empty">{{ t('common.noRecords') }}</div>
-        </div>
+        </template>
+        <template v-else-if="rankingPreview.length > 0">
+          <div v-for="(entry, i) in rankingPreview" :key="i" :class="['rank-row', { me: entry.isMe }]">
+            <span class="rank-row-num">
+              <img v-if="rankMedalIcon(entry.rank)" :src="rankMedalIcon(entry.rank)!" class="rank-row-medal" alt="" />
+              <template v-else>#{{ entry.rank }}</template>
+            </span>
+            <span class="rank-row-name">{{ entry.playerName }}</span>
+            <span class="rank-row-val">{{ t('ranking.moves', { count: entry.moves }) }}</span>
+            <span class="rank-row-val rank-row-time">{{ formatRecordTime(entry.clearTimeMs) }}</span>
+          </div>
+        </template>
+        <p v-else class="ranking-empty">{{ t('common.noRecords') }}</p>
       </div>
-    </div>
+      <button class="btn see-ranking" @click="showRanking = true">{{ t('home.seeRanking') }}</button>
+      <button v-if="!gameStore.displayName" class="name-link" @click="showNameDialog = true">{{ t('home.joinRanking') }}</button>
+    </section>
 
     <!-- Calendar -->
-    <div class="section">
-      <button class="section-toggle" @click="showCalendar = !showCalendar">
+    <section class="card calendar-card">
+      <button class="calendar-toggle" :aria-expanded="showCalendar" @click="showCalendar = !showCalendar">
         <h2 class="section-title">{{ t('home.pastDailySeeds') }}</h2>
-        <span class="toggle-arrow">{{ showCalendar ? '\u25B2' : '\u25BC' }}</span>
+        <span class="toggle-arrow" aria-hidden="true">{{ showCalendar ? '▲' : '▼' }}</span>
       </button>
       <div v-if="showCalendar" class="calendar">
         <div class="calendar-header">
-          <button class="cal-nav" @click="cal.prevMonth">&lt;</button>
+          <button class="icon-btn icon-btn-sm" @click="cal.prevMonth">&lt;</button>
           <span class="cal-month">{{ cal.monthLabel.value }}</span>
-          <button class="cal-nav" :disabled="cal.isCurrentMonth.value" @click="cal.nextMonth">&gt;</button>
+          <button class="icon-btn icon-btn-sm" :disabled="cal.isCurrentMonth.value" @click="cal.nextMonth">&gt;</button>
         </div>
         <div class="calendar-weekdays">
           <span v-for="d in ['sun','mon','tue','wed','thu','fri','sat']" :key="d" class="cal-weekday">{{ t(`weekdays.${d}`) }}</span>
@@ -357,60 +256,8 @@ onMounted(() => {
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <!-- Hamburger menu button -->
-    <button class="hamburger-btn" @click="menuOpen = !menuOpen" :title="t('home.settings')">
-      <span class="hamburger-icon">&#x2630;</span>
-    </button>
-
-    <!-- Menu overlay -->
-    <Teleport to="body">
-      <div v-if="menuOpen" class="menu-overlay" @click.self="menuOpen = false">
-        <div class="menu-panel">
-          <div class="menu-header">
-            <span />
-            <button class="menu-close" @click="menuOpen = false">&times;</button>
-          </div>
-          <div class="menu-items">
-            <button class="menu-item" @click="menuOpen = false; showSettings = true">
-              <svg class="menu-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              <span class="menu-item-label">{{ t('home.settingsTitle') }}</span>
-            </button>
-            <div class="menu-divider" />
-            <button class="menu-item" @click="openShareCodeInput">
-              <img class="menu-item-icon" :src="linkIcon" alt="" />
-              <span class="menu-item-label">{{ t('home.enterShareCode') }}</span>
-            </button>
-            <div class="menu-divider" />
-            <button class="menu-item" @click="openTransferMenu">
-              <img class="menu-item-icon" :src="mobileIcon" alt="" />
-              <span class="menu-item-label">{{ t('transfer.generate') }}</span>
-            </button>
-            <button class="menu-item" @click="openRedeemInput">
-              <img class="menu-item-icon" :src="keyIcon" alt="" />
-              <span class="menu-item-label">{{ t('transfer.redeem') }}</span>
-            </button>
-            <button class="menu-item" @click="openAccountPortal">
-              <img class="menu-item-icon" :src="infoIcon" alt="" />
-              <span class="menu-item-label">{{ t('account.portal') }}</span>
-            </button>
-            <div class="menu-divider" />
-            <button class="menu-item" @click="menuOpen = false; router.push('/tutorial')">
-              <img class="menu-item-icon" :src="questionIcon" alt="" />
-              <span class="menu-item-label">{{ t('tutorial.howToPlay') }}</span>
-            </button>
-            <button class="menu-item" @click="menuOpen = false; router.push('/about')">
-              <img class="menu-item-icon" :src="infoIcon" alt="" />
-              <span class="menu-item-label">{{ t('home.about') }}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- Settings modal -->
-    <SettingsModal :open="showSettings" @close="showSettings = false" />
 
     <!-- Sound prompt modal (first visit) -->
     <Teleport to="body">
@@ -421,72 +268,6 @@ onMounted(() => {
           <div class="modal-actions">
             <button class="modal-btn-primary" @click="acceptSound()">{{ t('home.soundPromptYes') }}</button>
             <button class="modal-btn-secondary" @click="declineSound()">{{ t('home.soundPromptNo') }}</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- Share code input modal -->
-    <Teleport to="body">
-      <div v-if="showShareCodeInput" class="modal-overlay" @click.self="showShareCodeInput = false">
-        <div class="modal">
-          <h3 class="modal-title">{{ t('home.enterShareCode') }}</h3>
-          <p class="modal-desc">{{ t('home.shareCodeDesc') }}</p>
-          <input
-            v-model="shareCodeInput"
-            class="modal-input code-input"
-            maxlength="10"
-            :placeholder="t('home.shareCodePlaceholder')"
-            @keyup.enter="submitShareCode"
-          />
-          <div class="modal-actions">
-            <button class="modal-btn-primary" :disabled="!shareCodeInput.trim()" @click="submitShareCode">{{ t('common.ok') }}</button>
-            <button class="modal-btn-secondary" @click="showShareCodeInput = false">{{ t('common.cancel') }}</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- Transfer code generate modal -->
-    <Teleport to="body">
-      <div v-if="showTransferMenu" class="modal-overlay" @click.self="showTransferMenu = false">
-        <div class="modal">
-          <h3 class="modal-title">{{ t('transfer.title') }}</h3>
-          <p class="modal-desc">{{ t('transfer.generateDesc') }}</p>
-          <template v-if="transferCode">
-            <p class="transfer-code-label">{{ t('transfer.codeLabel') }}</p>
-            <div class="transfer-code-display" @click="copyTransferCode">{{ transferCode }}</div>
-            <p class="transfer-code-expiry">{{ t('transfer.codeExpiry', { minutes: 10 }) }}</p>
-          </template>
-          <div class="modal-actions">
-            <button v-if="!transferCode" class="modal-btn-primary" :disabled="transferLoading" @click="doGenerateCode">
-              {{ t('transfer.generate') }}
-            </button>
-            <button class="modal-btn-secondary" @click="showTransferMenu = false">{{ t('common.ok') }}</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- Transfer code redeem modal -->
-    <Teleport to="body">
-      <div v-if="showRedeemInput" class="modal-overlay" @click.self="showRedeemInput = false">
-        <div class="modal">
-          <h3 class="modal-title">{{ t('transfer.redeem') }}</h3>
-          <p class="modal-desc">{{ t('transfer.redeemDesc') }}</p>
-          <p class="modal-warning">{{ t('transfer.warning') }}</p>
-          <input
-            v-model="redeemCodeInput"
-            class="modal-input code-input"
-            maxlength="20"
-            :placeholder="t('transfer.codePlaceholder')"
-            @keyup.enter="doRedeem"
-          />
-          <div class="modal-actions">
-            <button class="modal-btn-primary" :disabled="!redeemCodeInput.trim() || redeemLoading" @click="doRedeem">
-              {{ t('transfer.confirm') }}
-            </button>
-            <button class="modal-btn-secondary" @click="showRedeemInput = false">{{ t('common.cancel') }}</button>
           </div>
         </div>
       </div>
@@ -506,7 +287,7 @@ onMounted(() => {
       </div>
     </Teleport>
 
-    <RankingModal :seed="rankingSeed" :open="showRanking" @close="showRanking = false" />
+    <RankingModal :seed="todaySeed" :open="showRanking" @close="showRanking = false" />
     <NameDialog :open="showNameDialog" @close="showNameDialog = false" />
   </div>
 </template>
@@ -516,423 +297,193 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  gap: 14px;
+  padding: 10px 12px 20px;
   overflow-y: auto;
-  gap: 16px;
 }
 
-/* Alpha banner */
-.alpha-banner {
-  background: var(--alpha-bg);
-  color: var(--alpha-text);
-  border: 1px solid var(--alpha-border);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
-  text-align: center;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.alpha-tag {
-  background: var(--alpha-tag-bg);
-  color: #fff;
-  font-weight: 700;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-/* Hamburger menu */
-.hamburger-btn {
-  position: fixed;
-  bottom: 80px;
-  right: max(16px, calc((100vw - 480px) / 2 + 16px));
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-card);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-}
-.hamburger-icon {
-  font-size: 20px;
-  color: var(--text-secondary);
-  line-height: 1;
-}
-.menu-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay-bg);
-  z-index: 1000;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-.menu-panel {
-  background: var(--bg-card);
-  border-radius: 16px 16px 0 0;
-  width: 100%;
-  max-width: 400px;
-  padding: 16px 16px 32px;
-  box-shadow: var(--shadow-modal);
-}
-.menu-header {
+/* Header: the title and the menu, as TAKO-SEN's top line */
+.home-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
-}
-.menu-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-.menu-close {
-  background: none;
-  border: none;
-  font-size: 24px;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0 4px;
-}
-.menu-items {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.menu-item:hover {
-  background: var(--bg-hover);
-}
-.menu-item.off {
-  opacity: 0.6;
-}
-.menu-item-icon {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
-.menu-item-label {
-  flex: 1;
-  text-align: left;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-.menu-item-status {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-disabled);
-}
-.menu-item-status.on {
-  color: var(--brand);
-}
-.menu-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 4px 12px;
-}
-/* Codes typed in (with .modal-input) */
-.code-input {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-}
-
-/* Hero */
-.hero {
-  text-align: center;
-  padding: 20px 0 8px;
+  gap: 8px;
+  min-height: 44px;
 }
 .app-title {
-  font-size: 36px;
-  color: var(--title-color);
-  font-weight: 800;
-  letter-spacing: -1px;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 8px;
-}
-.app-icon {
-  width: 40px;
-  height: 40px;
-}
-.app-subtitle {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  margin-top: 4px;
-}
-.user-name-row {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.user-name {
-  font-size: 14px;
-  color: var(--text-secondary);
-  font-weight: 600;
-  cursor: pointer;
-}
-.user-name-fixed {
-  cursor: default;
-}
-.name-edit-icon {
-  width: 14px;
-  height: 14px;
-  margin-left: 2px;
-  vertical-align: middle;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--title-color);
 }
 
-/* Sections */
-.section {
+.section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+/* Today */
+.today-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
-.section-title {
-  font-size: 13px;
-  color: var(--text-secondary);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin: 0;
-}
-.section-toggle {
+.today-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-}
-.toggle-arrow {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-/* Ranking button */
-.menu-icon {
-  width: 18px;
-  height: 18px;
-  vertical-align: middle;
-}
-.btn-ranking-small {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 4px;
-  flex-shrink: 0;
-}
-
-/* Daily card v2 */
-.daily-card-v2 {
-  background: var(--bg-card);
-  border-radius: 10px;
-  padding: 16px;
-  box-shadow: var(--shadow-card);
-}
-.daily-header {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
 }
-.daily-date {
+.today-label {
+  margin: 0;
   font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.daily-seed {
-  font-size: 11px;
-  color: var(--text-muted);
-  flex: 1;
-}
-.daily-countdown {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  font-size: 12px;
-}
-.countdown-label {
-  color: var(--text-muted);
-}
-.countdown-time {
-  font-family: monospace;
-  font-weight: 700;
+  font-weight: 800;
   color: var(--text-secondary);
-  letter-spacing: 0.05em;
+}
+.today-date {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.help-btn,
+.calendar-header .icon-btn {
+  font-weight: 800;
+}
+.daily-help-box {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg-card-alt);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.today-status {
+  text-align: center;
+}
+.status-goal {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+}
+.status-cleared {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--brand);
+}
+.status-best {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 12px;
+  margin: 2px 0 0;
+}
+.best-moves {
+  font-size: 30px;
+  font-weight: 800;
+}
+.best-time {
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.best-rank {
+  font-size: 15px;
+  font-weight: 800;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--accent);
 }
 .play-btn {
   width: 100%;
-  max-width: 280px;
-  margin: 0 auto;
+  min-height: 56px;
+  font-size: 20px;
+}
+.today-meta {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 14px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-card-alt);
-  cursor: pointer;
-  transition: border-color 0.15s, transform 0.1s;
-}
-.play-btn:hover {
-  border-color: var(--brand);
-}
-.play-btn:active {
-  transform: scale(0.98);
-}
-.play-btn-icon {
-  width: 24px;
-  height: 24px;
-}
-.play-btn-desc {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.play-btn-best {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--brand);
-}
-.play-btn-play {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-/* Section title row with help */
-.section-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.help-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1px solid var(--text-muted);
-  background: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   justify-content: center;
-  flex-shrink: 0;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
 }
-.daily-help-box {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 12px;
+.countdown-time {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
-  line-height: 1.5;
 }
 
 /* Ranking preview */
-.ranking-preview {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+.ranking-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.ranking-preview-header {
+.ranking-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
+  gap: 6px;
 }
-.ranking-preview-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
+.ranking-title-icon {
+  width: 20px;
+  height: 20px;
 }
-.ranking-see-all {
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ranking-empty {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+.see-ranking {
+  margin-top: 4px;
+}
+.name-link {
+  border: 0;
   background: none;
-  border: none;
-  font-size: 11px;
   color: var(--brand);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: underline;
   cursor: pointer;
 }
-.ranking-preview-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 0;
-  font-size: 12px;
-}
-.ranking-preview-rank {
-  width: 20px;
-  text-align: center;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-.ranking-preview-name {
-  flex: 1;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ranking-preview-score {
-  font-weight: 700;
-  color: var(--brand);
-  font-variant-numeric: tabular-nums;
-}
-/* 順位の 2 つ目の基準。手数と同じ大きさで並べ、桁がそろうよう幅を固定する */
-.ranking-preview-time {
-  min-width: 3.5em;
-  text-align: right;
-}
-.ranking-preview-empty {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-align: center;
-  padding: 8px 0;
-}
-/* Skeleton loading (animation in theme.css) */
-.skeleton-row { pointer-events: none; }
 .skeleton-block { display: inline-block; height: 12px; }
 .skeleton-rank { width: 16px; }
 .skeleton-name { flex: 1; }
 .skeleton-val { width: 40px; }
 
 /* Calendar */
+.calendar-card {
+  padding: 12px 16px;
+}
+.calendar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.toggle-arrow {
+  font-size: 12px;
+}
 .calendar {
-  background: var(--bg-card);
-  border-radius: 10px;
-  padding: 12px;
-  box-shadow: var(--shadow-card);
+  margin-top: 10px;
 }
 .calendar-header {
   display: flex;
@@ -940,39 +491,24 @@ onMounted(() => {
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.cal-nav {
-  background: none;
-  border: none;
-  font-size: 18px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px 8px;
-}
-.cal-nav:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
 .cal-month {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--text-primary);
+  font-weight: 800;
+  font-size: 15px;
 }
-.calendar-weekdays {
+.calendar-weekdays,
+.calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 3px;
+}
+.calendar-weekdays {
   margin-bottom: 4px;
 }
 .cal-weekday {
   text-align: center;
-  font-size: 10px;
+  font-size: 11px;
+  font-weight: 800;
   color: var(--text-muted);
-  font-weight: 600;
-}
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
 }
 .cal-cell {
   aspect-ratio: 1;
@@ -980,36 +516,38 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   position: relative;
-  font-size: 13px;
 }
 .cal-cell.empty {
   cursor: default;
 }
 .cal-cell.future {
   opacity: 0.3;
-  cursor: not-allowed;
-}
-.cal-cell.today {
-  background: var(--cal-today);
-  font-weight: 700;
+  cursor: default;
 }
 .cal-cell.played {
   background: var(--cal-played);
 }
-.cal-cell:not(.empty):not(.future):hover {
-  background: var(--bg-hover);
+.cal-cell.today {
+  background: var(--cal-today);
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+  font-weight: 800;
+}
+@media (hover: hover) {
+  .cal-cell:not(.empty):not(.future):hover {
+    background: var(--bg-hover);
+  }
 }
 .cal-day {
   font-size: 13px;
-  color: var(--text-primary);
 }
 .cal-score {
-  font-size: 7px;
+  font-size: 8px;
   color: var(--brand);
-  font-weight: 600;
+  font-weight: 800;
   position: absolute;
   bottom: 1px;
 }
@@ -1018,41 +556,8 @@ onMounted(() => {
   height: 5px;
   border-radius: 50%;
   background: var(--brand);
-  opacity: 0.5;
+  opacity: 0.6;
   position: absolute;
   bottom: 3px;
-}
-
-/* Modal (the shared parts are in theme.css) */
-.transfer-code-label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0 0 6px;
-  font-weight: 600;
-}
-.transfer-code-display {
-  font-family: monospace;
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  text-align: center;
-  padding: 12px;
-  background: var(--bg-card-alt);
-  border: 2px dashed var(--brand);
-  border-radius: 8px;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-  user-select: all;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.transfer-code-display:active {
-  background: var(--bg-hover);
-}
-.transfer-code-expiry {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-align: center;
-  margin: 0 0 12px;
 }
 </style>

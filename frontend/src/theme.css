@@ -1,131 +1,88 @@
+/*
+ * Colours by role (#104): TAKO-SEN's base, shared by the kan-game.app games (cream page, brown
+ * ink and frames), with vegtab's green for the primary action. Light only. Use these rather than
+ * hex values.
+ */
 :root {
-  /* Page */
-  --bg-page: #f5f0e8;
-  --bg-card: #fff;
-  --bg-card-alt: #f8f5f0;
-  --bg-input: #fff;
-  --bg-hover: #f0ebe3;
+  /* Page and surfaces */
+  --bg-page: #fff7ec;
+  --bg-card: #fffdf8;
+  --bg-card-alt: #fff0c7;
+  --bg-hover: #ffe5cf;
 
-  /* Text */
-  --text-primary: #333;
-  --text-secondary: #555;
-  --text-tertiary: #888;
-  --text-muted: #999;
-  --text-disabled: #bbb;
-  --text-faint: #ccc;
+  /* Ink: text, frames and focus */
+  --ink: #2a1b14;
+  --text-secondary: #5f4636;
+  --text-tertiary: #7a5f4d;
+  --text-muted: #8a7060;
+  --text-disabled: #b9a596;
 
-  /* Borders */
-  --border: #ddd;
-  --border-alt: #e8e0d4;
+  /* Frames are ink; separators inside a card are a light brown. No drop shadows: cards and
+   * dialogs have an even ink frame instead */
+  --frame: 3px solid var(--ink);
+  --frame-thin: 2px solid var(--ink);
+  --border: #e5d3bf;
+  --focus: #2026d2;
+  --overlay-bg: rgb(42 27 20 / 45%);
 
-  /* Shadows */
-  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.08);
-  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.3);
-  --overlay-bg: rgba(0, 0, 0, 0.5);
-
-  /* Brand & accent */
+  /* Brand & accent. Green is vegtab's own: the primary action, the title, a cleared day.
+   * Yellow is the kan-game.app accent for round icon buttons and highlights */
   --brand: #2e7d32;
-  --brand-light: #ddf2dd;
-  --title-color: #2e7d32;
-  --success: #27ae60;
-  --success-light: #ddf2dd;
-  --warning: #f39c12;
-  --warning-deep: #e67e22;
-  --info: #3498db;
-  --purple: #8e44ad;
-  --slate: #2c3e50;
-  --secondary: #7f8c8d;
+  --brand-light: #e1efd9;
+  --on-brand: #fff;
+  --accent: #ffcf70;
+  --accent-next: #ff8a5b;
+  --info: #2563eb;
+  --danger: #c32929;
+  --warning-text: #7a3b0f;
 
-  /* Puzzle board */
-  --board-bg: #d4c9b8;
-  --board-nav-border: #d4c9b8;
+  /* Puzzle board: cream cells in an ink frame (.board-frame) */
+  --board-bg: #f3e2cb;
+  --board-frame-width: 5px;
 
-  /* Alpha banner */
-  --alpha-bg: #fff3cd;
-  --alpha-border: #ffc107;
-  --alpha-text: #856404;
-  --alpha-tag-bg: #ffc107;
+  --cal-today: #ffe1cc;
+  --rank-highlight-bg: #fff6dd;
 
-  /* Ranking */
-  --rank-me-bg: #e8f4fd;
-  --rank-me-border: #b8d9f0;
-  --rank-highlight-bg: #fdf6d0;
+  /* Roles that take one of the colours above */
+  --text-primary: var(--ink);
+  --bg-input: var(--bg-card);
+  --title-color: var(--brand);
+  --check-color: var(--brand);
+  --cal-played: var(--brand-light);
+  --rank-me-bg: var(--bg-card-alt);
 
-  /* Calendar */
-  --cal-played: #ddf2dd;
-  --cal-today: #fce0e0;
-
-  /* Check */
-  --check-color: #7bc67e;
-  --check-bg: #e8f8e8;
-
-  /* Delete / danger */
-  --danger: #e06b6b;
+  color: var(--ink);
+  background: var(--bg-page);
 }
 
-[data-theme="dark"] {
-  /* Page */
-  --bg-page: #181820;
-  --bg-card: #23232f;
-  --bg-card-alt: #2a2a38;
-  --bg-input: #2a2a38;
-  --bg-hover: #32323f;
+/* The font and the page colours are also in index.html, for the first paint */
+body {
+  line-height: 1.5;
+}
 
-  /* Text */
-  --text-primary: #e2e2e8;
-  --text-secondary: #b0b0bc;
-  --text-tertiary: #888894;
-  --text-muted: #6a6a78;
-  --text-disabled: #555560;
-  --text-faint: #44444f;
+button,
+input,
+select {
+  font: inherit;
+}
 
-  /* Borders */
-  --border: #3a3a48;
-  --border-alt: #3a3a48;
+/* Focus turns a control's own frame blue rather than drawing a second ring */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -3px;
+}
 
-  /* Shadows */
-  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.3);
-  --shadow-modal: 0 8px 32px rgba(0, 0, 0, 0.6);
-  --overlay-bg: rgba(0, 0, 0, 0.7);
-
-  /* Brand & accent — slightly brighter for contrast */
-  --brand: #66bb6a;
-  --brand-light: #1a3322;
-  --title-color: #66bb6a;
-  --success: #2ecc71;
-  --success-light: #1a3322;
-  --warning: #f5a623;
-  --warning-deep: #d4851a;
-  --info: #5dade2;
-  --purple: #a569bd;
-  --slate: #4a6a8a;
-  --secondary: #8e9eaa;
-
-  /* Puzzle board */
-  --board-bg: #2e2e3c;
-  --board-nav-border: #3a3a48;
-
-  /* Alpha banner */
-  --alpha-bg: #33301a;
-  --alpha-border: #7a6a20;
-  --alpha-text: #d4c070;
-  --alpha-tag-bg: #7a6a20;
-
-  /* Ranking */
-  --rank-me-bg: #1a2a3a;
-  --rank-me-border: #2a4a6a;
-  --rank-highlight-bg: #2a2820;
-
-  /* Calendar */
-  --cal-played: #1a3322;
-  --cal-today: #3d2020;
-
-  /* Check */
-  --check-color: #5aad5e;
-  --check-bg: #1a3322;
-
-  /* Delete / danger */
-  --danger: #d05050;
+/* Pressing a control sinks it a little, so a tap shows it registered */
+button:not(:disabled):active {
+  transform: scale(0.96);
+}
+@media (prefers-reduced-motion: no-preference) {
+  button {
+    transition: transform 100ms ease-out;
+  }
 }
 
 /* Skeleton loading */
@@ -134,14 +91,182 @@
   to { opacity: 1; }
 }
 .skeleton-line, .skeleton-block {
-  background: rgba(128, 128, 128, 0.15);
+  background: rgb(42 27 20 / 10%);
   border-radius: 4px;
   animation: shimmer 1.2s ease-in-out infinite alternate;
 }
 .skeleton-circle {
-  background: rgba(128, 128, 128, 0.15);
+  background: rgb(42 27 20 / 10%);
   border-radius: 50%;
   animation: shimmer 1.2s ease-in-out infinite alternate;
+}
+
+/* Buttons. A pill with an ink frame; the primary action is green */
+.btn,
+.modal-btn-primary,
+.modal-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 18px;
+  border: var(--frame-thin);
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--ink);
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+}
+.btn-primary,
+.modal-btn-primary {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+/* A smaller pill for headers (back, skip) */
+.btn-sm {
+  min-height: 40px;
+  padding: 2px 14px;
+}
+.btn:disabled,
+.modal-btn-primary:disabled,
+.modal-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (hover: hover) {
+  .btn:not(.btn-primary):not(:disabled):hover,
+  .modal-btn-secondary:not(:disabled):hover {
+    background: var(--bg-hover);
+  }
+}
+
+/* A round icon button, as under TAKO-SEN's board */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0;
+  border: var(--frame-thin);
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--ink);
+  cursor: pointer;
+}
+.icon-btn img,
+.icon-btn svg {
+  width: 24px;
+  height: 24px;
+}
+/* A smaller round button on the surface (help, month arrows, replay) */
+.icon-btn-sm {
+  width: 34px;
+  height: 34px;
+  background: var(--bg-card);
+}
+.icon-btn-sm img,
+.icon-btn-sm svg {
+  width: 18px;
+  height: 18px;
+}
+.icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+/* A borderless icon button for headers (the menu) */
+.icon-btn-plain {
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+}
+@media (hover: hover) {
+  .icon-btn-plain:hover {
+    background: var(--bg-hover);
+  }
+}
+
+/* A framed row in a list (the menu, the settings, the links on About) */
+.row-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 14px;
+  border: var(--frame-thin);
+  border-radius: 14px;
+  background: var(--bg-card);
+  color: var(--ink);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  button.row-btn:hover {
+    background: var(--bg-hover);
+  }
+}
+
+/* The ink frame around a board (puzzle, tutorial, replay): drawn outside the cells, so they keep
+ * their size. PuzzleBoard.vue leaves room for it (BOARD_CHROME_PX) */
+.board-frame {
+  border-radius: 10px;
+  box-shadow: 0 0 0 var(--board-frame-width) var(--ink);
+}
+
+/* A row of a ranking (HOME's preview and the ranking dialog): medal or #n, name, moves, time */
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--border);
+  font-size: 14px;
+}
+.rank-row.me {
+  background: var(--rank-me-bg);
+  border: var(--frame-thin);
+  border-radius: 12px;
+}
+.rank-row-num {
+  width: 32px;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.rank-row-medal {
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+}
+.rank-row-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rank-row-val {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rank-row-time {
+  min-width: 3.5em;
+  text-align: right;
+}
+
+/* A card: an ink frame on the surface */
+.card {
+  border: var(--frame);
+  border-radius: 20px;
+  background: var(--bg-card);
+  padding: 16px;
 }
 
 /* Modal dialogs (shared by the views and the dialog components) */
@@ -152,72 +277,87 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 18px 12px;
   z-index: 1000;
 }
 .modal {
+  width: min(100%, 360px);
+  max-height: min(88dvh, 640px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: var(--frame);
+  border-radius: 20px;
   background: var(--bg-card);
-  border-radius: 16px;
-  padding: 24px;
-  width: 320px;
-  max-width: 90vw;
+  padding: 20px;
 }
 .modal-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+/* A dialog's title row with its close button (CloseButton.vue) */
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.modal-header .modal-title {
+  margin: 0;
 }
 .modal-desc {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 14px;
+  color: var(--text-secondary);
   margin: 0 0 16px;
 }
 .modal-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-.modal-btn-primary {
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: var(--brand);
-  color: #fff;
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
-}
-.modal-btn-primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.modal-btn-secondary {
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  color: var(--text-muted);
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
+  gap: 10px;
 }
 .modal-warning {
-  font-size: 11px;
-  color: var(--warning-text, #c05621);
-  background: var(--warning-bg, #fefcbf);
-  border-radius: 6px;
+  font-size: 13px;
+  color: var(--warning-text);
+  background: var(--bg-card-alt);
+  border: 2px solid var(--accent);
+  border-radius: 10px;
   padding: 8px 10px;
   margin: 0 0 12px;
 }
 .modal-input {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: var(--frame-thin);
+  border-radius: 12px;
   font-size: 16px;
   text-align: center;
   background: var(--bg-input);
-  color: var(--text-primary);
+  color: var(--ink);
   margin-bottom: 12px;
   box-sizing: border-box;
+}
+
+/* A sheet that rises from the bottom (the menu), as TAKO-SEN's menu */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--overlay-bg);
+}
+.sheet {
+  width: min(100%, 480px);
+  max-height: 85dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: var(--frame);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  background: var(--bg-card);
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
 }

@@ -82,11 +82,9 @@ const sectionProgress = computed(() => {
   <div class="tutorial-view">
     <!-- Header -->
     <div class="tutorial-header">
-      <button class="header-btn" @click="router.push('/')">
-        <span class="back-arrow">&larr;</span>
-      </button>
+      <button class="btn btn-sm back-btn" @click="router.push('/')">&larr;</button>
       <h1 class="header-title">{{ t('tutorial.title') }}</h1>
-      <button class="header-btn skip-btn" @click="skip">
+      <button class="btn btn-sm skip-btn" @click="skip">
         {{ t('common.skip') }}
       </button>
     </div>
@@ -172,7 +170,7 @@ const sectionProgress = computed(() => {
       <!-- Navigation -->
       <div class="nav-row">
         <button
-          class="nav-btn nav-prev"
+          class="btn nav-btn"
           :disabled="player.isFirstStep.value"
           @click="player.prevStep()"
         >
@@ -190,14 +188,14 @@ const sectionProgress = computed(() => {
 
         <button
           v-if="player.isLastStep.value && player.stepCompleted.value"
-          class="nav-btn nav-done"
+          class="btn btn-primary nav-btn nav-forward"
           @click="finish"
         >
           {{ t('tutorial.done') }}
         </button>
         <button
           v-else
-          class="nav-btn nav-next"
+          class="btn btn-primary nav-btn nav-forward"
           :disabled="!player.stepCompleted.value"
           @click="player.nextStep()"
         >
@@ -224,27 +222,19 @@ const sectionProgress = computed(() => {
   padding: 12px 16px;
   flex-shrink: 0;
 }
-.header-btn {
-  background: none;
-  border: none;
-  font-size: 16px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px 8px;
-  font-weight: 600;
-}
-.back-arrow {
+.back-btn {
+  min-width: 40px;
+  padding: 0 10px;
   font-size: 20px;
 }
 .header-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--ink);
   margin: 0;
 }
 .skip-btn {
-  font-size: 13px;
-  color: var(--text-muted);
+  font-size: 14px;
 }
 
 /* Board area */
@@ -271,8 +261,8 @@ const sectionProgress = computed(() => {
 .info-screenshot {
   max-width: 100%;
   max-height: 100%;
-  border-radius: 10px;
-  box-shadow: var(--shadow-card);
+  border: var(--frame);
+  border-radius: 14px;
   object-fit: contain;
 }
 .info-icon-placeholder {
@@ -291,11 +281,13 @@ const sectionProgress = computed(() => {
 }
 
 /* Text card */
+/* A sheet over the bottom, as the menu */
 .text-card {
   background: var(--bg-card);
-  border-radius: 16px 16px 0 0;
-  padding: 16px 20px 24px;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+  border: var(--frame);
+  border-bottom: 0;
+  border-radius: 24px 24px 0 0;
+  padding: 16px 20px 20px;
   flex-shrink: 0;
 }
 
@@ -366,36 +358,10 @@ const sectionProgress = computed(() => {
   gap: 12px;
 }
 .nav-btn {
-  padding: 10px 16px;
-  border: none;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
   flex-shrink: 0;
 }
-.nav-prev {
-  background: var(--bg-card-alt);
-  color: var(--text-secondary);
-}
-.nav-prev:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-.nav-next {
-  background: var(--brand);
-  color: #fff;
+.nav-forward {
   margin-left: auto;
-}
-.nav-next:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.nav-done {
-  background: var(--brand);
-  color: #fff;
-  margin-left: auto;
-  font-size: 15px;
 }
 
 /* Dot indicator */
@@ -450,7 +416,6 @@ const sectionProgress = computed(() => {
   background: var(--bg-card);
   border: 1px solid #f44;
   border-radius: 6px;
-  box-shadow: var(--shadow-modal);
   padding: 4px;
   display: flex;
   flex-direction: column;

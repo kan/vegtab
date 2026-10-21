@@ -1,21 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useTheme } from '../theme';
 
-const COLORS_LIGHT = ['#9E9E9E', '#757575', '#545454'] as const;
-const COLORS_DARK  = ['#545454', '#757575', '#9E9E9E'] as const;
+/** Durability 1, 2, 3: darker the more hits it takes */
+const COLORS = ['#9E9E9E', '#757575', '#545454'] as const;
 
 const props = defineProps<{
   durability: number;
   size: number;
 }>();
 
-const { isDark } = useTheme();
-
-const fillColor = computed(() => {
-  const colors = isDark.value ? COLORS_DARK : COLORS_LIGHT;
-  return colors[Math.max(0, Math.min(props.durability, 3) - 1)];
-});
+const fillColor = computed(() => COLORS[Math.max(0, Math.min(props.durability, 3) - 1)]);
 </script>
 
 <template>
