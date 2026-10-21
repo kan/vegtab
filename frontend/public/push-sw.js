@@ -1,5 +1,11 @@
 // Push notification handler (imported by Workbox-generated service worker)
 
+// The slideshow tutorial's screenshots were cached at runtime under this name (#108 removed them).
+// Workbox doesn't delete a runtime cache that left the config, so drop it here
+self.addEventListener('activate', (event) => {
+  event.waitUntil(caches.delete('tutorial-images'));
+});
+
 self.addEventListener('push', (event) => {
   const data = event.data?.json() ?? { title: 'Vege-Table', body: 'New puzzle!' };
   event.waitUntil(

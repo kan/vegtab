@@ -9,7 +9,7 @@ import MenuSheet from '@/components/MenuSheet.vue';
 import { useSound } from '@/sound';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
-import { isTutorialFirstVisit, dismissTutorialPrompt } from '@/composables/useTutorialPlayer';
+import { isTutorialFirstVisit, markTutorialSeen } from '@/tutorial/progress';
 import RankingModal from '@/components/RankingModal.vue';
 import { formatRecordTime } from '@/lib/playTime';
 import { rankMedalIcon } from '@/lib/rankMedal';
@@ -71,7 +71,7 @@ function acceptTutorial() {
 
 function declineTutorial() {
   showTutorialPrompt.value = false;
-  dismissTutorialPrompt();
+  markTutorialSeen();
 }
 
 // --- Daily countdown (time until JST midnight) ---

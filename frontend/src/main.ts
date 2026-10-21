@@ -33,7 +33,8 @@ function startGame() {
       { path: '/achievements', component: () => import('./views/AchievementView.vue') },
       { path: '/replay/:scoreId', component: () => import('./views/ReplayView.vue') },
       { path: '/s/:code', component: () => import('./views/ShareRedirectView.vue') },
-      { path: '/tutorial', component: () => import('./views/TutorialView.vue') },
+      // The tutorial hides the footer menu to give the board and its card the room (as TAKO-SEN)
+      { path: '/tutorial', component: () => import('./views/TutorialView.vue'), meta: { hideNav: true } },
       { path: '/about', component: () => import('./views/AboutView.vue') },
     ],
   });

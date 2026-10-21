@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, type InjectionKey } from 'vue';
 import {
   initializeGame, processAction, processScopeSynthesis,
   countObstacles,
@@ -32,7 +32,12 @@ export type ReplayAction = import('@vegtab/engine').ReplayAction;
 
 // --- Store ---
 
-export const usePuzzleStore = defineStore('puzzle', () => {
+/**
+ * The puzzle store's body. The puzzle screen uses usePuzzleStore; the tutorial plays on its own
+ * copy (useTutorialPuzzleStore), so practising never touches today's game. PuzzleBoard takes the
+ * store from PUZZLE_STORE_KEY when an ancestor provides one
+ */
+function puzzleStoreSetup() {
   const gameState = ref<GameState | null>(null);
   const seed = ref(0);
 
@@ -179,4 +184,10 @@ export const usePuzzleStore = defineStore('puzzle', () => {
     applyState, setDisplayScore, placeItem, placeObstacle,
     generatedItemTypes, recordPlanStats,
   };
-});
+}
+
+export const usePuzzleStore = defineStore('puzzle', puzzleStoreSetup);
+export const useTutorialPuzzleStore = defineStore('puzzle-tutorial', puzzleStoreSetup);
+
+export type PuzzleStore = ReturnType<typeof usePuzzleStore> | ReturnType<typeof useTutorialPuzzleStore>;
+export const PUZZLE_STORE_KEY: InjectionKey<PuzzleStore> = Symbol('puzzle-store');

@@ -1,225 +1,176 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, provide, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useTutorialPlayer } from '@/composables/useTutorialPlayer';
+import { countObstacles } from '@vegtab/engine';
+import PuzzleBoard from '@/components/PuzzleBoard.vue';
+import NameDialog from '@/components/NameDialog.vue';
+import { useTutorialPuzzleStore, PUZZLE_STORE_KEY } from '@/stores/puzzle';
+import { useGameStore } from '@/stores/game';
 import { useAchievementStore } from '@/stores/achievements';
 import { api } from '@/api/client';
-import { tutorialSections, allTutorialSteps } from '@/data/tutorialSteps';
-import TutorialBoard from '@/components/TutorialBoard.vue';
+import { playSE, vibrate } from '@/sound';
+import { todayJST } from '@/utils/date';
+import type { BoardInput } from '@/lib/boardInput';
+import { LESSONS } from '@/tutorial/lessons';
+import { markTutorialSeen } from '@/tutorial/progress';
 
-const isDev = import.meta.env.DEV;
+/**
+ * The hands-on tutorial (#108), as TAKO-SEN's: each lesson is a small board on the real engine and
+ * the real PuzzleBoard, on the tutorial's own puzzle store (today's game is left alone). The board
+ * takes only the current task's inputs; a task's move settling starts the next task. After the last
+ * lesson (a free one, cleared by playing normally) comes the summary
+ */
 const { t } = useI18n();
 const router = useRouter();
-const player = useTutorialPlayer();
+const gameStore = useGameStore();
+const store = useTutorialPuzzleStore();
+provide(PUZZLE_STORE_KEY, store);
 
-function skip() {
-  player.markCompleted();
-  router.push('/');
+const lessonIndex = ref(0);
+/** Tasks done in this lesson; the lesson is done when it reaches the task count */
+const taskIndex = ref(0);
+/** Bumped on every (re)start of a lesson to remount the board, so its animation state starts clean */
+const attempt = ref(0);
+const finished = ref(false);
+const showNameDialog = ref(false);
+
+const lesson = computed(() => LESSONS[lessonIndex.value]);
+const task = computed(() => lesson.value.tasks[taskIndex.value] ?? null);
+const isFree = computed(() => lesson.value.tasks.length === 0);
+const lessonDone = computed(() => isFree.value ? !!store.isCleared : taskIndex.value >= lesson.value.tasks.length);
+const stuck = computed(() => isFree.value && store.isGameOver && !store.isCleared);
+
+const bodyKey = computed(() => {
+  if (lessonDone.value) return `tutorial.${lesson.value.id}.done`;
+  if (stuck.value) return 'tutorial.free.stuck';
+  return task.value?.bodyKey ?? 'tutorial.free.body';
+});
+
+const hints = computed(() => {
+  if (!task.value || lessonDone.value || store.animating || !store.gameState) return [];
+  return task.value.hints(store.gameState);
+});
+
+function guard(input: BoardInput): boolean {
+  if (lessonDone.value) return false;
+  if (isFree.value) return true;
+  return !!store.gameState && !!task.value?.accepts(input, store.gameState);
+}
+
+function startLesson() {
+  taskIndex.value = 0;
+  store.restoreState(0, lesson.value.start(), []);
+  attempt.value++;
+}
+
+function onSettled() {
+  if (!isFree.value) taskIndex.value++;
+  if (lessonDone.value) { playSE('complete'); vibrate(20); }
+}
+
+function nextLesson() {
+  if (lessonIndex.value < LESSONS.length - 1) {
+    lessonIndex.value++;
+    startLesson();
+  } else {
+    finish();
+  }
 }
 
 function finish() {
-  player.markCompleted();
-
-  // Unlock "tutorial_complete" achievement
-  const achievementStore = useAchievementStore();
-  const already = achievementStore.getState('tutorial_complete');
-  if (!already?.isUnlocked) {
-    achievementStore.handleNewAchievements(['tutorial_complete']);
-    // Persist to server (fire-and-forget)
+  finished.value = true;
+  const achievements = useAchievementStore();
+  if (!achievements.getState('tutorial_complete')?.isUnlocked) {
+    achievements.handleNewAchievements(['tutorial_complete']);
     api('/api/achievements/unlock', {
       method: 'POST',
       body: JSON.stringify({ type: 'tutorial_complete' }),
-    }).catch(() => { /* offline — will be in localStorage */ });
-  }
-
-  router.push('/');
-}
-
-function handleSwap(pos: { row: number; col: number }, dir: 'up' | 'down' | 'left' | 'right') {
-  if (player.currentStep.value.type === 'guided') {
-    player.validateSwap(pos, dir);
+    }).catch(() => { /* offline: kept in localStorage */ });
   }
 }
 
-function handleTap(pos: { row: number; col: number }) {
-  if (player.currentStep.value.type === 'guided') {
-    player.validateTap(pos);
-  }
+function playToday() {
+  router.push(`/puzzle/${gameStore.generateDailySeed(todayJST())}`);
 }
 
-// --- Debug: step jump (dev only) ---
-const debugOpen = ref(false);
-const debugStepOptions = computed(() =>
-  allTutorialSteps.map((step, i) => ({
-    index: i,
-    label: `${i + 1}. [${step.type}] ${step.id}`,
-  }))
-);
-function debugJump(index: number) {
-  player.goToStep(index);
-  debugOpen.value = false;
-}
 
-// Section progress info
-const sectionProgress = computed(() => {
-  let stepsBefore = 0;
-  for (let i = 0; i < player.currentSectionIndex.value; i++) {
-    stepsBefore += tutorialSections[i].steps.length;
-  }
-  const currentSection = tutorialSections[player.currentSectionIndex.value];
-  const stepInSection = player.currentStepIndex.value - stepsBefore;
-  return {
-    sectionTitle: t(currentSection.titleKey),
-    current: stepInSection + 1,
-    total: currentSection.steps.length,
-  };
-});
-
+// The store outlives the page, so set the first lesson up before the board first renders.
+// In dev, ?lesson=N opens lesson N (1-based) directly
+const devLesson = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('lesson')) : 0;
+if (devLesson >= 1 && devLesson <= LESSONS.length) lessonIndex.value = devLesson - 1;
+startLesson();
+onMounted(markTutorialSeen);
 </script>
 
 <template>
   <div class="tutorial-view">
-    <!-- Header -->
-    <div class="tutorial-header">
-      <button class="btn btn-sm back-btn" @click="router.push('/')">&larr;</button>
+    <header class="tutorial-header">
+      <button class="btn btn-sm back-btn" :aria-label="t('common.home')" @click="router.push('/')">&larr;</button>
       <h1 class="header-title">{{ t('tutorial.title') }}</h1>
-      <button class="btn btn-sm skip-btn" @click="skip">
-        {{ t('common.skip') }}
-      </button>
-    </div>
+      <span class="header-spacer" />
+    </header>
 
-    <!-- Board area -->
-    <div class="board-area">
-      <template v-if="player.activeBoard.value && player.currentStep.value.type !== 'info'">
-        <TutorialBoard
-          :board="player.activeBoard.value"
-          :highlight-cells="(!player.stepCompleted.value && !player.isAnimating.value) ? player.currentStep.value.highlight : undefined"
-          :highlight-dir="(!player.stepCompleted.value && !player.isAnimating.value) ? player.currentStep.value.highlightDir : undefined"
-          :matched-cells="player.matchedCells"
-          :clearing-cells="player.clearingCells"
-          :focus-area="player.currentStep.value.focusArea"
-          :interactive="player.currentStep.value.type === 'guided' && !player.stepCompleted.value && !player.isAnimating.value"
-          @swap="handleSwap"
-          @tap="handleTap"
+    <template v-if="!finished">
+      <section class="card lesson-card">
+        <p class="lesson-progress">{{ t('tutorial.progress', { n: lessonIndex + 1, total: LESSONS.length }) }}</p>
+        <h2 class="lesson-title">{{ t(lesson.titleKey) }}</h2>
+        <p class="lesson-body" aria-live="polite">{{ t(bodyKey) }}</p>
+        <ul v-if="lesson.doneList && lessonDone" class="done-list">
+          <li v-for="k in lesson.doneList" :key="k">{{ t(k) }}</li>
+        </ul>
+        <p v-if="isFree && !lessonDone" class="free-status">
+          {{ t('tutorial.free.status', { obstacles: store.gameState ? countObstacles(store.gameState.board) : 0, moves: store.moveCount }) }}
+        </p>
+        <div class="lesson-actions">
+          <button class="btn" :disabled="store.animating" @click="startLesson">{{ t('tutorial.retry') }}</button>
+          <button v-if="lessonDone" class="btn btn-primary" @click="nextLesson">{{ t('tutorial.next') }}</button>
+        </div>
+      </section>
+
+      <div class="board-area">
+        <PuzzleBoard
+          :key="attempt"
+          :guard="guard"
+          :hints="hints"
+          @settled="onSettled"
         />
-      </template>
-
-      <!-- Info step: show screenshot image, board, or fallback icon -->
-      <template v-else-if="player.currentStep.value.type === 'info'">
-        <div class="info-visual">
-          <img
-            v-if="player.currentStep.value.image"
-            class="info-screenshot"
-            :src="player.currentStep.value.image"
-            alt=""
-          />
-          <TutorialBoard
-            v-else-if="player.currentStep.value.board"
-            :board="player.currentStep.value.board"
-            :matched-cells="player.matchedCells"
-            :clearing-cells="player.clearingCells"
-            :focus-area="player.currentStep.value.focusArea"
-            :interactive="false"
-          />
-          <div v-else class="info-icon-placeholder">
-            <span class="info-icon-text">i</span>
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <!-- Debug: step jumper (dev only) -->
-    <div v-if="isDev" class="debug-bar">
-      <button class="debug-toggle" @click="debugOpen = !debugOpen">
-        DBG {{ player.currentStepIndex.value + 1 }}/{{ player.totalSteps }}
-      </button>
-      <div v-if="debugOpen" class="debug-panel">
-        <button
-          v-for="opt in debugStepOptions"
-          :key="opt.index"
-          :class="['debug-step-btn', { active: opt.index === player.currentStepIndex.value }]"
-          @click="debugJump(opt.index)"
-        >
-          {{ opt.label }}
-        </button>
       </div>
-    </div>
+    </template>
 
-    <!-- Text card -->
-    <div class="text-card">
-      <!-- Section label -->
-      <div class="section-label">
-        {{ sectionProgress.sectionTitle }}
-        <span class="section-progress">{{ sectionProgress.current }}/{{ sectionProgress.total }}</span>
+    <section v-else class="card summary-card">
+      <h2 class="lesson-title">{{ t('tutorial.summary.title') }}</h2>
+      <p class="lesson-body">{{ t('tutorial.summary.daily') }}</p>
+      <p class="lesson-body">{{ t('tutorial.summary.ranking') }}</p>
+      <p class="lesson-body">{{ t('tutorial.summary.again') }}</p>
+      <div class="summary-actions">
+        <button class="btn btn-primary" @click="playToday">{{ t('tutorial.summary.playToday') }}</button>
+        <button v-if="!gameStore.displayName" class="btn" @click="showNameDialog = true">{{ t('name.set') }}</button>
+        <button class="btn" @click="router.push('/')">{{ t('common.home') }}</button>
       </div>
+    </section>
 
-      <h2 class="step-title">{{ t(player.currentStep.value.titleKey) }}</h2>
-      <p class="step-body">{{ t(player.currentStep.value.bodyKey) }}</p>
-
-      <!-- Try it prompt -->
-      <div v-if="player.showTryItPrompt.value" class="try-it-prompt">
-        {{ t('tutorial.tryIt') }}
-      </div>
-
-      <!-- Success message -->
-      <div v-if="player.showSuccessMessage.value" class="success-message">
-        {{ t('tutorial.great') }}
-      </div>
-
-      <!-- Navigation -->
-      <div class="nav-row">
-        <button
-          class="btn nav-btn"
-          :disabled="player.isFirstStep.value"
-          @click="player.prevStep()"
-        >
-          &larr;
-        </button>
-
-        <!-- Dot indicator -->
-        <div class="dot-indicator">
-          <span
-            v-for="i in player.totalSteps"
-            :key="i"
-            :class="['dot', { active: i - 1 === player.currentStepIndex.value, done: i - 1 < player.currentStepIndex.value }]"
-          />
-        </div>
-
-        <button
-          v-if="player.isLastStep.value && player.stepCompleted.value"
-          class="btn btn-primary nav-btn nav-forward"
-          @click="finish"
-        >
-          {{ t('tutorial.done') }}
-        </button>
-        <button
-          v-else
-          class="btn btn-primary nav-btn nav-forward"
-          :disabled="!player.stepCompleted.value"
-          @click="player.nextStep()"
-        >
-          {{ t('tutorial.next') }} &rarr;
-        </button>
-      </div>
-    </div>
+    <NameDialog :open="showNameDialog" @close="showNameDialog = false" />
   </div>
 </template>
 
 <style scoped>
+/* The board keeps its full size; a long card pushes it down and the page scrolls */
 .tutorial-view {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  gap: 10px;
+  /* No footer menu here (route meta hideNav), so keep clear of the home indicator ourselves */
+  padding: 0 16px calc(12px + env(safe-area-inset-bottom));
+  overflow-y: auto;
 }
-
-/* Header */
 .tutorial-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding-top: 12px;
   flex-shrink: 0;
 }
 .back-btn {
@@ -230,218 +181,63 @@ const sectionProgress = computed(() => {
 .header-title {
   font-size: 20px;
   font-weight: 800;
-  color: var(--ink);
   margin: 0;
 }
-.skip-btn {
-  font-size: 14px;
+.header-spacer {
+  width: 40px;
 }
-
-/* Board area */
-.board-area {
-  flex: 1;
-  display: flex;
-  align-items: stretch;
-  justify-content: center;
-  padding: 8px 16px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* Info visual */
-.info-visual {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  width: 100%;
-  height: 100%;
-}
-.info-screenshot {
-  max-width: 100%;
-  max-height: 100%;
-  border: var(--frame);
-  border-radius: 14px;
-  object-fit: contain;
-}
-.info-icon-placeholder {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: var(--bg-card-alt);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.info-icon-text {
-  font-size: 36px;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-/* Text card */
-/* A sheet over the bottom, as the menu */
-.text-card {
-  background: var(--bg-card);
-  border: var(--frame);
-  border-bottom: 0;
-  border-radius: 24px 24px 0 0;
-  padding: 16px 20px 20px;
+.lesson-card {
   flex-shrink: 0;
+  padding: 14px 16px;
 }
-
-.section-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--brand);
-  margin-bottom: 4px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.section-progress {
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.step-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 6px;
-}
-.step-body {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.6;
-  margin: 0 0 12px;
-}
-
-/* Try it prompt */
-.try-it-prompt {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--brand);
-  text-align: center;
-  padding: 8px;
-  margin-bottom: 8px;
-  animation: try-it-bounce 1.5s ease-in-out infinite;
-}
-@keyframes try-it-bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
-}
-
-/* Success message */
-.success-message {
-  font-size: 16px;
+.lesson-progress {
+  margin: 0;
+  font-size: 12px;
   font-weight: 800;
-  color: var(--brand);
-  text-align: center;
-  padding: 6px;
-  margin-bottom: 8px;
-  animation: success-pop 0.4s ease-out;
+  color: var(--text-secondary);
 }
-@keyframes success-pop {
-  0% { transform: scale(0); opacity: 0; }
-  60% { transform: scale(1.2); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
+.lesson-title {
+  margin: 2px 0 6px;
+  font-size: 18px;
+  font-weight: 800;
 }
-
-/* Navigation row */
-.nav-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.lesson-body {
+  margin: 0 0 8px;
+  font-size: 15px;
+  line-height: 1.6;
 }
-.nav-btn {
-  flex-shrink: 0;
+.done-list {
+  margin: 0 0 8px;
+  padding-left: 1.2em;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
 }
-.nav-forward {
-  margin-left: auto;
-}
-
-/* Dot indicator */
-.dot-indicator {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  overflow: hidden;
-}
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--border);
-  flex-shrink: 0;
-  transition: background 0.2s, transform 0.2s;
-}
-.dot.active {
-  background: var(--brand);
-  transform: scale(1.4);
-}
-.dot.done {
-  background: var(--brand);
-  opacity: 0.4;
-}
-
-/* Debug bar (dev only) */
-.debug-bar {
-  position: fixed;
-  top: 52px;
-  right: max(4px, calc((100vw - 480px) / 2 + 4px));
-  z-index: 9999;
-}
-.debug-toggle {
-  padding: 2px 8px;
-  border: 1px solid #f44;
-  border-radius: 4px;
-  background: rgba(255, 68, 68, 0.1);
-  color: #f44;
-  font-size: 10px;
+.free-status {
+  margin: 0 0 8px;
+  font-size: 14px;
   font-weight: 700;
-  font-family: monospace;
-  cursor: pointer;
+  font-variant-numeric: tabular-nums;
 }
-.debug-panel {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
-  background: var(--bg-card);
-  border: 1px solid #f44;
-  border-radius: 6px;
-  padding: 4px;
+.lesson-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.board-area {
+  flex-shrink: 0;
+  width: min(100%, 480px);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  display: flex;
+}
+.summary-card {
+  overflow-y: auto;
+}
+.summary-actions {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  max-height: 60vh;
-  overflow-y: auto;
-  min-width: 220px;
-}
-.debug-step-btn {
-  padding: 5px 8px;
-  border: none;
-  border-radius: 3px;
-  background: none;
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-family: monospace;
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.debug-step-btn:hover {
-  background: var(--bg-hover);
-}
-.debug-step-btn.active {
-  background: rgba(255, 68, 68, 0.15);
-  color: #f44;
-  font-weight: 700;
+  gap: 10px;
+  margin-top: 8px;
 }
 </style>

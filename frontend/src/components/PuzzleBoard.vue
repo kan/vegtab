@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, triggerRef } from 'vue';
+import { ref, reactive, computed, inject, watch, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePuzzleStore, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
+import { usePuzzleStore, PUZZLE_STORE_KEY, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
 import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type Color, type ItemType, type GameState } from '@vegtab/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
-import { useDragHandler, pk, adj } from '@/composables/useDragHandler';
+import { useDragHandler, pk } from '@/composables/useDragHandler';
+import { adj, dirBetween, type BoardHint, type BoardInput } from '@/lib/boardInput';
 import { playSE, vibrate } from '@/sound';
 import { useAnim } from '@/anim';
 import ItemIcon from './ItemIcon.vue';
@@ -15,10 +16,56 @@ import type DebugPanel from './DebugPanel.vue';
 
 const props = defineProps<{
   debugPanel?: InstanceType<typeof DebugPanel> | null;
+  /** The tutorial lets through only the inputs this accepts; a refused swap slides back */
+  guard?: (input: BoardInput) => boolean;
+  /** What the tutorial shows the player to do: a swipe (ring, nudge and arrow) or a tap (ripple) */
+  hints?: BoardHint[];
+}>();
+const emit = defineEmits<{
+  /** A move has finished (animations included) and the store holds its result */
+  settled: [];
 }>();
 
 const { t } = useI18n();
-const store = usePuzzleStore();
+const store = inject(PUZZLE_STORE_KEY, null) ?? usePuzzleStore();
+// --- Tutorial hints ---
+// A hint for picking a spoon's target shows only while the spoon is choosing; the rest only when not
+const visibleHints = computed(() => (props.hints ?? []).filter(h =>
+  (h.type === 'tap' && !!h.whileSelecting) === scope.scopeSelecting.value));
+const swapHints = computed(() => visibleHints.value.flatMap(h => h.type === 'swap' ? [h] : []));
+const tapHints = computed(() => visibleHints.value.flatMap(h => h.type === 'tap' ? [h] : []));
+/** Cell key → the direction its tile nudges in, for the cell a swap hint starts from */
+const nudgeDirs = computed(() => new Map(swapHints.value.map(h => [pk(h.from.row, h.from.col), dirBetween(h.from, h.to)])));
+const swapTargetKeys = computed(() => new Set(swapHints.value.map(h => pk(h.to.row, h.to.col))));
+const tapKeys = computed(() => new Set(tapHints.value.map(h => pk(h.at.row, h.at.col))));
+const ARROW_DEG: Record<Direction, number> = { right: 0, down: 90, left: 180, up: 270 };
+/** The arrow sits on the edge between the two cells, pointing from `from` to `to` */
+function arrowStyle(from: Position, to: Position) {
+  const cs = cellSize.value;
+  return {
+    left: `${((from.col + to.col) / 2 + 0.5) * cs}px`,
+    top: `${((from.row + to.row) / 2 + 0.5) * cs}px`,
+    width: `${cs * 0.9}px`,
+    height: `${cs * 0.9}px`,
+    transform: `translate(-50%, -50%) rotate(${ARROW_DEG[dirBetween(from, to)]}deg)`,
+  };
+}
+function tapStyle(at: Position) {
+  const cs = cellSize.value;
+  return { left: `${(at.col + 0.5) * cs}px`, top: `${(at.row + 0.5) * cs}px`, width: `${cs}px`, height: `${cs}px` };
+}
+function allowed(input: BoardInput): boolean {
+  return !props.guard || props.guard(input);
+}
+
+// A move has settled when the move count has gone up and its animation is over. Watching the store
+// rather than emitting from each path covers every way a move is applied
+let settledMoves = store.moveCount;
+watch(() => [store.moveCount, store.animating] as const, ([moves, busy]) => {
+  if (busy) return;
+  if (moves > settledMoves) emit('settled');
+  settledMoves = moves;
+});
 const wrapperEl = ref<HTMLElement | null>(null);
 const boardEl = ref<HTMLElement | null>(null);
 const cellSize = ref(0);
@@ -34,9 +81,16 @@ const VEGGIE_COLORS = ['#d4b828', '#4a9a4e', '#7B4FAA', '#c85a5a', '#8a8a7a'];
 const { ANIM, scaled } = useAnim();
 
 // --- Layout ---
-onMounted(() => { updateCellSize(); window.addEventListener('resize', updateCellSize); });
+// Sized from the room the parent gives, which also changes without a window resize (the tutorial's
+// card grows when it shows a list)
+let resizeObserver: ResizeObserver | null = null;
+onMounted(() => {
+  updateCellSize();
+  resizeObserver = new ResizeObserver(updateCellSize);
+  if (wrapperEl.value) resizeObserver.observe(wrapperEl.value);
+});
 onUnmounted(() => {
-  window.removeEventListener('resize', updateCellSize);
+  resizeObserver?.disconnect();
   floatingTimers.forEach(t => clearTimeout(t));
   floatingTimers.length = 0;
   floatingScores.length = 0;
@@ -163,9 +217,10 @@ function nextFrame() { return new Promise<void>(r => requestAnimationFrame(() =>
 async function handleTap(pos: Position) {
   // Scope cell selection mode
   if (scope.scopeSelecting.value) {
-    handleScopeSelection(pos);
+    if (allowed({ type: 'select', pos })) handleScopeSelection(pos);
     return;
   }
+  if (!allowed({ type: 'tap', pos })) return;
 
   // Check if tapping a scope → enter selection mode
   const cell = activeBoard.value?.[pos.row]?.[pos.col];
@@ -399,9 +454,15 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
 async function commitSwap(pos: Position, dir: Direction) {
   // Block swipes while scope selection is active (waiting for user to tap target)
   if (scope.scopeSelecting.value) return;
+  const nb = adj(pos, dir);
+  if (!allowed({ type: 'swap', pos, dir })) {
+    // A refused swap is not a move: hold input while it slides back, but don't mark the store busy
+    drag.setLocked(true);
+    await bounceBack(pos, nb);
+    return;
+  }
   setInputLocked(true);
   const cs = cellSize.value;
-  const nb = adj(pos, dir);
   const fullX = (nb.col - pos.col) * cs, fullY = (nb.row - pos.row) * cs;
 
   // Slide
@@ -514,6 +575,11 @@ async function commitSwap(pos: Position, dir: Direction) {
   }
 
   // Invalid → bounce back
+  await bounceBack(pos, nb);
+}
+
+/** Slides a swapped pair back to their cells and takes input again */
+async function bounceBack(pos: Position, nb: Position) {
   setOff(pos.row, pos.col, 0, 0, true, 0);
   setOff(nb.row, nb.col, 0, 0, true, 0);
   await wait(ANIM.value.SWAP);
@@ -985,12 +1051,15 @@ function tileTransition(r: number, c: number) {
           <div
             v-for="col in BOARD_SIZE"
             :key="col"
-            class="cell"
+            :class="['cell', {
+              'hint-from': nudgeDirs.has(pk(row - 1, col - 1)) || tapKeys.has(pk(row - 1, col - 1)),
+              'hint-to': swapTargetKeys.has(pk(row - 1, col - 1)),
+            }]"
             :style="{ width: cellSize + 'px', height: cellSize + 'px' }"
           >
             <template v-if="activeBoard[row - 1][col - 1]">
               <div
-                class="tile-mover"
+                :class="['tile-mover', nudgeDirs.has(pk(row - 1, col - 1)) && `nudge-${nudgeDirs.get(pk(row - 1, col - 1))}`]"
                 :style="{
                   width: (cellSize - 3) + 'px',
                   height: (cellSize - 3) + 'px',
@@ -1054,6 +1123,28 @@ function tileTransition(r: number, c: number) {
           </div>
         </div>
       </template>
+
+      <!-- Tutorial hints: an arrow over the edge to swipe across, a ripple on the cell to tap -->
+      <div
+        v-for="h in swapHints"
+        :key="`arrow-${h.from.row}-${h.from.col}`"
+        class="hint-arrow"
+        :style="arrowStyle(h.from, h.to)"
+      >
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <path d="M6 18h20V8l16 16-16 16V30H6z" fill="var(--bg-card)" stroke="var(--ink)" stroke-width="3.5" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <div
+        v-for="h in tapHints"
+        :key="`tap-${h.at.row}-${h.at.col}`"
+        class="hint-tap"
+        :style="tapStyle(h.at)"
+      >
+        <span class="hint-tap-ring" />
+        <span class="hint-tap-ring hint-tap-ring-late" />
+        <span class="hint-tap-dot" />
+      </div>
 
       <!-- Sweep icon (v_cut / h_cut / flush blink) -->
       <div
@@ -1166,6 +1257,98 @@ function tileTransition(r: number, c: number) {
   align-items: center;
   justify-content: center;
   position: relative;
+}
+/*
+ * Tutorial hints. The cell to drag has a blue ring with a cream band inside (as TAKO-SEN), and its
+ * tile nudges toward the cell it goes to, which has a dashed ring; an arrow on the edge between them
+ * slides the same way. A cell to tap has a ripple. Motion only animates translate, transform and
+ * opacity, so the compositor handles it; with reduced motion the rings and the arrow stay still
+ */
+.cell.hint-from::after,
+.cell.hint-to::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: 5;
+  border-radius: 8px;
+  pointer-events: none;
+}
+.cell.hint-from::after {
+  box-shadow: inset 0 0 0 4px var(--info), inset 0 0 0 6px var(--bg-card);
+}
+.cell.hint-to::after {
+  border: 3px dashed var(--info);
+}
+.hint-arrow,
+.hint-tap {
+  position: absolute;
+  z-index: 15;
+  pointer-events: none;
+}
+.hint-arrow svg {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 2px var(--bg-card));
+}
+.hint-tap {
+  transform: translate(-50%, -50%);
+}
+.hint-tap-ring,
+.hint-tap-dot {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 50%;
+}
+.hint-tap-ring {
+  width: 130%;
+  height: 130%;
+  margin: -15%;
+  border: 5px solid var(--info);
+  box-shadow: 0 0 0 2px var(--bg-card), inset 0 0 0 2px var(--bg-card);
+  /* At rest (reduced motion) the ring sits around the dot; the animation replaces this */
+  transform: scale(0.6);
+}
+.hint-tap-ring-late {
+  display: none;
+}
+.hint-tap-dot {
+  width: 34%;
+  height: 34%;
+  background: var(--info);
+  border: 3px solid var(--bg-card);
+  box-shadow: 0 0 0 2px var(--ink);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tile-mover.nudge-up { animation: nudge-up 1.2s ease-in-out infinite; }
+  .tile-mover.nudge-down { animation: nudge-down 1.2s ease-in-out infinite; }
+  .tile-mover.nudge-left { animation: nudge-left 1.2s ease-in-out infinite; }
+  .tile-mover.nudge-right { animation: nudge-right 1.2s ease-in-out infinite; }
+  .hint-arrow svg { animation: arrow-slide 1.2s ease-in-out infinite; }
+  .hint-tap-ring { animation: tap-ripple 1.4s ease-out infinite; }
+  .hint-tap-ring-late { display: block; animation-delay: 0.7s; }
+  .hint-tap-dot { animation: tap-press 1.4s ease-in-out infinite; }
+}
+@keyframes nudge-up { 40%, 60% { translate: 0 -22%; } }
+@keyframes nudge-down { 40%, 60% { translate: 0 22%; } }
+@keyframes nudge-left { 40%, 60% { translate: -22% 0; } }
+@keyframes nudge-right { 40%, 60% { translate: 22% 0; } }
+/* The svg points right; the wrapper's rotation turns it toward the target */
+@keyframes arrow-slide {
+  0% { transform: translateX(-25%); opacity: 0; }
+  30% { opacity: 1; }
+  70% { transform: translateX(15%); opacity: 1; }
+  100% { transform: translateX(25%); opacity: 0; }
+}
+@keyframes tap-ripple {
+  0% { transform: scale(0.35); opacity: 1; }
+  70% { opacity: 0.6; }
+  100% { transform: scale(1); opacity: 0; }
+}
+@keyframes tap-press {
+  0%, 100% { transform: scale(1); }
+  20% { transform: scale(0.7); }
+  40% { transform: scale(1); }
 }
 .tile-mover {
   will-change: transform;

@@ -1,15 +1,7 @@
 import { ref, reactive } from 'vue';
 import { BOARD_SIZE, type Position, type Direction } from '@vegtab/engine';
 import { useAnim } from '@/anim';
-
-function adj(p: Position, d: Direction): Position {
-  switch (d) {
-    case 'up': return { row: p.row - 1, col: p.col };
-    case 'down': return { row: p.row + 1, col: p.col };
-    case 'left': return { row: p.row, col: p.col - 1 };
-    case 'right': return { row: p.row, col: p.col + 1 };
-  }
-}
+import { adj } from '@/lib/boardInput';
 
 function dragDir(dx: number, dy: number): Direction | null {
   if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return null;
@@ -137,4 +129,4 @@ export function useDragHandler(
   };
 }
 
-export { pk, adj, dragDir };
+export { pk, dragDir };

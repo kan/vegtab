@@ -30,8 +30,8 @@ import { computeDropMoves } from './dropMoves.js';
  */
 export const MAX_STABILIZE_ITERATIONS = 200;
 
-/** 方向から隣接位置を計算 */
-function getAdjacentPos(pos: Position, dir: Direction): Position {
+/** 方向から隣接位置を計算（盤の外の位置も返す） */
+export function getAdjacentPos(pos: Position, dir: Direction): Position {
   switch (dir) {
     case 'up': return { row: pos.row - 1, col: pos.col };
     case 'down': return { row: pos.row + 1, col: pos.col };

@@ -25,19 +25,6 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        // チュートリアルの画像（約 1.9MB）は初回訪問で precache せず、表示したときにキャッシュする。
-        // ファイル名にハッシュがなく、同じ URL のまま撮り直すことがあるので、裏で取り直して更新する
-        globIgnores: ['**/tutorial/**'],
-        runtimeCaching: [
-          {
-            urlPattern: /\/tutorial\/[^/]+\.png$/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'tutorial-images',
-              expiration: { maxEntries: 20 },
-            },
-          },
-        ],
         importScripts: ['/push-sw.js'],
         // The Worker answers these, not the SPA: share pages (OGP, and the old host's redirect to
         // the new URL) and the API

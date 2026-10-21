@@ -10,7 +10,7 @@ export * from './obstacle.js';
 export * from './traceCollector.js';
 export * from './dropMoves.js';
 export * from './trace.js';
-export { initializeGame, processAction, processScopeSynthesis, processScopeSwap, applyReplayAction, isScopeSwapPair, cloneGameState, processDamage, MAX_STABILIZE_ITERATIONS } from './engine.js';
+export { getAdjacentPos, initializeGame, processAction, processScopeSynthesis, processScopeSwap, applyReplayAction, isScopeSwapPair, cloneGameState, processDamage, MAX_STABILIZE_ITERATIONS } from './engine.js';
 export { generateDailySeed } from './seed.js';
 export { playGame } from './autoPlayer.js';
 export type { GameMetrics } from './autoPlayer.js';
