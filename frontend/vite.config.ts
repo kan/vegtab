@@ -57,11 +57,12 @@ export default defineConfig({
     port: 5173,
     allowedHosts: true,
     // The API is same-origin (the kan-game.app ID cookie goes only with it): the backend's
-    // `wrangler dev` (backend/package.json, port 8788) answers /api and the share pages.
-    // Origin is passed as it is, so the API sees this page's origin (ALLOWED_ORIGINS)
+    // `wrangler dev` answers /api and the share pages. scripts/dev.mjs starts it on 127.0.0.1 on a
+    // free port and names it here. Origin is passed as it is, so the API sees this page's origin
+    // (ALLOWED_ORIGINS)
     proxy: {
-      '/api': 'http://localhost:8788',
-      '/s/': 'http://localhost:8788',
+      '/api': `http://127.0.0.1:${process.env.VEGTAB_API_PORT || 8788}`,
+      '/s/': `http://127.0.0.1:${process.env.VEGTAB_API_PORT || 8788}`,
     },
   },
 });

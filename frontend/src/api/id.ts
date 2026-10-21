@@ -201,14 +201,13 @@ async function sendRedeem(path: string, body: unknown): Promise<Redeem> {
  * A page of the kan-game.app portal: the account screen (recovery codes, withdrawal) and the privacy
  * policy live there, not in each game. The portal follows this page's host
  * (vegtab-dev.kan-game.app → dev.kan-game.app), so a build cannot point at another environment's
- * portal. Local hosts get kan/game's local portal (VITE_KAN_GAME_PORTAL)
+ * portal. A local run (scripts/dev.mjs, also under roji's domain) gets kan/game's local portal
+ * (VITE_KAN_GAME_PORTAL)
  */
 export function portalUrl(path: '/account' | '/privacy' | '/terms', host = window.location.hostname): string {
   const local = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost') || /^\d+\.\d+\.\d+\.\d+$/.test(host);
   const portal = host.endsWith('.kan-game.app')
     ? host.split('.')[0].endsWith('-dev') ? 'https://dev.kan-game.app' : 'https://kan-game.app'
-    : local
-      ? import.meta.env.VITE_KAN_GAME_PORTAL || 'http://localhost:8787'
-      : 'https://kan-game.app';
+    : import.meta.env.VITE_KAN_GAME_PORTAL || (local ? 'http://localhost:8787' : 'https://kan-game.app');
   return new URL(path, portal).href;
 }

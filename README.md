@@ -36,35 +36,31 @@ cd ../game
 npm install
 npm run generate-key -- --dev-vars             # .dev.vars にローカル用の鍵を書く
 npx wrangler d1 migrations apply DB --local
-echo 'ALLOWED_ORIGINS=http://localhost:5173' >> .dev.vars   # vegtab の画面から ID の API を呼ぶため
 ```
 
-### backend のローカル設定（初回のみ）
+kan/game を別の場所に置くときは、環境変数 `KAN_GAME_DIR` で指定する。
 
-`backend/.dev.vars`（`.gitignore` 済み）に次を書く。
-
-```
-JWT_SECRET=<任意の値>
-ID_PUBLIC_KEYS=<kan/game の .dev.vars の ID_PUBLIC_KEYS をそのまま写す>
-```
+### ローカル D1（初回と、マイグレーションを足した後）
 
 ```bash
-npm run db:migrate -w backend   # ローカル D1 のマイグレーション
+npm run db:migrate -w backend
 ```
 
 ## 開発
 
-```bash
-# ターミナル1: ID 基盤（http://localhost:8787）
-cd ../game && npm run dev
+ID 基盤（kan/game の `wrangler dev`）、backend（`wrangler dev`）、frontend（`vite`）は `scripts/dev.mjs` がまとめて起動する（TAKO-SEN と同じ形）。
 
-# ターミナル2: backend（http://localhost:8788）と frontend（http://localhost:5173）
-npm run dev
-```
+| コマンド | 用途 |
+|---|---|
+| `npm run dev:roji` | [roji](https://github.com/kan/roji) を通して起動する。`https://vegtab.<roji のドメイン>` で開ける |
+| `npm run dev:all`（`npm run dev`） | roji なしで起動する。画面は `http://localhost:5173` |
 
-ブラウザで `http://localhost:5173` を開く。frontend の `/api` と `/s/` は Vite が backend へ転送する（同一オリジン）。
-backend の `ID` binding は、wrangler の dev registry で別プロセスの ID 基盤（`kan-game-local`）につながる。
-復旧コードと退会はポータル（`http://localhost:8787/account`）で確かめる。`localhost` の Cookie はポートをまたいで共有される。
+- roji が使える環境（`command -v roji` が成功し、`roji health` が「正常」）では `npm run dev:roji` を使う。開く URL は起動時に出る `roji: https://... -> localhost:<ポート>` の行か `roji routes` で確かめる
+- ID 基盤と backend のポートは、起動のたびに空いているものを選ぶ。frontend の `/api` と `/s/` は Vite が backend へ転送する（同一オリジン）。backend の `ID` binding は、wrangler の dev registry で ID 基盤（`kan-game-local`）につながる
+- `scripts/dev.mjs` は、画面の URL を `ALLOWED_ORIGINS` として backend と ID 基盤へ渡し、kan/game の `.dev.vars` の `ID_PUBLIC_KEYS` を backend へ渡す。kan/game と backend の `.dev.vars` に書き足す必要はない
+- roji 経由では、画面（roji の URL）とポータル（`localhost`）のホストが違い、ID の Cookie を共有しない。復旧コードや退会をポータルで試すときは `npm run dev:all` で起動し、起動時に出る ID 基盤の URL を開く
+- ローカルでは Web Push の送信は止まっている（秘密鍵が無い）。購読の登録はできるが、公開鍵は `wrangler.jsonc` の既定のもの。送信を試すときは、環境変数 `VAPID_PUBLIC_KEY` と `VAPID_PRIVATE_KEY` の組（`backend/scripts/generate-vapid-keys.ts`）を両方付けて起動する
+- 終了は `Ctrl+C`。3 つとも止まり、roji のルートも取り消される。どれかが落ちたときも、ほかを止めて終了する
 
 ## テスト
 

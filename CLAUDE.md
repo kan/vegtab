@@ -64,10 +64,11 @@ npm install                    # ルートで全 workspace の依存をインス
 一覧は README「環境」。リモートのリソースの作成、secret の登録、デプロイは利用者の承認を得てから行う。
 
 ### ローカル開発用の設定
-- ID 基盤（kan/game）を `../game` に置き、kan/game 側で鍵の生成とローカル D1 の用意をし、kan/game の `.dev.vars` の
-  `ALLOWED_ORIGINS` に `http://localhost:5173` を書く（README「ローカルの ID 基盤」）
-- `backend/.dev.vars` に `JWT_SECRET=<任意の値>` と、kan/game の `.dev.vars` の `ID_PUBLIC_KEYS` の写しを書く（`.gitignore` 済み）
-- ローカル D1 のマイグレーション適用:
+- ID 基盤（kan/game）を `../game`（または環境変数 `KAN_GAME_DIR`）に置き、kan/game 側で鍵の生成とローカル D1 の用意を
+  済ませる（README「ローカルの ID 基盤」）。済んでいなければ `scripts/dev.mjs` は案内を出して止まる
+- `backend/.dev.vars` は要らない。`scripts/dev.mjs` が `ID_PUBLIC_KEYS`、`ALLOWED_ORIGINS`、`FRONTEND_URL`、`JWT_SECRET` を
+  `--var` で渡す。`.dev.vars` を置くと、その値が `wrangler types` に入って `npm run typecheck -w backend` が失敗する
+- ローカル D1 のマイグレーション適用（初回と、マイグレーションを足した後）:
   ```bash
   cd backend && npm run db:migrate
   ```
@@ -78,16 +79,25 @@ npm install                    # ルートで全 workspace の依存をインス
 
 ## ローカル開発の起動
 
-```bash
-# ターミナル1: ID 基盤（http://localhost:8787）
-cd ../game && npm run dev
+ID 基盤（kan/game の `wrangler dev`）、backend（`wrangler dev`）、frontend（`vite`）は `scripts/dev.mjs` がまとめて起動する。
 
-# ターミナル2: バックエンド（http://localhost:8788）とフロントエンド（http://localhost:5173）
-npm run dev
-```
+| コマンド | 用途 |
+|---|---|
+| `npm run dev:roji` | roji を通して起動する。`https://vegtab.<roji のドメイン>` で開ける |
+| `npm run dev:all`（`npm run dev`） | roji なしで起動する。画面は `http://localhost:5173` |
 
-画面は `http://localhost:5173` で開く。API は同一オリジンで、Vite が `/api` と `/s/` を backend（8788）へ転送する
-（`frontend/vite.config.ts`）。backend の `ID` binding は wrangler の dev registry で kan/game の `wrangler dev` につながる。
+- roji が使える環境では `npm run dev:roji` で起動する。**その環境では `npm run dev:all`、`npm run dev`、`vite` や
+  `wrangler dev` の直接の実行で起動しない。** ポートを固定すると、ほかのプロジェクトの開発サーバーと衝突するため
+  - roji が使えるかは、`command -v roji` が成功し、`roji health` が「正常」を返すことで確かめる
+  - 開く URL は、起動時に出る `roji: https://... -> localhost:<ポート>` の行か `roji routes` で確かめる。roji のドメインは
+    環境ごとに違うので決め打ちしない
+- roji が使えない環境では `npm run dev:all` を使う。画面のポートは 5173 に固定で、使用中なら起動に失敗する
+- ID 基盤と backend のポートは起動のたびに空いているものを選ぶ。Vite は `/api` と `/s/` を backend へ転送し
+  （`frontend/vite.config.ts`、ポートは環境変数 `VEGTAB_API_PORT`）、backend の `ID` binding は wrangler の dev registry で
+  ID 基盤につながる。ポートを決め打ちしない
+- roji 経由では画面とポータル（`localhost`）のホストが違い、ID の Cookie を共有しない。ポータル（復旧コード、退会）を
+  通して確かめるときは `npm run dev:all` で起動する
+- 終了は `Ctrl+C`。3 つとも止まり、roji のルートも取り消される
 
 ## デプロイ
 
@@ -145,8 +155,7 @@ cd backend && npm test         # バックエンドのみ
 - 旧 URL（`vegtab.app`）の旧アカウントのための JWT（`src/lib/jwt.ts`、`refresh-tokens.ts`、`routes/auth.ts`、`routes/legacy.ts`）は、移転の案内と引き継ぎにだけ使う。新しい機能で使わない
 - テスト: `@cloudflare/vitest-plugin` で Workers 環境をエミュレート。D1 のスキーマは `migrations/` を `test/apply-migrations.ts` で当てる（テスト用のスキーマを別に書かない）
   - API は `test/helpers.ts` の `call` で呼ぶ（`SELF.fetch` は使わない）。ID 基盤の偽物（`idPlatform`）とテスト用の鍵で動かすため。`registerUser({ name })` で名前と同意のある ID を作る
-- `backend/.dev.vars` にローカル用シークレットを設定（Git 管理外）
-- Workers の型は `wrangler types` で生成した `backend/worker-configuration.d.ts` を使う（`@cloudflare/workers-types` は使わない）。`wrangler.jsonc` を変えたら `npm run cf-typegen -w backend` で作り直す。`npm run typecheck -w backend` は生成した型が古ければ失敗する。`backend/.dev.vars` があると、その値（`JWT_SECRET`、`ID_PUBLIC_KEYS`）が型の生成に入って食い違い、型が古くなくても失敗する。リポジトリの型は `.dev.vars` が無い状態で生成したもので、CI もその状態で確かめる
+- Workers の型は `wrangler types` で生成した `backend/worker-configuration.d.ts` を使う（`@cloudflare/workers-types` は使わない）。`wrangler.jsonc` を変えたら `npm run cf-typegen -w backend` で作り直す。`npm run typecheck -w backend` は生成した型が古ければ失敗する。型は `backend/.dev.vars` が無い状態で生成する（あると、その値が型に入って食い違う）
 - シークレット（`JWT_SECRET` など）は生成した型に入らないので、`src/types.ts` の `Bindings` に足す
 
 ### frontend/

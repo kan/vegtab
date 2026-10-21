@@ -24,7 +24,8 @@
     // The old host that only hands its accounts over (src/lib/env.ts). Empty: none
     "LEGACY_HOST": "",
     // The kan-game.app ID cookie and the keys that verify it (kan/game docs/ID_DESIGN.md「ID と Cookie」).
-    // Locally they are kan/game's own: copy ID_PUBLIC_KEYS from kan/game's .dev.vars into .dev.vars
+    // Locally they are kan/game's own: scripts/dev.mjs passes ID_PUBLIC_KEYS from kan/game's
+    // .dev.vars, with ALLOWED_ORIGINS and FRONTEND_URL for the screen's URL
     "ID_COOKIE_NAME": "__Secure-kgdev_id",
     "ID_ISSUER": "localhost",
     "ID_PUBLIC_KEYS": "[]",
