@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { onMounted, ref } from 'vue';
 import BottomNav from './components/BottomNav.vue';
 import ToastContainer from './components/ToastContainer.vue';
+import HandoffDialog from './components/HandoffDialog.vue';
 import { useGameStore } from './stores/game';
 import { flushOfflineQueue } from './api/client';
+import { initialHandoffToken } from './lib/handoffToken';
 
-const router = useRouter();
+const handoffToken = ref(initialHandoffToken);
 
 onMounted(async () => {
   const gameStore = useGameStore();
@@ -23,6 +24,7 @@ onMounted(async () => {
     </router-view>
     <BottomNav />
     <ToastContainer />
+    <HandoffDialog v-if="handoffToken" :token="handoffToken" @close="handoffToken = null" />
   </div>
 </template>
 

@@ -3,8 +3,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
-import { useAchievementStore } from '@/stores/achievements';
-import { generateTransferCode, redeemTransferCode, showToast, api, ApiError } from '@/api/client';
+import { showToast, api } from '@/api/client';
+import { issueTransferCode, redeemTransferCode, portalUrl } from '@/api/id';
+import NameDialog from '@/components/NameDialog.vue';
 import { useSound } from '@/sound';
 import { useCalendar } from '@/composables/useCalendar';
 import { todayJST, nextMidnightJST } from '@/utils/date';
@@ -22,7 +23,6 @@ import {
 const { t, locale } = useI18n();
 const router = useRouter();
 const gameStore = useGameStore();
-const achievementStore = useAchievementStore();
 const { soundPromptNeeded, acceptSound, declineSound } = useSound();
 
 // Title vegetable icons (random pair, different left/right)
@@ -82,11 +82,11 @@ async function copyTransferCode() {
 
 async function doGenerateCode() {
   transferLoading.value = true;
-  try {
-    const result = await generateTransferCode();
+  const result = await issueTransferCode();
+  if (result.ok) {
     transferCode.value = result.code;
-  } catch {
-    showToast('error', 'transfer.failed');
+  } else {
+    showToast('error', result.reason === 'offline' ? 'toast.networkError' : 'transfer.failed');
     showTransferMenu.value = false;
   }
   transferLoading.value = false;
@@ -99,24 +99,25 @@ function openRedeemInput() {
 }
 
 async function doRedeem() {
-  const code = redeemCodeInput.value.trim().toUpperCase();
+  const code = redeemCodeInput.value.trim();
   if (!code) return;
   redeemLoading.value = true;
-  try {
-    const result = await redeemTransferCode(code);
-    // アカウントごとの状態を持つストアをすべて引き継ぎ先のものに入れ替える
-    achievementStore.reset();
-    await Promise.all([
-      gameStore.resetAfterTransfer(result.displayName),
-      achievementStore.fetchAchievements(),
-    ]);
+  // On success the stores switch to the new ID's records (onIdChange in stores/game.ts)
+  const result = await redeemTransferCode(code);
+  if (result.ok) {
     showRedeemInput.value = false;
     showToast('success', 'transfer.success');
-  } catch (e) {
-    const rateLimited = e instanceof ApiError && e.status === 429;
-    showToast('error', rateLimited ? 'transfer.tooManyAttempts' : 'transfer.failed');
+  } else {
+    showToast('error', result.reason === 'rate_limited' ? 'transfer.tooManyAttempts'
+      : result.reason === 'offline' ? 'toast.networkError' : 'transfer.failed');
   }
   redeemLoading.value = false;
+}
+
+/** Recovery codes and withdrawal are on the kan-game.app portal, shared by its games */
+function openAccountPortal() {
+  menuOpen.value = false;
+  window.open(portalUrl('/account'), '_blank', 'noopener');
 }
 
 function openRanking(seed: number) {
@@ -151,14 +152,8 @@ function isFuture(dateStr: string): boolean {
   return dateStr > today.value;
 }
 
-// --- User name ---
-const editingName = ref(false);
-const nameInput = ref(gameStore.displayName);
-
-function saveName() {
-  gameStore.setDisplayName(nameInput.value.trim());
-  editingName.value = false;
-}
+// --- User name (set once: kan-game.app names cannot change) ---
+const showNameDialog = ref(false);
 
 // --- Tutorial first visit ---
 const showTutorialPrompt = ref(false);
@@ -267,22 +262,11 @@ onMounted(() => {
       </h1>
       <p class="app-subtitle">{{ t('home.subtitle') }}</p>
       <div class="user-name-row">
-        <template v-if="editingName">
-          <input
-            v-model="nameInput"
-            class="name-input"
-            maxlength="20"
-            :placeholder="t('home.namePlaceholder')"
-            @keyup.enter="saveName"
-          />
-          <button class="name-save-btn" @click="saveName">{{ t('common.ok') }}</button>
-        </template>
-        <template v-else>
-          <span class="user-name" @click="editingName = true; nameInput = gameStore.displayName">
-            {{ gameStore.effectiveName }}
-            <img class="name-edit-icon" :src="pencilIcon" alt="" />
-          </span>
-        </template>
+        <span v-if="gameStore.displayName" class="user-name user-name-fixed">{{ gameStore.displayName }}</span>
+        <span v-else class="user-name" @click="showNameDialog = true">
+          {{ t('name.set') }}
+          <img class="name-edit-icon" :src="pencilIcon" alt="" />
+        </span>
       </div>
     </div>
 
@@ -407,6 +391,10 @@ onMounted(() => {
               <img class="menu-item-icon" :src="keyIcon" alt="" />
               <span class="menu-item-label">{{ t('transfer.redeem') }}</span>
             </button>
+            <button class="menu-item" @click="openAccountPortal">
+              <img class="menu-item-icon" :src="infoIcon" alt="" />
+              <span class="menu-item-label">{{ t('account.portal') }}</span>
+            </button>
             <div class="menu-divider" />
             <button class="menu-item" @click="menuOpen = false; router.push('/tutorial')">
               <img class="menu-item-icon" :src="questionIcon" alt="" />
@@ -446,7 +434,7 @@ onMounted(() => {
           <p class="modal-desc">{{ t('home.shareCodeDesc') }}</p>
           <input
             v-model="shareCodeInput"
-            class="share-code-input"
+            class="modal-input code-input"
             maxlength="10"
             :placeholder="t('home.shareCodePlaceholder')"
             @keyup.enter="submitShareCode"
@@ -486,11 +474,11 @@ onMounted(() => {
         <div class="modal">
           <h3 class="modal-title">{{ t('transfer.redeem') }}</h3>
           <p class="modal-desc">{{ t('transfer.redeemDesc') }}</p>
-          <p class="transfer-warning">{{ t('transfer.warning') }}</p>
+          <p class="modal-warning">{{ t('transfer.warning') }}</p>
           <input
             v-model="redeemCodeInput"
-            class="share-code-input"
-            maxlength="10"
+            class="modal-input code-input"
+            maxlength="20"
             :placeholder="t('transfer.codePlaceholder')"
             @keyup.enter="doRedeem"
           />
@@ -519,6 +507,7 @@ onMounted(() => {
     </Teleport>
 
     <RankingModal :seed="rankingSeed" :open="showRanking" @close="showRanking = false" />
+    <NameDialog :open="showNameDialog" @close="showNameDialog = false" />
   </div>
 </template>
 
@@ -661,49 +650,12 @@ onMounted(() => {
   background: var(--border);
   margin: 4px 12px;
 }
-.modal-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.modal-btn-primary {
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: var(--brand);
-  color: #fff;
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
-}
-.modal-btn-primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.modal-btn-secondary {
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  color: var(--text-muted);
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
-}
-.share-code-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+/* Codes typed in (with .modal-input) */
+.code-input {
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.15em;
-  text-align: center;
   text-transform: uppercase;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  margin-bottom: 12px;
-  box-sizing: border-box;
 }
 
 /* Hero */
@@ -743,31 +695,14 @@ onMounted(() => {
   font-weight: 600;
   cursor: pointer;
 }
+.user-name-fixed {
+  cursor: default;
+}
 .name-edit-icon {
   width: 14px;
   height: 14px;
   margin-left: 2px;
   vertical-align: middle;
-}
-.name-input {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 14px;
-  width: 160px;
-  text-align: center;
-  background: var(--bg-input);
-  color: var(--text-primary);
-}
-.name-save-btn {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  background: var(--brand);
-  color: #fff;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
 }
 
 /* Sections */
@@ -1088,37 +1023,7 @@ onMounted(() => {
   bottom: 3px;
 }
 
-/* Modal */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--overlay-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-.modal {
-  background: var(--bg-card);
-  border-radius: 16px;
-  padding: 24px;
-  width: 320px;
-  max-width: 90vw;
-}
-.modal-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 4px;
-}
-.modal-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 0 0 16px;
-}
+/* Modal (the shared parts are in theme.css) */
 .transfer-code-label {
   font-size: 12px;
   color: var(--text-secondary);
@@ -1148,14 +1053,6 @@ onMounted(() => {
   font-size: 11px;
   color: var(--text-muted);
   text-align: center;
-  margin: 0 0 12px;
-}
-.transfer-warning {
-  font-size: 11px;
-  color: var(--warning-text, #c05621);
-  background: var(--warning-bg, #fefcbf);
-  border-radius: 6px;
-  padding: 8px 10px;
   margin: 0 0 12px;
 }
 </style>

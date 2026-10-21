@@ -23,6 +23,9 @@ export default defineConfig(async () => {
           kvNamespaces: ['KV'],
           r2Buckets: ['R2'],
           d1Databases: ['DB'],
+          // wrangler.jsonc binds ID to kan/game's local Worker, which the tests do not run. The tests
+          // call the Worker with the fake ID platform instead (test/helpers.ts `call`)
+          serviceBindings: { ID: () => new Response('ID platform not in tests', { status: 500 }) },
           bindings: {
             JWT_SECRET: 'test-secret-key-for-vitest',
             ENVIRONMENT: 'test',

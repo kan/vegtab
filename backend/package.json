@@ -6,11 +6,12 @@
   "type": "module",
   "scripts": {
     "predev": "node -e \"require('fs').mkdirSync('../frontend/dist', { recursive: true })\"",
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "wrangler dev --port 8788",
+    "deploy:dev": "npm run db:migrate:dev && wrangler deploy --env dev",
     "deploy:prod": "npm run db:migrate:prod && wrangler deploy --env production",
-    "db:migrate": "wrangler d1 migrations apply tomado-db --local",
-    "db:migrate:prod": "wrangler d1 migrations apply tomado-db --env production --remote",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:dev": "wrangler d1 migrations apply DB --env dev --remote",
+    "db:migrate:prod": "wrangler d1 migrations apply DB --env production --remote",
     "test": "vitest run",
     "typecheck": "wrangler types --check --strict-vars=false && tsc --noEmit",
     "cf-typegen": "wrangler types --strict-vars=false"

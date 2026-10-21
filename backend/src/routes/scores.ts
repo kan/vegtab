@@ -10,7 +10,11 @@ import { findOrCreateDailySeed } from '../lib/seed';
 import { evaluateAchievements } from '../lib/achievements';
 import { verifyReplay } from '../lib/replay-verify';
 import { MODE } from '../lib/mode';
-import { MAX_CLEAR_TIME_MS, BETTER_THAN_STORED, rankingCacheKey } from '../lib/ranking-rule';
+import { newReplayKey } from '../lib/replay-key';
+import { invalidateRankings } from '../lib/profile';
+import {
+  MAX_CLEAR_TIME_MS, BETTER_THAN_STORED, PUBLIC_NAME, publicNameJoins,
+} from '../lib/ranking-rule';
 
 /**
  * Upper bound on replay length. Clear has no move limit (it ends on clearing or a stuck board),
@@ -100,7 +104,7 @@ scoreRoutes.post('/', bodyLimit({
     scoreId = stored.id;
   } else {
     // Write the replay log first so a stored row never points at a missing object
-    const replayLogKey = `replays/${userId}/${seed.id}/${generateId()}.json`;
+    const replayLogKey = newReplayKey(userId, seed.id);
     await c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog));
 
     // One statement keeps concurrent first submissions from creating duplicate rows:
@@ -127,7 +131,7 @@ scoreRoutes.post('/', bodyLimit({
       scoreId = upserted.id;
       await Promise.all([
         // Invalidate the ranking cache only after the DB write has committed
-        c.env.KV.delete(rankingCacheKey(seed.id)),
+        invalidateRankings(c.env, [seed.id]),
         // The row now points at the new object, so the replaced best's replay is unreferenced
         stored?.replay_log_key ? c.env.R2.delete(stored.replay_log_key) : undefined,
       ]);
@@ -203,10 +207,10 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
 
   const score = await c.env.DB.prepare(
     `SELECT ps.replay_log_key, ps.score as final_score,
-            ps.user_id, s.seed_value, s.daily_date, u.display_name
+            ps.user_id, s.seed_value, s.daily_date, ${PUBLIC_NAME} AS display_name
      FROM play_scores ps
      JOIN puzzle_seeds s ON s.id = ps.seed_id
-     LEFT JOIN users u ON u.id = ps.user_id
+     ${publicNameJoins('ps')}
      WHERE ps.id = ? AND ps.mode = ?`
   ).bind(scoreId, MODE).first<{
     replay_log_key: string | null; final_score: number; seed_value: string;

@@ -2,45 +2,40 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import type { Bindings, Variables } from '../types';
+import { idPlatform } from '../lib/id-auth';
+import { registerProfile, getProfileName, nameOutcome } from '../lib/profile';
 
-/** Control characters and bidi overrides/isolates that can break or spoof how names render */
-const FORBIDDEN_NAME_CHARS = /[\p{Cc}\u{202A}-\u{202E}\u{2066}-\u{2069}]/u;
-
-const updateProfileSchema = z.object({
-  displayName: z.string().trim().min(1).max(20)
-    .refine((name) => !FORBIDDEN_NAME_CHARS.test(name), 'Invalid characters')
-    .nullable(),
+const registerProfileSchema = z.object({
+  // The rules are the ID platform's (kan/game src/names.ts); this only bounds the input
+  displayName: z.string().min(1).max(256),
+  // Publishing the name in vegtab's rankings is agreed to per game (ID_DESIGN.md「名前」)
+  consent: z.literal(true),
 });
 
 export const userRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
-// GET /api/user/profile
+// GET /api/user/profile — the name published in vegtab's rankings, or null before consent.
+// A name chosen in another kan-game.app game comes with POST /api/id/session instead
 userRoutes.get('/profile', async (c) => {
-  const userId = c.get('userId');
-
-  const user = await c.env.DB.prepare(
-    'SELECT id, display_name FROM users WHERE id = ?'
-  ).bind(userId).first<{
-    id: string;
-    display_name: string | null;
-  }>();
-
-  if (!user) return c.json({ error: 'User not found' }, 404);
-
-  return c.json({
-    id: user.id,
-    displayName: user.display_name,
-  });
+  return c.json({ displayName: await getProfileName(c.env.DB, c.get('userId')) });
 });
 
-// PATCH /api/user/profile
-userRoutes.patch('/profile', zValidator('json', updateProfileSchema), async (c) => {
+// POST /api/user/profile — registers the kan-game.app name and consents to publishing it.
+// An ID already named (here or in another game) keeps its name: names cannot change
+userRoutes.post('/profile', zValidator('json', registerProfileSchema), async (c) => {
   const userId = c.get('userId');
   const { displayName } = c.req.valid('json');
 
-  await c.env.DB.prepare(
-    'UPDATE users SET display_name = ?, updated_at = datetime(\'now\') WHERE id = ?'
-  ).bind(displayName, userId).run();
+  const outcome = nameOutcome(await idPlatform(c.env).registerName(userId, displayName));
+  switch (outcome.status) {
+    case 'name_taken':
+      return c.json({ error: 'name_taken' }, 409);
+    case 'invalid':
+      return c.json({ error: 'invalid_name' }, 400);
+    case 'no_id':
+      return c.json({ error: 'id_deleted' }, 410);
+  }
 
-  return c.json({ success: true });
+  await registerProfile(c.env, userId, outcome.name);
+  return c.json({ displayName: outcome.name });
 });

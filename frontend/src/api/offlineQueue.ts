@@ -12,7 +12,7 @@ export interface QueueEntry {
   body: string;
   createdAt: number;
   retries: number;
-  /** 追加したときのユーザー。送信時のトークンで送られるので、別のアカウントに切り替わっていたら送らない */
+  /** 追加したときの ID。送信時の Cookie の ID で送られるので、別の ID に切り替わっていたら送らない */
   userId?: string | null;
 }
 
@@ -48,10 +48,6 @@ export function enqueue(url: string, method: string, body: string, userId: strin
   saveQueue(queue);
 }
 
-export function clearQueue() {
-  saveQueue([]);
-}
-
 export function getQueueSize(): number {
   return loadQueue().length;
 }
@@ -65,7 +61,8 @@ export async function processQueue(
   getCurrentUserId: () => string | null,
 ): Promise<{ succeeded: number; failed: number; remaining: number }> {
   const queue = loadQueue();
-  if (queue.length === 0) return { succeeded: 0, failed: 0, remaining: 0 };
+  // Without an ID nothing can be sent; the queue waits for one
+  if (queue.length === 0 || !getCurrentUserId()) return { succeeded: 0, failed: 0, remaining: queue.length };
 
   let succeeded = 0;
   let failed = 0;
@@ -90,6 +87,9 @@ export async function processQueue(
       const res = await doFetch(entry.url, entry.method, entry.body);
       if (res.ok || res.status === 409) {
         succeeded++;
+      } else if (res.status === 401 || res.status === 410) {
+        // The ID's cookie, not the request, was refused; the ID is asked for again (src/api/id.ts)
+        retryOrFail(entry);
       } else if (res.status >= 400 && res.status < 500) {
         failed++; // Client error — don't retry
       } else {

@@ -29,9 +29,28 @@ export const BETTER_THAN_STORED = `excluded.is_cleared > play_scores.is_cleared
           AND ${timeOrLast('excluded.')} < ${timeOrLast('play_scores.')})))`;
 
 /**
+ * 記録の持ち主の公開する名前を引く JOIN（#103）。kan-game.app の ID は、名前と公開への同意（profiles）が
+ * あるときだけ名前を持つ。vegtab.app から引き継がれていない旧アカウントは users に残り、旧 URL で決めた名前
+ * （未設定なら null）を持つ。`table` は play_scores の別名
+ */
+export function publicNameJoins(table: string): string {
+  return `LEFT JOIN profiles pn_p ON pn_p.account_id = ${table}.user_id
+     LEFT JOIN users pn_u ON pn_u.id = ${table}.user_id`;
+}
+
+/** publicNameJoins で引いた名前。null は名前がない（旧アカウントの未設定か、同意していない ID） */
+export const PUBLIC_NAME = 'COALESCE(pn_p.display_name, pn_u.display_name)';
+
+/**
+ * ランキングに載る記録か（publicNameJoins と一緒に使う）。名前と同意のある ID と、引き継がれていない旧アカウント
+ * （旧 URL の頃に載っていた記録を残す）
+ */
+export const RANKED_HOLDER = '(pn_p.account_id IS NOT NULL OR pn_u.id IS NOT NULL)';
+
+/**
  * ランキングの KV キャッシュのキー。並びやエントリの形を変えたら版を上げ、古い形のキャッシュを読まないようにする
  * （古いキーは TTL で消える）
  */
 export function rankingCacheKey(seedId: string): string {
-  return `ranking:v2:${seedId}:${MODE}`;
+  return `ranking:v3:${seedId}:${MODE}`;
 }

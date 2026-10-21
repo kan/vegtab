@@ -2,7 +2,9 @@ import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 import { isRankingClosed } from '../lib/date';
 import { MODE } from '../lib/mode';
-import { RANKING_ORDER, rankingCacheKey } from '../lib/ranking-rule';
+import {
+  PUBLIC_NAME, RANKED_HOLDER, RANKING_ORDER, publicNameJoins, rankingCacheKey,
+} from '../lib/ranking-rule';
 
 const DEFAULT_DISPLAY_NAME = 'NO NAME';
 
@@ -122,13 +124,18 @@ interface RankedRow {
 /**
  * クリアした記録をユーザーごとのベスト 1 件に絞り、同点を同順位にした順位（1, 1, 3, ...）を付ける CTE。
  * 一覧・「あなたの順位」の両方がこれを使うので、食い違わない。
+ * 順位を付けるのはランキングに載る記録（RANKED_HOLDER）だけ。2 つ目のバインドの ID は、載らなくても
+ * 順位を付ける（名前を決める前の本人に、名前を決めれば何位かを見せる）。一覧では null を渡す。
  * created_at はその seed×mode に初めて送った時刻（ベスト更新では変わらない）で、同順位の中の並びと、
- * 同じ記録が複数行あるときの代表を決めるのに使う。バインド: seed_id, mode
+ * 同じ記録が複数行あるときの代表を決めるのに使う。バインド: seed_id, mode, 本人の ID か null
  */
 const RANKED_CTE = `WITH best AS (
-       SELECT *, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY ${RANKING_ORDER}, created_at, id) AS rn
-       FROM play_scores
-       WHERE seed_id = ? AND mode = ? AND is_cleared = 1
+       SELECT ps.*, ${PUBLIC_NAME} AS display_name,
+              ROW_NUMBER() OVER (PARTITION BY ps.user_id ORDER BY ${RANKING_ORDER}, ps.created_at, ps.id) AS rn
+       FROM play_scores ps
+       ${publicNameJoins('ps')}
+       WHERE ps.seed_id = ? AND ps.mode = ? AND ps.is_cleared = 1
+         AND (${RANKED_HOLDER} OR ps.user_id = ?)
      ), ranked AS (
        SELECT *, RANK() OVER (ORDER BY ${RANKING_ORDER}) AS rank FROM best WHERE rn = 1
      )`;
@@ -136,11 +143,10 @@ const RANKED_CTE = `WITH best AS (
 async function queryRanking(db: D1Database, seedId: string): Promise<CachedRankingEntry[]> {
   const { results } = await db.prepare(
     `${RANKED_CTE}
-     SELECT r.*, u.display_name FROM ranked r
-     JOIN users u ON u.id = r.user_id
-     ORDER BY r.rank, r.created_at, r.id
+     SELECT * FROM ranked
+     ORDER BY rank, created_at, id
      LIMIT ?`
-  ).bind(seedId, MODE, RANKING_LIMIT).all<RankedRow & { display_name: string | null }>();
+  ).bind(seedId, MODE, null, RANKING_LIMIT).all<RankedRow & { display_name: string | null }>();
 
   return (results ?? []).map(e => ({
     rank: e.rank,
@@ -161,7 +167,7 @@ async function getUserRank(
   const row = await db.prepare(
     `${RANKED_CTE}
      SELECT * FROM ranked WHERE user_id = ?`
-  ).bind(seedId, MODE, userId).first<RankedRow>();
+  ).bind(seedId, MODE, userId, userId).first<RankedRow>();
   if (!row) return null;
 
   return { rank: row.rank, score: row.score, moveCount: row.move_count, clearTimeMs: row.clear_time_ms };

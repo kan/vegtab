@@ -11,6 +11,7 @@ import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import RankingModal from '@/components/RankingModal.vue';
 import DebugPanel from '@/components/DebugPanel.vue';
 import SettingsModal from '@/components/SettingsModal.vue';
+import NameDialog from '@/components/NameDialog.vue';
 import { shareIcon as shareIconUrl, trophyIcon } from '@/assets/icons';
 import { buildShareUrl } from '@/utils/shareUrl';
 import { isRemovedMode } from '@/lib/legacyData';
@@ -28,7 +29,6 @@ const debugPanel = ref<InstanceType<typeof DebugPanel> | null>(null);
 const puzzleBoard = ref<InstanceType<typeof PuzzleBoard> | null>(null);
 const scoreRecorded = ref(false);
 const showNamePrompt = ref(false);
-const nameInput = ref('');
 
 // --- View phase ---
 // 'loading': 盤面を用意する前（過去日の案内を出すか、すぐ始めるかを決めるまで）
@@ -169,22 +169,9 @@ watch(() => store.isGameOver, (ended) => {
       replayLog: [...store.replayLog],
     });
     // Prompt for name if not set
-    if (!gameStore.displayName) {
-      showNamePrompt.value = true;
-      nameInput.value = '';
-    }
+    if (!gameStore.displayName) showNamePrompt.value = true;
   }
 });
-
-function saveNameAndDismiss() {
-  const name = nameInput.value.trim();
-  if (name) gameStore.setDisplayName(name);
-  showNamePrompt.value = false;
-}
-
-function skipNamePrompt() {
-  showNamePrompt.value = false;
-}
 
 // --- Share ---
 const shareToast = ref(false);
@@ -331,26 +318,7 @@ const gameOverScore = computed(() => store.isCleared
       <!-- Share toast -->
       <div v-if="shareToast" class="share-toast">{{ t('common.copiedToClipboard') }}</div>
 
-      <!-- Name prompt modal -->
-      <Teleport to="body">
-        <div v-if="showNamePrompt" class="modal-overlay">
-          <div class="modal">
-            <h3 class="modal-title">{{ t('puzzle.namePromptTitle') }}</h3>
-            <p class="modal-desc">{{ t('puzzle.namePromptMessage') }}</p>
-            <input
-              v-model="nameInput"
-              class="name-prompt-input"
-              maxlength="20"
-              :placeholder="t('home.namePlaceholder')"
-              @keyup.enter="saveNameAndDismiss"
-            />
-            <div class="modal-actions">
-              <button class="modal-btn-primary" :disabled="!nameInput.trim()" @click="saveNameAndDismiss">{{ t('common.ok') }}</button>
-              <button class="modal-btn-secondary" @click="skipNamePrompt">{{ t('puzzle.namePromptLater') }}</button>
-            </div>
-          </div>
-        </div>
-      </Teleport>
+      <NameDialog :open="showNamePrompt" @close="showNamePrompt = false" />
 
       <SettingsModal :open="showSettings" @close="showSettings = false" />
       <DebugPanel v-if="isDev" ref="debugPanel" />
@@ -579,74 +547,5 @@ const gameOverScore = computed(() => store.isCleared
 .actions-col {
   flex-direction: column;
   gap: 10px;
-}
-/* Name prompt modal */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-.modal {
-  background: var(--bg-card);
-  border-radius: 16px;
-  padding: 24px;
-  width: 320px;
-  max-width: 90vw;
-}
-.modal-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 4px;
-}
-.modal-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 0 0 16px;
-}
-.modal-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.modal-btn-primary {
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: var(--brand);
-  color: #fff;
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
-}
-.modal-btn-primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.modal-btn-secondary {
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  color: var(--text-muted);
-  font-weight: 600;
-  font-size: 15px;
-  cursor: pointer;
-}
-.name-prompt-input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 16px;
-  text-align: center;
-  background: var(--bg-input);
-  color: var(--text-primary);
-  margin-bottom: 12px;
-  box-sizing: border-box;
 }
 </style>

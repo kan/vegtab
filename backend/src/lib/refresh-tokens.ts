@@ -17,7 +17,10 @@ async function signTokenPair(secret: string, userId: string, familyId: string, j
   return { accessToken, refreshToken };
 }
 
-/** Sign in on a device: starts a new refresh token family */
+/**
+ * Sign in on a device: starts a new refresh token family. Old accounts can no longer sign in
+ * (docs/SPEC.md §5.4); only the tests use this, to stand for an old account's device
+ */
 export async function issueTokens(db: D1Database, secret: string, userId: string): Promise<TokenPair> {
   const familyId = generateId();
   const jti = generateId();

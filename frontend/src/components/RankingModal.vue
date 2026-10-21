@@ -2,7 +2,8 @@
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { api, getUserId } from '@/api/client';
+import { api } from '@/api/client';
+import { getUserId } from '@/api/id';
 import { formatRecordTime } from '@/lib/playTime';
 import { goldMedalIcon, silverMedalIcon, bronzeMedalIcon, playIcon, brickIcon } from '@/assets/icons';
 

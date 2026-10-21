@@ -18,15 +18,15 @@
 - ランキングはシードごとに存在する。並び順は §3.7。
 - HOME画面からは当日のデイリーシードのランキングにショートカットでアクセスできる。
 - プレイ結果をSNS等にシェアできる。シェア内容にはシード情報・クリア/失敗・手数・クリアまでの時間を含む。
-- ランキングにはプレイヤーの表示名（display_name）が表示される。
+- ランキングにはプレイヤーの表示名（display_name）が表示される。載るのは名前とランキングへの公開の同意を設定した ID の記録だけ（§5.2）。
 - 自分のランク（順位）がランキングモーダル上部に強調表示される。
 - リプレイデータがあるエントリには再生ボタン（▶）が表示され、手順再生画面に遷移できる。ランキングの締め切り前は自分のエントリだけ、締め切り後は全エントリが対象になる。
 
 ### 1.3. ユーザー名（表示名）
-- プレイヤーは任意のタイミングで表示名（display_name）を設定・変更できる。
-- 最大20文字。未設定の場合は「Anonymous」として表示される。
-- ランキングやスコア共有時にこの表示名が使用される。
-- HOME画面から設定可能。
+- 表示名は kan-game.app の名前で、kan-game.app のゲームで共通。重複できず、一度決めると変えられない（§5.2）。
+- 見た目の 2〜20 文字。規則は kan-game.app の ID 基盤が決める。
+- 決めるときに、vegtab のランキングへ公開することに同意する。別のゲームで名前を決めていれば、同意だけを求める。
+- HOME 画面と、ゲーム終了後の案内から設定できる。未設定のあいだ、ローカルの表示は「NO NAME」。
 
 ### 1.4. 実績（トロフィー）
 - パズルプレイを通じて実績を解除できるコレクション要素。報酬なしの純粋なトロフィーシステム。
@@ -128,7 +128,7 @@
 - **落下しない:** おじゃまタイルの下のタイルが消えても、おじゃまタイル自体は落下しない（位置が固定される）。
 - **すり抜け落下:** 通常タイルはおじゃまタイルをすり抜けて落下する。おじゃまタイルは固定されたまま、その上にある通常タイルは下方の空きスペースまで貫通して落下する。おじゃまタイルが消滅した場合も同様に、上のタイルがすり抜けて落下する。
 - **マッチに参加しない:** おじゃまタイルは通常タイルのマッチ判定には関与しない。
-- おじゃまタイルの配置数（10〜20）・位置・耐久値はシード値によって決定される。
+- おじゃまタイルはどの日も 16 個で、耐久値は 1 が 6 個、2 が 8 個、3 が 2 個（合計 28。`engine/src/obstacle.ts` の `OBSTACLE_DURABILITIES`）。日ごとの難しさのぶれを抑えるため（#106）。位置と、どのおじゃまタイルにどの耐久値を割り当てるかはシード値によって決定される。
 
 ### 3.6. スコア計算
 
@@ -226,7 +226,8 @@
 
 **リプレイログの記録:**
 - プレイ中の操作（スワイプ・タップ・スプーン選択・合成）を `ReplayAction` 型の配列として記録する。
-- スコア送信時にリプレイログも送信される。ベストスコア更新時のみR2に保存される（`replay_log_key`）。
+- スコア送信時にリプレイログも送信される。ベストスコア更新時のみ R2 に保存される（`replay_log_key`、キーは `replays-v2/<ID>/<seed_id>/<UUID>.json`）。
+- #106 より前の盤面のリプレイは、kan-game.app への移行で捨てた（§5.4）。
 - セッション途中の中断時はsessionStorageにリプレイログも保存し、復帰時に復元する。
 
 **ReplayAction型:**
@@ -366,39 +367,24 @@ project/
 
 ## 5. 認証・セキュリティ
 
-### 5.1. 認証方式
-- **方式:** JWT (JSON Web Token) による認証。リクエストの `Authorization: Bearer <token>` ヘッダで送信。
-- **トークン管理:** アクセストークン（1h）とリフレッシュトークン（90d）の2トークン方式。ライブラリは jose。
-- **匿名ログインフロー:** 初回アクセス時にクライアント側でUUIDを生成、バックエンドに送信して「ゲストユーザー」としてD1に登録。
+### 5.1. 認証方式（kan-game.app の ID）
 
-### 5.2. アカウント引き継ぎ（マルチデバイス）
+アカウントは kan-game.app の匿名 ID である（#103）。仕様の正本は kan/game の `docs/ID_DESIGN.md` で、ここには vegtab から見た契約だけを書く。
 
-1つのアカウントを複数のデバイス/ブラウザで共有する仕組み。引き継ぎ後も元の端末はそのまま利用可能。
+- **資格情報:** ID 基盤が発行する、`Domain=kan-game.app` の `HttpOnly` Cookie（ES256 で署名した JWT、400 日）。画面はトークンを持たず、同一オリジンの `/api/*` に Cookie が付く。
+- **発行と延長:** 画面は起動時とオフラインからの復帰時に `POST /api/id/session` を呼ぶ。Worker は `/api/id/*` を Service Binding（`ID`）で ID 基盤へそのまま中継する。
+- **検証:** Worker は ID 基盤の公開鍵（`ID_PUBLIC_KEYS`）で Cookie を検証し、`sub` を `user_id` として使う。API ごとに ID 基盤へ問い合わせない。検証のコード（`backend/src/lib/id-token.ts`）と RPC の型（`id-rpc.ts`）は kan/game の `src/token.ts` と `src/rpc.ts` の写しで、書き換えない。テストベクター（`backend/test/kan-game/`）と一緒に写し直す。
+- **エラー:** Cookie がない、または無効なら `401`。退会した ID の Cookie は `410 id_deleted`（`deleted_accounts` で判定）。画面は `410` で ID を捨てて新しい ID を受け取り、`401` で ID を取り直す。
+- **Origin:** 状態を変えるリクエストは、`Origin` が `ALLOWED_ORIGINS` に含まれることを必須にする（Cookie は他サイトからのリクエストにも付くため）。同一オリジンの `GET` は `Origin` を省けるので、`GET` では求めない。
+- **環境:** 環境ごとに Cookie 名、`iss`、公開鍵が違う（`backend/wrangler.jsonc`）。ローカルは `localhost` で kan/game の `wrangler dev` を使う。開発は `vegtab-dev.kan-game.app` で `dev.kan-game.app` を、本番は `vegtab.kan-game.app` で `kan-game.app` を使う。
 
-**引き継ぎコード発行フロー:**
-1. ユーザーが設定画面で「引き継ぎコード発行」をタップ
-2. バックエンドが8文字の英数字コードを生成し、KVに `link:{code}` → `userId` を保存（TTL: 10分）
-3. コードと有効期限をユーザーに表示
+### 5.2. 名前、引き継ぎ、退会
 
-**引き継ぎコード入力フロー:**
-1. 別端末で「引き継ぎコードを入力」を選択し、8文字コードを入力
-2. バックエンドがKVからコードを検索し、対応する `userId` を取得
-3. 新端末の `device_id` を `user_devices` テーブルに登録
-4. 対象ユーザーのJWTを発行し、新端末に保存
-5. KVからコードを削除（1回限り有効）
-
-**マルチデバイス管理:**
-- `user_devices` テーブルで1ユーザーに複数の `device_id` を紐付ける
-- 認証時のデバイス検索順序: `user_devices` → `users.device_id`（後方互換）
-- 各端末は独立したJWTを保持し、同時にログイン可能
-- 新端末にもともと別ユーザーが存在した場合、そのユーザーは孤立する（スコアデータは残るがデバイス紐付けは解除）
-
-**API:**
-- `POST /api/account/link-code`（認証必須）→ `{ code, expiresAt }`
-- `POST /api/account/link`（認証不要）→ `{ code, deviceId }` → `{ userId, accessToken, refreshToken }`
-
-**将来拡張:**
-- Google / Apple ID 連携による外部認証。`user_devices` テーブルと同様の構造で `user_auth_providers` テーブルを追加し、外部プロバイダのID → `userId` のマッピングを管理する。
+- **名前:** kan-game.app 全体で 1 つで、重複できず、変更できない。規則（2〜20 文字など）と重複の判定は ID 基盤が持つ。画面が名前と公開への同意を `POST /api/user/profile` に送り、Worker が `registerName` の RPC で登録してから、名前と同意を `profiles` に書く。別のゲームで名前を決めた ID は、名前を聞かずに同意だけを求める。
+- **ランキングへの公開:** 名前と同意（`profiles`）のある ID の記録だけをランキングに載せる。同意していない ID は、自分の順位（名前を決めたら何位か）だけを見られる。
+- **引き継ぎコード:** kan-game.app の ID 基盤の機能（`/api/id/transfer-codes`、8 文字、10 分、1 回限り）。入力した端末はコードを発行した ID に切り替わり、その端末がそれまで使っていた ID の記録は移らない（統合しない）。
+- **復旧コードと退会:** kan-game.app のポータル（アカウント画面）にだけ置く。HOME のメニューからポータルを開く。
+- **退会:** ID 基盤が `GAME_VEGTAB` の Service Binding で `GameService.deleteAccount(id)`（`backend/src/game-service.ts`）を呼ぶ。`deleted_accounts` に記録し、その ID の記録（`play_scores`、`achievements`、`push_subscriptions`、`profiles`、`legacy_claims`）と R2 のリプレイを消す。何度呼んでも同じ結果になる。退会の途中に書き込まれた行は、毎日の定期実行（`sweepDeletedAccounts`）が消す。
 
 ### 5.3. 不正対策
 
@@ -415,15 +401,35 @@ project/
 - **クリアまでの時間は自己申告:** 時間はクライアントが測って送る値で、リプレイ検証では確かめられない。値を書き換えて送ることも、上の事前に解く方法で準備した操作列を素早く入れることもできる。時間を順位に入れたので、事前に解く利得は表示順だけでなく順位そのものになる。プレイヤーが少ない今は受け入れている（#91）。
   - 競技性を上げるときは、サーバーがその日の開始時刻を記録する方式（その日の初回プレイにオンライン接続が要る）を、上のシードのサーバー発行と合わせて検討する。
 
+### 5.4. vegtab.app からの移行
+
+`vegtab.app` の旧アカウント（端末に `deviceId` と JWT を置く方式）は、`vegtab.kan-game.app` の ID へ本人が引き継ぐ。同じ Worker と D1 が両方のホストを配信する。
+
+- **旧 URL（`LEGACY_HOST` = `vegtab.app`）:** 画面は移転の案内だけを出す（`frontend/src/legacy/`）。Worker は `/s/*` を新しい URL へ `301` で送り、`/api/health`、`/api/auth/refresh`、`/api/legacy/handoff` 以外の API に `410 moved` を返す。旧アカウントは新しく作れず、書き込みも止まる。
+- **引き継ぎ:** 旧 URL の画面が、端末に残る旧トークンで `POST /api/legacy/handoff` を呼び、1 回限りのトークン（32 バイト、30 分、D1 にはハッシュだけ）を受け取る。新しい URL を `#handoff=<トークン>` 付きで開き、画面が確認を取ってから `POST /api/legacy/claim` に送る。トークンを URL のフラグメントに載せるのは、サーバーのログとリファラーに残さないため。確認を挟むのは、他人のリンクで気付かないまま記録を移されないようにするため。
+- **移すもの:** 旧アカウントの `play_scores` と `achievements` を、今の ID の `user_id` に付け替える。今の ID に同じシードの記録があれば、今の ID の記録を残す。実績は進み具合の良い方にまとめる。旧アカウントの名前は `registerName` で今の ID の名前として登録し、公開への同意も引き継ぐ（旧 URL でランキングに載せていたため）。取られている名前や規則に合わない名前は登録せず、画面が名前を決め直すよう求める。今の ID に名前があれば、その名前を使う。
+- **移した後:** 旧アカウントの `users` の行と、端末・トークン・購読の行を消し、`legacy_claims` に移した先を残す。同じ旧アカウントは 1 回しか引き継げない。旧 URL で再び引き継ぐと `409` になり、画面は新しい URL の引き継ぎコードを使うよう案内する。
+- **引き継がれない記録:** `users` に残る旧アカウントの記録は、過去日のランキングに旧 URL の名前（未設定なら NO NAME）でそのまま載る。消すと他の参加者の順位が変わるため。
+- **移さないもの:** 端末の localStorage（送信前の記録、設定、プレイ中の盤面）。オリジンが変わり、新しい URL からは読めない。
+- **移行のときに捨てたもの（マイグレーション 0014）:** Clear 以外のモードの記録と、定義にない実績。リプレイはすべて（#106 で盤面の生成が変わり、旧い盤面では再生できないため）。R2 の旧リプレイ（`replays/` の下）は、バケットのライフサイクルのルールで消す。新しいリプレイは `replays-v2/` の下に置く。移行の時点でまだ締め切っていないランキング（当日と、猶予中の前日）の記録も捨てた。旧い盤面と新しい盤面の記録が混ざるため。
+  - `npm run deploy` はマイグレーションを当ててから Worker を出す。そのあいだに、旧い Worker が旧い盤面の記録を書きうる。旧い Worker の記録はリプレイのキーが `replays/` で始まる。デプロイの直後に `npx wrangler d1 execute DB --env production --remote --command "DELETE FROM play_scores WHERE replay_log_key LIKE 'replays/%'"` で消す。
+- **旧 URL を閉じる手順:** `vegtab.app` は route（`vegtab.app/*`）で Worker に向けており、dashboard の proxied の `AAAA 100::` が要る。閉じるときは route を設定と dashboard の両方から消し、`AAAA 100::` を消す。旧 URL を残すあいだは、どちらも消さない。閉じたら、`users`・`user_devices`・`transfer_codes`・`refresh_token_families`・`legacy_handoffs` と JWT の秘密鍵（`JWT_SECRET`）、`/api/auth/refresh` と `/api/legacy/handoff` を外せる。閉じる時期は未定。
+
 ## 6. データベース設計 (Cloudflare D1)
 
-- **`users`**: `id` (UUID), `display_name` (表示名, 最大20文字), `device_id`, `created_at`
-- **`user_devices`**: `user_id` (FK→users), `device_id` (UNIQUE), `linked_at` — マルチデバイス対応。引き継ぎコードで紐付けた追加デバイスを管理。
+各テーブルの `user_id` は kan-game.app の ID（§5.1）。`vegtab.app` から引き継がれていない旧アカウントの行だけは、`users.id` を指す（§5.4）。
+
+- **`profiles`**: `account_id` (kan-game.app の ID), `display_name` (ID 基盤に登録した名前の写し), `consented_at` (ランキングへの公開に同意した時刻、ミリ秒) — ランキングに載る ID
+- **`deleted_accounts`**: `account_id`, `deleted_at` (ミリ秒) — 退会した ID。Cookie は最長 400 日有効なので残し続ける
+- **`legacy_handoffs`**: `token_hash` (SHA-256), `user_id` (旧アカウント), `expires_at` (ミリ秒) — 旧 URL から新しい URL へ渡す 1 回限りのトークン
+- **`legacy_claims`**: `legacy_user_id`, `account_id`, `claimed_at` (ミリ秒) — 引き継いだ旧アカウントと移した先
+- **`users`**: `id` (UUID), `display_name` (表示名, 最大 20 文字), `device_id`, `created_at` — `vegtab.app` の旧アカウント。引き継ぐと消える
+- **`user_devices`** / **`transfer_codes`** / **`refresh_token_families`**: 旧アカウントの端末、引き継ぎコード、リフレッシュトークン。旧 URL を閉じたら捨てる
 - **`puzzle_seeds`**: `seed_id`, `seed_value` (ユニーク), `share_code` (ユニーク, 6〜8文字の英数字), `daily_date` (YYYY-MM-DD), `created_at`
 - **`play_scores`**: `id`, `user_id`, `seed_id`, `mode`, `score`, `move_count` (実際の手数), `move_limit` (nullable), `is_cleared` (クリア可否), `clear_time_ms` (クリアまでのその日の累計時間。ミリ秒、自己申告。未クリアと、時間を順位に入れる前の記録は NULL), `max_chain` (最大連鎖数, default 0), `cascade_points` (default 0), `replay_log_key` (R2のオブジェクトキー), `created_at`
   - `mode` に書くのは `clear` だけ。撤去したモード（sprint / survival / cascade）の行が残っているので、照会は全て `mode = 'clear'` で絞る。API の `mode` も `clear` だけを受け付ける。
   - `move_limit` と `cascade_points` は撤去したモード（Sprint / Cascade）用の列で、今は書かない（既定値のまま）。
-  - 撤去したモードの行と不要な列は、kan-game.app への移行（#103）で捨てる。列を消すマイグレーションは、コードの対応をデプロイした後に別で行う。
+  - 撤去したモードの行は、kan-game.app への移行（#103、マイグレーション 0014）で捨てた。不要な列（`mode`、`move_limit`、`cascade_points`）を消すマイグレーションは、コードの対応をデプロイした後に別で行う。
 - **`achievements`**: `id`, `user_id`, `achievement_type`, `current_value`, `is_unlocked`, `unlocked_at`
 
 ## 7. AIエージェント向け 開発フェーズ指示

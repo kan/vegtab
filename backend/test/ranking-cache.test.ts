@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SELF, env } from 'cloudflare:test';
+import { env } from 'cloudflare:test';
 import {
-  resetDb, registerUser, authHeader, submitReplay, submitScore, getTodaySeedId, insertPlayScore,
+  call, resetDb, registerUser, authHeader, submitReplay, submitScore, getTodaySeedId, insertPlayScore,
   useFakeToday, CLEARED_DATE, clearedRun,
 } from './helpers';
 import { rankingCacheKey } from '../src/lib/ranking-rule';
@@ -26,7 +26,7 @@ describe('Ranking cache invalidation', () => {
   beforeEach(async () => {
     await resetDb();
     useFakeToday(CLEARED_DATE);
-    const reg = await registerUser('550e8400-e29b-41d4-a716-446655440050');
+    const reg = await registerUser({ name: 'Me' });
     accessToken = reg.accessToken;
     userId = reg.userId;
     seedId = await getTodaySeedId(accessToken);
@@ -50,7 +50,7 @@ describe('Ranking cache invalidation', () => {
 
   /** Helper: fetch ranking for the seed */
   async function fetchRanking(token: string) {
-    const res = await SELF.fetch(`http://localhost/api/rankings/${seedId}`, {
+    const res = await call(`http://localhost/api/rankings/${seedId}`, {
       headers: authHeader(token),
     });
     return res.json() as Promise<{
@@ -61,8 +61,8 @@ describe('Ranking cache invalidation', () => {
 
   it('new score submission invalidates ranking cache', async () => {
     // Step 1: A cleared record from another user
-    const other = await registerUser('550e8400-e29b-41d4-a716-446655440051');
-    await insertPlayScore({ userId: other.userId, seedId, moveCount: 50, score: 100, isCleared: true });
+    const other = await registerUser({ name: 'Other' });
+    await insertPlayScore({ userId: other.userId, seedId, moveCount: 100, score: 100, isCleared: true });
 
     // Step 2: Fetch ranking to populate cache
     const ranking1 = await fetchRanking(accessToken);
@@ -144,10 +144,10 @@ describe('Ranking cache invalidation', () => {
 
   it('ranking reflects latest data after cache invalidation from concurrent users', async () => {
     // Users 2 and 3 have cleared records with more moves than the cleared run
-    const reg2 = await registerUser('550e8400-e29b-41d4-a716-446655440052');
-    const reg3 = await registerUser('550e8400-e29b-41d4-a716-446655440053');
-    await insertPlayScore({ userId: reg2.userId, seedId, moveCount: 60, score: 100, isCleared: true });
-    await insertPlayScore({ userId: reg3.userId, seedId, moveCount: 50, score: 100, isCleared: true });
+    const reg2 = await registerUser({ name: 'Second' });
+    const reg3 = await registerUser({ name: 'Third' });
+    await insertPlayScore({ userId: reg2.userId, seedId, moveCount: 120, score: 100, isCleared: true });
+    await insertPlayScore({ userId: reg3.userId, seedId, moveCount: 100, score: 100, isCleared: true });
 
     // Populate cache
     await fetchRanking(accessToken);

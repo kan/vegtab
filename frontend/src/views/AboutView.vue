@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 import BottomNav from '@/components/BottomNav.vue';
+import { portalUrl } from '@/api/id';
 
 const { t } = useI18n();
 </script>
@@ -9,6 +10,15 @@ const { t } = useI18n();
   <div class="about-page">
     <div class="about-content">
       <h1 class="about-title">Vege-Table</h1>
+
+      <section class="about-section">
+        <h2>kan-game.app</h2>
+        <p class="about-text">{{ t('about.kanGame') }}</p>
+        <div class="credit-item">
+          <a :href="portalUrl('/terms')" target="_blank" rel="noopener">{{ t('about.terms') }}</a>
+          <a :href="portalUrl('/privacy')" target="_blank" rel="noopener">{{ t('about.privacy') }}</a>
+        </div>
+      </section>
 
       <section class="about-section">
         <h2>{{ t('about.credits') }}</h2>
@@ -42,10 +52,18 @@ const { t } = useI18n();
   color: var(--brand);
   margin: 0 0 24px;
 }
+.about-section {
+  margin-bottom: 24px;
+}
 .about-section h2 {
   font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
+  margin: 0 0 12px;
+}
+.about-text {
+  font-size: 13px;
+  color: var(--text-secondary);
   margin: 0 0 12px;
 }
 .credit-item {

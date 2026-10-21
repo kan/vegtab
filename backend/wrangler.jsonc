@@ -1,6 +1,9 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "vegtab-api",
+  // The top level is for local development (`npm run dev`, CLAUDE.md「ローカル開発の起動」). env.dev is
+  // vegtab-dev.kan-game.app and env.production is vegtab.kan-game.app (with the old vegtab.app).
+  // Bindings are not inherited by the environments, so each lists its own.
+  "name": "vegtab-local",
   "main": "src/index.ts",
   "compatibility_date": "2024-12-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -15,48 +18,82 @@
 
   "vars": {
     "ENVIRONMENT": "development",
-    "FRONTEND_URL": "*",
+    // The game's URL (share URLs, the old host's handover) and the origins allowed to call the API
+    "FRONTEND_URL": "http://localhost:5173",
+    "ALLOWED_ORIGINS": "http://localhost:5173",
+    // The old host that only hands its accounts over (src/lib/env.ts). Empty: none
+    "LEGACY_HOST": "",
+    // The kan-game.app ID cookie and the keys that verify it (kan/game docs/ID_DESIGN.md「ID と Cookie」).
+    // Locally they are kan/game's own: copy ID_PUBLIC_KEYS from kan/game's .dev.vars into .dev.vars
+    "ID_COOKIE_NAME": "__Secure-kgdev_id",
+    "ID_ISSUER": "localhost",
+    "ID_PUBLIC_KEYS": "[]",
     "VAPID_SUBJECT": "mailto:admin@vegtab.app",
     "VAPID_PUBLIC_KEY": "BPBJ-17ClQf8zOPEDLwGHnrz3hHC8KTYBSQpMdCUnoTZ9KRKWyggM3Y_KBl2cJUD58evORaaaI2ahn9wGbUZCB4",
   },
 
   "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "tomado-db",
-      "database_id": "05a51653-f823-4d9b-8dfb-921d4c8d0a36",
-      "migrations_dir": "migrations",
-    },
+    { "binding": "DB", "database_name": "vegtab-local", "database_id": "vegtab-local", "migrations_dir": "migrations" },
   ],
-
-  "kv_namespaces": [{ "binding": "KV", "id": "f35acac0b7e144588ec0509e6b3fa4fa" }],
-
-  "r2_buckets": [{ "binding": "R2", "bucket_name": "tomado-replay-logs" }],
-
+  "kv_namespaces": [{ "binding": "KV", "id": "vegtab-local" }],
+  "r2_buckets": [{ "binding": "R2", "bucket_name": "vegtab-local-replays" }],
+  // The kan-game.app ID platform (kan/game). /api/id/* is passed to it, and names are registered
+  // through its RPC (src/lib/id-rpc.ts). Locally it is kan/game's `wrangler dev` (the dev registry)
+  "services": [{ "binding": "ID", "service": "kan-game-local" }],
   "triggers": { "crons": ["5 15 * * *"] },
 
-  // --- Rate limits (bindings are not inherited by environments, so both are listed) ---
-  "ratelimits": [
-    {
-      // Account transfer code redemption, keyed by client IP
-      "name": "TRANSFER_RATE_LIMITER",
-      "namespace_id": "1001",
-      "simple": { "limit": 10, "period": 60 },
-    },
-  ],
-
   "env": {
-    // --- Production environment ---
+    // --- Development environment (vegtab-dev.kan-game.app): `npm run deploy:dev -w backend` ---
+    "dev": {
+      "name": "vegtab-dev",
+      "routes": [{ "pattern": "vegtab-dev.kan-game.app", "custom_domain": true }],
+      "vars": {
+        "ENVIRONMENT": "dev",
+        "FRONTEND_URL": "https://vegtab-dev.kan-game.app",
+        "ALLOWED_ORIGINS": "https://vegtab-dev.kan-game.app",
+        "LEGACY_HOST": "",
+        // Must match kan/game's env.dev (its wrangler.jsonc). To rotate, follow kan/game
+        // docs/ID_DESIGN.md「鍵の管理」 and copy its new list here
+        "ID_COOKIE_NAME": "__Secure-kgdev_id",
+        "ID_ISSUER": "dev.kan-game.app",
+        "ID_PUBLIC_KEYS": "[{\"kid\":\"2026-10-18-2515ed\",\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"0KpEL8A2l9DupwZ2uVJVr_ZGy-sRbGJcJg-2Wwi8McU\",\"y\":\"yMVIO135BT3klr-T0Xtr4cRkdkAvfkwxAMaTzoH5EC4\"}]",
+        "VAPID_SUBJECT": "mailto:admin@vegtab.app",
+        "VAPID_PUBLIC_KEY": "TODO-dev-vapid-public-key",
+      },
+      "d1_databases": [
+        { "binding": "DB", "database_name": "vegtab-dev", "database_id": "TODO-vegtab-dev", "migrations_dir": "migrations" },
+      ],
+      "kv_namespaces": [{ "binding": "KV", "id": "TODO-vegtab-dev" }],
+      "r2_buckets": [{ "binding": "R2", "bucket_name": "vegtab-dev-replays" }],
+      // kan/game's development Worker, which calls back GameService (src/game-service.ts) as
+      // GAME_VEGTAB when a player withdraws
+      "services": [{ "binding": "ID", "service": "kan-game-dev" }],
+      "triggers": { "crons": ["5 15 * * *"] },
+    },
+
+    // --- Production (vegtab.kan-game.app): `npm run deploy` at the root ---
     "production": {
+      // The name the Worker had before (the top level was vegtab-api), so it is the same Worker
+      "name": "vegtab-api-production",
+      // vegtab.kan-game.app is a Custom Domain: Cloudflare keeps its DNS record. vegtab.app/* is a
+      // route, which needs the proxied AAAA 100:: record in the vegtab.app zone (docs/SPEC.md §5.4).
+      // Removing a route from this file does not detach it; delete it in the dashboard too.
+      "routes": [
+        { "pattern": "vegtab.kan-game.app", "custom_domain": true },
+        { "pattern": "vegtab.app/*", "zone_name": "vegtab.app" },
+      ],
       "vars": {
         "ENVIRONMENT": "production",
-        "FRONTEND_URL": "https://vegtab.app",
+        "FRONTEND_URL": "https://vegtab.kan-game.app",
+        "ALLOWED_ORIGINS": "https://vegtab.kan-game.app",
+        "LEGACY_HOST": "vegtab.app",
+        // Must match kan/game's env.production (its wrangler.jsonc)
+        "ID_COOKIE_NAME": "__Secure-kg_id",
+        "ID_ISSUER": "kan-game.app",
+        "ID_PUBLIC_KEYS": "[{\"kid\":\"2026-10-18-ccfc63\",\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"ddT7jKLdotzN141EdW32MjeKrySOCqm_OGKRbA27NBY\",\"y\":\"UR7l_tKX9mUzRzJElH_IFWQ36a0PggvU803FVXI_yqk\"}]",
         "VAPID_SUBJECT": "mailto:admin@vegtab.app",
         "VAPID_PUBLIC_KEY": "BPBJ-17ClQf8zOPEDLwGHnrz3hHC8KTYBSQpMdCUnoTZ9KRKWyggM3Y_KBl2cJUD58evORaaaI2ahn9wGbUZCB4",
       },
-      // vegtab.app/* sends everything (SPA included) to this Worker (vegtab-api-production).
-      // Removing a route from this file does not detach it; delete it in the dashboard too.
-      "routes": [{ "pattern": "vegtab.app/*", "zone_name": "vegtab.app" }],
       "d1_databases": [
         {
           "binding": "DB",
@@ -67,14 +104,8 @@
       ],
       "kv_namespaces": [{ "binding": "KV", "id": "f35acac0b7e144588ec0509e6b3fa4fa" }],
       "r2_buckets": [{ "binding": "R2", "bucket_name": "tomado-replay-logs" }],
+      "services": [{ "binding": "ID", "service": "kan-game" }],
       "triggers": { "crons": ["5 15 * * *"] },
-      "ratelimits": [
-        {
-          "name": "TRANSFER_RATE_LIMITER",
-          "namespace_id": "1001",
-          "simple": { "limit": 10, "period": 60 },
-        },
-      ],
     },
   },
 }

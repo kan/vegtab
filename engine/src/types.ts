@@ -61,7 +61,7 @@ export type SynthesisEffect =
 
 /** ゲーム初期化パラメータ */
 export type GameInitParams = {
-  obstacleCount?: number;    // default seed-dependent 10-20
+  obstacleCount?: number;    // default OBSTACLE_DURABILITIES (16, durability total 28). For tests
 };
 
 /** ゲーム状態 */

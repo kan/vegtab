@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { SELF, env } from 'cloudflare:test';
+import { env } from 'cloudflare:test';
 import { SignJWT } from 'jose';
-import { registerUser } from './helpers';
-import { purgeExpiredRefreshTokens } from '../src/lib/refresh-tokens';
+import { call, createLegacyUser } from './helpers';
+import { issueTokens, purgeExpiredRefreshTokens } from '../src/lib/refresh-tokens';
 
+/** The old vegtab.app accounts' tokens, which the old screen renews to hand its account over */
 function refresh(refreshToken: string) {
-  return SELF.fetch('http://localhost/api/auth/refresh', {
+  return call('http://localhost/api/auth/refresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refreshToken }),
@@ -27,7 +28,7 @@ async function ageRotations() {
 
 describe('Refresh token rotation', () => {
   it('rotates the token; retrying the used one right away fails without revoking the new one', async () => {
-    const { refreshToken } = await registerUser(crypto.randomUUID());
+    const { refreshToken } = await createLegacyUser();
     const next = await refreshOk(refreshToken);
     expect(next.refreshToken).not.toBe(refreshToken);
     expect(next.accessToken).toBeTruthy();
@@ -38,14 +39,14 @@ describe('Refresh token rotation', () => {
   });
 
   it('keeps rotating along the chain', async () => {
-    const { refreshToken } = await registerUser(crypto.randomUUID());
+    const { refreshToken } = await createLegacyUser();
     const second = await refreshOk(refreshToken);
     const third = await refreshOk(second.refreshToken);
     await refreshOk(third.refreshToken);
   });
 
   it('revokes the family when the previous token is presented after the grace window', async () => {
-    const { refreshToken } = await registerUser(crypto.randomUUID());
+    const { refreshToken } = await createLegacyUser();
     const next = await refreshOk(refreshToken);
     await ageRotations();
 
@@ -54,7 +55,7 @@ describe('Refresh token rotation', () => {
   });
 
   it('revokes the family when an older generation is presented, even right away', async () => {
-    const { refreshToken: first } = await registerUser(crypto.randomUUID());
+    const { refreshToken: first } = await createLegacyUser();
     const second = await refreshOk(first);
     const third = await refreshOk(second.refreshToken);
 
@@ -63,10 +64,8 @@ describe('Refresh token rotation', () => {
   });
 
   it('does not revoke other sign-ins of the same user', async () => {
-    const deviceId = crypto.randomUUID();
-    const first = await registerUser(deviceId);
-    const second = await registerUser(deviceId);
-    expect(second.userId).toBe(first.userId);
+    const first = await createLegacyUser();
+    const second = await issueTokens(env.DB, (env as unknown as { JWT_SECRET: string }).JWT_SECRET, first.userId);
 
     const next = await refreshOk(first.refreshToken);
     await ageRotations();
@@ -77,7 +76,7 @@ describe('Refresh token rotation', () => {
   });
 
   it('rejects refresh tokens issued before rotation existed (no family or jti)', async () => {
-    const { userId } = await registerUser(crypto.randomUUID());
+    const { userId } = await createLegacyUser();
     const legacy = await new SignJWT({ sub: userId, type: 'refresh' })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
@@ -88,12 +87,12 @@ describe('Refresh token rotation', () => {
   });
 
   it('rejects an access token presented as a refresh token', async () => {
-    const { accessToken } = await registerUser(crypto.randomUUID());
+    const { accessToken } = await createLegacyUser();
     expect((await refresh(accessToken)).status).toBe(401);
   });
 
   it('purges expired families and keeps active ones', async () => {
-    const { userId, refreshToken } = await registerUser(crypto.randomUUID());
+    const { userId, refreshToken } = await createLegacyUser();
     await env.DB.prepare(
       `INSERT INTO refresh_token_families (family_id, user_id, current_jti, expires_at)
        VALUES ('expired-family', ?, 'expired-jti', datetime('now', '-1 seconds'))`

@@ -15,7 +15,7 @@ describe('Push subscription validation', () => {
   let userId: string;
 
   beforeEach(async () => {
-    ({ accessToken, userId } = await registerUser(crypto.randomUUID()));
+    ({ accessToken, userId } = await registerUser());
   });
 
   it.each([
@@ -42,7 +42,7 @@ describe('Push subscription validation', () => {
     const endpoint = `https://fcm.googleapis.com/fcm/send/owned-${crypto.randomUUID()}`;
     await subscribePush(accessToken, endpoint);
 
-    const other = await registerUser(crypto.randomUUID());
+    const other = await registerUser();
     const res = await subscribePush(other.accessToken, endpoint);
     expect(res.status).toBe(200);
     expect(await ownersOfEndpoint(endpoint)).toEqual([userId]);

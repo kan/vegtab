@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SELF } from 'cloudflare:test';
 import {
-  resetDb, registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
+  call, resetDb, registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
 } from './helpers';
 import { todayJST } from '../src/lib/date';
 
@@ -11,13 +10,13 @@ describe('Seeds & Ranking API', () => {
 
   beforeEach(async () => {
     await resetDb();
-    const reg = await registerUser('550e8400-e29b-41d4-a716-446655440020');
+    const reg = await registerUser({ name: 'Me' });
     accessToken = reg.accessToken;
     userId = reg.userId;
   });
 
   it('gets daily seed (auto-creates if missing)', async () => {
-    const res = await SELF.fetch('http://localhost/api/seeds/daily', {
+    const res = await call('http://localhost/api/seeds/daily', {
       headers: authHeader(accessToken),
     });
     expect(res.status).toBe(200);
@@ -28,7 +27,7 @@ describe('Seeds & Ranking API', () => {
   });
 
   async function fetchSeedInfo(seedId: string) {
-    const res = await SELF.fetch(`http://localhost/api/seeds/${seedId}`, { headers: authHeader(accessToken) });
+    const res = await call(`http://localhost/api/seeds/${seedId}`, { headers: authHeader(accessToken) });
     return res.json() as Promise<{ seedId: string; best: { isCleared: boolean; moveCount: number; clearTimeMs: number | null; score: number } | null }>;
   }
 
@@ -53,7 +52,7 @@ describe('Seeds & Ranking API', () => {
     await insertPlayScore({ userId, seedId, mode: 'sprint', moveCount: 15, score: 9000 });
     await insertPlayScore({ userId, seedId, moveCount: 40, score: 500, isCleared: false });
 
-    const res = await SELF.fetch(`http://localhost/api/seeds/daily/calendar?month=${todayJST().slice(0, 7)}`, {
+    const res = await call(`http://localhost/api/seeds/daily/calendar?month=${todayJST().slice(0, 7)}`, {
       headers: authHeader(accessToken),
     });
     const { seeds } = await res.json() as { seeds: Array<{ seedId: string; userScores: unknown }> };
@@ -64,7 +63,7 @@ describe('Seeds & Ranking API', () => {
     const seedId = await getTodaySeedId(accessToken);
     await insertPlayScore({ userId, seedId, mode: 'cascade', moveCount: 15, score: 9000, cascadePoints: 20 });
 
-    const res = await SELF.fetch('http://localhost/api/seeds/daily/calendar', { headers: authHeader(accessToken) });
+    const res = await call('http://localhost/api/seeds/daily/calendar', { headers: authHeader(accessToken) });
     const { seeds } = await res.json() as { seeds: Array<{ seedId: string; userScores: unknown }> };
     expect(seeds.find(s => s.seedId === seedId)?.userScores).toBeNull();
   });
@@ -87,7 +86,7 @@ describe('Seeds & Ranking API', () => {
     expect(res.status).toBe(201);
     const seedId = await getTodaySeedId(accessToken);
 
-    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}`, { headers: authHeader(accessToken) });
+    const rankRes = await call(`http://localhost/api/rankings/${seedId}`, { headers: authHeader(accessToken) });
     expect(rankRes.status).toBe(200);
     expect(await rankRes.json()).toEqual({ ranking: [], userRank: null });
   });
@@ -96,13 +95,13 @@ describe('Seeds & Ranking API', () => {
     // Cleared plays cannot be produced by short replays, so the rows are inserted directly
     // (one row per user and seed×mode, so the other results belong to other users)
     const seedId = await getTodaySeedId(accessToken);
-    const slower = await registerUser(crypto.randomUUID());
-    const notCleared = await registerUser(crypto.randomUUID());
+    const slower = await registerUser({ name: 'Slower' });
+    const notCleared = await registerUser({ name: 'NotCleared' });
     await insertPlayScore({ userId: slower.userId, seedId, moveCount: 20, score: 3000, isCleared: true });
     await insertPlayScore({ userId, seedId, moveCount: 12, score: 2000, isCleared: true });
     await insertPlayScore({ userId: notCleared.userId, seedId, moveCount: 5, score: 500, isCleared: false });
 
-    const rankRes = await SELF.fetch(`http://localhost/api/rankings/${seedId}`, {
+    const rankRes = await call(`http://localhost/api/rankings/${seedId}`, {
       headers: authHeader(accessToken),
     });
     expect(rankRes.status).toBe(200);

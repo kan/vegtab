@@ -1,12 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SELF } from 'cloudflare:test';
-import { registerUser, authHeader, subscribePush } from './helpers';
+import { call, registerUser, authHeader, subscribePush } from './helpers';
 
 describe('Push Notification API', () => {
   let accessToken: string;
 
   beforeEach(async () => {
-    const reg = await registerUser('550e8400-e29b-41d4-a716-446655440030');
+    const reg = await registerUser();
     accessToken = reg.accessToken;
   });
 
@@ -30,7 +29,7 @@ describe('Push Notification API', () => {
   it('DELETE /api/push/unsubscribe — 正常削除', async () => {
     await subscribePush(accessToken, endpoint);
 
-    const res = await SELF.fetch('http://localhost/api/push/unsubscribe', {
+    const res = await call('http://localhost/api/push/unsubscribe', {
       method: 'DELETE',
       headers: { ...authHeader(accessToken), 'Content-Type': 'application/json' },
       body: JSON.stringify({ endpoint }),
@@ -41,7 +40,7 @@ describe('Push Notification API', () => {
   });
 
   it('GET /api/push/vapid-public-key — 公開鍵取得', async () => {
-    const res = await SELF.fetch('http://localhost/api/push/vapid-public-key', {
+    const res = await call('http://localhost/api/push/vapid-public-key', {
       headers: authHeader(accessToken),
     });
     expect(res.status).toBe(200);

@@ -2,10 +2,20 @@ import { Cell, Color, Obstacle, Position, BOARD_SIZE } from './types.js';
 import { createRng, nextInt } from './rng.js';
 
 /**
+ * 個数を指定しないときのおじゃまタイルの耐久値の組（#106）。どの日も 16 個・耐久値の合計 28 にそろえ、
+ * 日ごとの難しさのぶれを抑える。どの位置にどの耐久値を割り当てるかはシードから決める
+ */
+export const OBSTACLE_DURABILITIES: readonly number[] = [
+  ...Array<number>(6).fill(1),
+  ...Array<number>(8).fill(2),
+  ...Array<number>(2).fill(3),
+];
+
+/**
  * 盤面上におじゃまタイルを生成する
  * @param board 自動消去済みの盤面
  * @param columnRngStates 列ごとRNG状態（おじゃま生成用に先頭列のRNGから派生）
- * @param count おじゃまタイルの数（省略時: 10-20のランダム）
+ * @param count おじゃまタイルの数（省略時: OBSTACLE_DURABILITIES の 16 個。指定したとき（テスト用）は耐久値を 1 個ずつ乱数で決める）
  * @returns 更新された盤面と更新されたRNG状態
  */
 export function generateObstacles(
@@ -20,15 +30,7 @@ export function generateObstacles(
   const newStates = [...columnRngStates];
   newStates[0] = derivedSeed;
 
-  // デフォルト数: 10-20
-  let obstacleCount: number;
-  if (count !== undefined) {
-    obstacleCount = count;
-  } else {
-    let val: number;
-    [rng, val] = nextInt(rng, 11); // 0-10
-    obstacleCount = val + 10; // 10-20
-  }
+  const obstacleCount = count ?? OBSTACLE_DURABILITIES.length;
 
   // 全64マスの位置をFisher-Yatesシャッフル
   const positions: Position[] = [];
@@ -48,14 +50,29 @@ export function generateObstacles(
   // 先頭からobstacleCount個を選択
   const selected = positions.slice(0, obstacleCount);
 
-  for (const pos of selected) {
-    // 耐久値の決定: nextInt(rng, 6) → 0-2=dur1(50%), 3-4=dur2(33%), 5=dur3(17%)
-    let val: number;
-    [rng, val] = nextInt(rng, 6);
+  // 既定の組は、選んだ位置へシャッフルして割り当てる
+  let durabilities: number[] | null = null;
+  if (count === undefined) {
+    durabilities = [...OBSTACLE_DURABILITIES];
+    for (let i = durabilities.length - 1; i > 0; i--) {
+      let j: number;
+      [rng, j] = nextInt(rng, i + 1);
+      [durabilities[i], durabilities[j]] = [durabilities[j], durabilities[i]];
+    }
+  }
+
+  for (const [index, pos] of selected.entries()) {
     let durability: number;
-    if (val <= 2) durability = 1;
-    else if (val <= 4) durability = 2;
-    else durability = 3;
+    if (durabilities) {
+      durability = durabilities[index];
+    } else {
+      // 個数を指定したとき: nextInt(rng, 6) → 0-2=dur1(50%), 3-4=dur2(33%), 5=dur3(17%)
+      let val: number;
+      [rng, val] = nextInt(rng, 6);
+      if (val <= 2) durability = 1;
+      else if (val <= 4) durability = 2;
+      else durability = 3;
+    }
 
     const existingCell = board[pos.row][pos.col];
     const color: Color = existingCell ? existingCell.color : 0;

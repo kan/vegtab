@@ -31,16 +31,27 @@ describe('generateObstacles', () => {
     }
   });
 
-  it('デフォルトのおじゃまタイル数は10-20の範囲', () => {
-    // 複数のシードで検証
+  it('デフォルトはどのシードでも 16 個・耐久値 1 が 6 個、2 が 8 個、3 が 2 個（合計 28）', () => {
+    for (let seed = 1; seed <= 200; seed++) {
+      const board = makeEmptyBoard();
+      generateObstacles(board, createColumnRngStates(createRng(seed)));
+      const durabilities = board.flat().flatMap(cell => cell?.obstacle ? [cell.obstacle.durability] : []);
+      expect(durabilities).toHaveLength(16);
+      expect(durabilities.filter(d => d === 1)).toHaveLength(6);
+      expect(durabilities.filter(d => d === 2)).toHaveLength(8);
+      expect(durabilities.filter(d => d === 3)).toHaveLength(2);
+      expect(durabilities.reduce((a, b) => a + b, 0)).toBe(28);
+    }
+  });
+
+  it('デフォルトの耐久値の割り当てはシードで変わる', () => {
+    const layouts = new Set<string>();
     for (const seed of [1, 42, 100, 999, 12345]) {
       const board = makeEmptyBoard();
-      const colRng = createColumnRngStates(createRng(seed));
-      generateObstacles(board, colRng);
-      const count = countObstacles(board);
-      expect(count).toBeGreaterThanOrEqual(10);
-      expect(count).toBeLessThanOrEqual(20);
+      generateObstacles(board, createColumnRngStates(createRng(seed)));
+      layouts.add(board.flat().map(cell => cell?.obstacle?.durability ?? 0).join(''));
     }
+    expect(layouts.size).toBe(5);
   });
 
   it('カスタム数を指定するとその数のおじゃまタイルが生成される', () => {

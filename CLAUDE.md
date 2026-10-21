@@ -5,7 +5,9 @@
 モードは Clear だけ（Sprint / Survival / Cascade は #102 で撤去した）。
 仕様の正本は `docs/SPEC.md`。ゲームルール、API、データ構造に関わる変更の前に、該当する節を読む。
 
-※ 本番URL `https://vegtab.app`
+※ 本番 URL `https://vegtab.kan-game.app`（kan-game.app のゲームの 1 つ。旧 URL `https://vegtab.app` は移転の案内と旧アカウントの引き継ぎだけを行う。`docs/SPEC.md` §5.4）
+
+ID、名前、退会は kan-game.app の ID 基盤（kan/game、`~/game`）と共通。kan/game 側の変更（`ALLOWED_ORIGINS`、`GAME_VEGTAB`、プライバシーポリシーなど）が要るときは、**vegtab の作業から kan/game を編集しない。** 要る変更をまとめて、kan/game のセッションが動いていればそこへメッセージで、無ければ利用者に依頼する。
 
 ## リポジトリ構成
 ```
@@ -32,6 +34,7 @@ Phase 1 〜 3.12 は完了、Phase 4 は中止。各Phaseの詳細は `docs/SPEC
 - Phase 3.12 (Cascade改善Phase2): 完了。キラキラ野菜（初期配置+補充+キラキラCP加算+ネクスト表示反映）。
 - Phase 4 (Native & Monetization): 中止。ネイティブアプリ（Capacitor の Android / iOS）は作らず、Web と PWA だけにする。
 - #102 (Clear への絞り込み): Sprint / Survival / Cascade とその専用の仕組みを engine・frontend・backend から撤去した。上の Phase の記述のうちそれらに関するものは、現在の仕様ではない。
+- #103 (kan-game.app への移行): `vegtab.kan-game.app` へ移り、独自の JWT と端末の登録を kan-game.app の ID に置き換えた。上の Phase のアカウント引き継ぎの記述は、現在の仕様ではない。#106（おじゃまの量の固定）も同時に入れた。
 
 ## 技術スタック
 - **言語:** TypeScript (全パッケージ共通)
@@ -39,7 +42,7 @@ Phase 1 〜 3.12 は完了、Phase 4 は中止。各Phaseの詳細は `docs/SPEC
 - **テスト:** Vitest
 - **フロントエンド:** Vue.js (Composition API), Pinia, vue-i18n
 - **バックエンド:** Cloudflare Workers (Hono), D1 (SQLite), KV, R2
-- **認証:** JWT (jose) — アクセストークン(1h) + リフレッシュトークン(90d)
+- **認証:** kan-game.app の ID（ID 基盤が発行する Cookie の JWT を、Worker が公開鍵で検証する。`docs/SPEC.md` §5.1）
 
 ## 環境セットアップ
 
@@ -55,18 +58,15 @@ npm install                    # ルートで全 workspace の依存をインス
 失敗する。既存の lockfile を残したまま `npm install` / `npm audit fix` /
 `npm i <pkg>@<ver>` で更新する。
 
-### Cloudflare リソース（初回のみ）
-```bash
-cd backend
-wrangler d1 create tomado-db                    # D1 データベース
-wrangler kv namespace create KV                 # KV namespace
-wrangler r2 bucket create tomado-replay-logs    # R2 バケット
-wrangler secret put JWT_SECRET                  # JWT シークレット（リモート用）
-```
-各コマンドの出力にある ID を `backend/wrangler.jsonc` に反映する。
+### 環境とリソース
+環境はローカル（`wrangler.jsonc` の先頭）、開発（`env.dev`、`vegtab-dev.kan-game.app`）、本番（`env.production`、
+`vegtab.kan-game.app` と旧 URL `vegtab.app`）の 3 つ。D1・KV・R2・VAPID の鍵・ID 基盤の公開鍵は環境ごとに別。
+一覧は README「環境」。リモートのリソースの作成、secret の登録、デプロイは利用者の承認を得てから行う。
 
 ### ローカル開発用の設定
-- `backend/.dev.vars` に `JWT_SECRET=<任意の値>` を設定（`.gitignore` 済み）
+- ID 基盤（kan/game）を `../game` に置き、kan/game 側で鍵の生成とローカル D1 の用意をし、kan/game の `.dev.vars` の
+  `ALLOWED_ORIGINS` に `http://localhost:5173` を書く（README「ローカルの ID 基盤」）
+- `backend/.dev.vars` に `JWT_SECRET=<任意の値>` と、kan/game の `.dev.vars` の `ID_PUBLIC_KEYS` の写しを書く（`.gitignore` 済み）
 - ローカル D1 のマイグレーション適用:
   ```bash
   cd backend && npm run db:migrate
@@ -79,14 +79,15 @@ wrangler secret put JWT_SECRET                  # JWT シークレット（リ�
 ## ローカル開発の起動
 
 ```bash
-# ターミナル1: バックエンド（http://localhost:8787）
-cd backend && npx wrangler dev
+# ターミナル1: ID 基盤（http://localhost:8787）
+cd ../game && npm run dev
 
-# ターミナル2: フロントエンド（http://localhost:5173）
-cd frontend && npm run dev
+# ターミナル2: バックエンド（http://localhost:8788）とフロントエンド（http://localhost:5173）
+npm run dev
 ```
 
-フロントエンドは `frontend/.env.development` で API ベース URL を `http://localhost:8787` に設定済み。
+画面は `http://localhost:5173` で開く。API は同一オリジンで、Vite が `/api` と `/s/` を backend（8788）へ転送する
+（`frontend/vite.config.ts`）。backend の `ID` binding は wrangler の dev registry で kan/game の `wrangler dev` につながる。
 
 ## デプロイ
 
@@ -100,7 +101,13 @@ npm run deploy
 
 # DBマイグレーションだけを適用する場合
 npm run db:migrate:prod -w backend
+
+# 開発環境（vegtab-dev.kan-game.app）: frontend build の後に
+npm run deploy:dev -w backend
 ```
+
+kan/game と vegtab は互いを Service Binding で指す。新しい環境では vegtab の Worker（`GameService` を持つ）を先に出し、
+kan/game に `GAME_VEGTAB` を足すのはその後にする（先の Worker が無いと kan/game の退会が毎回失敗する）。
 
 `deploy` は未適用のマイグレーションを先に適用してから Worker をデプロイする。
 マイグレーションを追加するときは、先に適用してもデプロイ前の Worker が壊れない形
@@ -130,14 +137,22 @@ cd backend && npm test         # バックエンドのみ
 
 ### backend/
 - Hono フレームワークでルーティング
-- 認証: JWT (jose) — アクセストークン(1h) + リフレッシュトークン(90d)
+- 認証: kan-game.app の ID の Cookie を `src/lib/id-auth.ts` で検証し、`userId` に入れる（`src/middleware/auth.ts`）。`/api/id/*` は ID 基盤へそのまま中継する
+  - **`src/lib/id-token.ts`、`src/lib/id-rpc.ts`、`test/kan-game/` のファイルは書き換えない。** kan/game の `src/token.ts`、`src/rpc.ts`、`testing/`、`test-vectors/id-token.json` の写しで、kan/game が更新したら写し直す（今の写しは kan/game の `258c299`）
+  - 状態を変える API は `Origin` が `ALLOWED_ORIGINS` に含まれることを必須にする（ミドルウェアが確かめる）
+  - 名前は ID 基盤の `registerName`（RPC）で登録し、`profiles` に写す。名前の規則を vegtab で持たない
+  - 記録を持つテーブルを足したら、退会（`src/lib/account.ts` の `ACCOUNT_TABLES`）にも足す
+- 旧 URL（`vegtab.app`）の旧アカウントのための JWT（`src/lib/jwt.ts`、`refresh-tokens.ts`、`routes/auth.ts`、`routes/legacy.ts`）は、移転の案内と引き継ぎにだけ使う。新しい機能で使わない
 - テスト: `@cloudflare/vitest-plugin` で Workers 環境をエミュレート。D1 のスキーマは `migrations/` を `test/apply-migrations.ts` で当てる（テスト用のスキーマを別に書かない）
+  - API は `test/helpers.ts` の `call` で呼ぶ（`SELF.fetch` は使わない）。ID 基盤の偽物（`idPlatform`）とテスト用の鍵で動かすため。`registerUser({ name })` で名前と同意のある ID を作る
 - `backend/.dev.vars` にローカル用シークレットを設定（Git 管理外）
-- Workers の型は `wrangler types` で生成した `backend/worker-configuration.d.ts` を使う（`@cloudflare/workers-types` は使わない）。`wrangler.jsonc` を変えたら `npm run cf-typegen -w backend` で作り直す。`npm run typecheck -w backend` は生成した型が古ければ失敗する
+- Workers の型は `wrangler types` で生成した `backend/worker-configuration.d.ts` を使う（`@cloudflare/workers-types` は使わない）。`wrangler.jsonc` を変えたら `npm run cf-typegen -w backend` で作り直す。`npm run typecheck -w backend` は生成した型が古ければ失敗する。`backend/.dev.vars` があると、その値（`JWT_SECRET`、`ID_PUBLIC_KEYS`）が型の生成に入って食い違い、型が古くなくても失敗する。リポジトリの型は `.dev.vars` が無い状態で生成したもので、CI もその状態で確かめる
 - シークレット（`JWT_SECRET` など）は生成した型に入らないので、`src/types.ts` の `Bindings` に足す
 
 ### frontend/
-- API クライアント (`frontend/src/api/client.ts`) が認証・リトライを一元管理
+- kan-game.app の ID の状態（発行、延長、`401` / `410` からの回復、引き継ぎコード、ポータルの URL）は `frontend/src/api/id.ts` に集める。ID が変わると、ストアは `onIdChange` で中身を入れ替える
+- API クライアント (`frontend/src/api/client.ts`) が API の呼び出しとオフラインのリトライを一元管理する。API は同一オリジンの相対パスで呼ぶ（Cookie を付けるため）
+- 旧 URL（`vegtab.app`）では、ゲームの代わりに移転の案内（`frontend/src/legacy/`）を出す
 - optimistic local-first: localStorage をフォールバックとして維持しつつ API を呼ぶ
 - API 失敗時もローカルデータで動作継続
 
@@ -151,7 +166,7 @@ cd backend && npm test         # バックエンドのみ
 
 **engine/:**
 - Clear 専用（`GameMode` 型と `GameState.mode` は無い。`initializeGame(seed, params?)` が常におじゃまタイルを配置する）
-- おじゃまタイル（シード配置で個数10〜20・耐久値1〜3、隣接マッチ/アイテム/スプーン直接タップでダメージ、非落下、消滅時に上タイル落下）
+- おじゃまタイル（どの日も 16 個・耐久値は 1 が 6 個、2 が 8 個、3 が 2 個で、位置と割り当てはシードから決める（#106）。隣接マッチ/アイテム/スプーン直接タップでダメージ、非落下、消滅時に上タイル落下）
 - スプーンバフ（周囲4マス消去 + 任意マス選択、連鎖時は周囲のみ、合成時追加消去）
 - 重力はすり抜け落下だけ（おじゃまを固定して非おじゃまがすり抜けて下詰め）
 - 最大連鎖数（`maxChainIndex`）を全てのゲームで記録する（連鎖の実績に使う）
@@ -168,18 +183,19 @@ cd backend && npm test         # バックエンドのみ
 - バックエンドスコア送信（ゲーム終了時に自動送信、オフラインキュー対応）
 - 実績一覧ページ（`/achievements`）、解除時トースト通知
 - フッターナビ（HOME / PUZZLE / 実績）、SVGアイコン
-- アカウント引き継ぎUI（コード発行/入力、スコア同期）
+- kan-game.app の ID（引き継ぎコードの発行/入力、名前と公開の同意のダイアログ、ポータルへの導線）、旧 URL からの引き継ぎの確認（`#handoff=`）
 - 手順再生ビューア（`/replay/:scoreId`）、ランキングからの導線
 - チュートリアル（`/tutorial`）、18ステップ紙芝居形式、初回訪問プロンプト、設定メニュー導線
 - ブラウザに残る撤去したモードのデータ（プレイ記録、途中経過、実績のキャッシュ、オフラインキューのスコア送信）は読み込まない（`frontend/src/lib/legacyData.ts`）
 
 **backend/:**
-- スコア送信・ランキング（API と D1 の `mode` は残し、`clear` だけを受け付ける。D1 に撤去したモードの行が残るので、照会は全て `mode = 'clear'` で絞る。行と列は #103 で捨てる）
+- スコア送信・ランキング（API と D1 の `mode` は残し、`clear` だけを受け付ける。照会は全て `mode = 'clear'` で絞る。撤去したモードの行はマイグレーション 0014 で捨てた。列は後で捨てる）。ランキングに載るのは名前と同意（`profiles`）のある ID と、引き継がれていない旧アカウント
 - ベスト記録upsert（クリア優先+最少手数、同手数ならクリアまでの時間が短い方）
 - OGP動的生成（Vege-Tableブランド、最少クリア手数、QRコード付きSVG）
 - 実績解除判定（スコア送信時に自動評価 + クライアントトリガー。定義は `engine/src/achievements.ts` の `ACHIEVEMENT_DEFS` で、判定に使う値は各定義の `metric`。DB に残る撤去した実績は返さない）
 - クライアント実績解除API（`POST /api/achievements/unlock`、ホワイトリスト制御）
-- アカウント引き継ぎ（引き継ぎコード発行/入力、マルチデバイス対応）
+- kan-game.app の ID の検証と `/api/id/*` の中継、名前の登録（`registerName`）、退会（`GameService.deleteAccount`）
+- 旧 URL の旧アカウントの引き継ぎ（`/api/legacy/handoff` と `/api/legacy/claim`。`docs/SPEC.md` §5.4）
 - リプレイデータ取得API（R2からの操作ログ読み出し）
 
 Phase ごとの実装履歴は `docs/SPEC.md` §7 と `git log` にある。現在の仕様は上の「実装済み機能サマリー」と下の「よくある注意点」に書く。

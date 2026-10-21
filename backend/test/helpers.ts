@@ -1,27 +1,88 @@
-import { env, SELF } from 'cloudflare:test';
+import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { vi } from 'vitest';
 import { initializeGame, processAction, BOARD_SIZE, type Action, type GameState } from '@vegtab/engine';
+import worker from '../src/index';
+import type { Bindings } from '../src/types';
 import { generateDailySeed, todayJST } from '../src/lib/date';
+import { issueTokens } from '../src/lib/refresh-tokens';
+import { createTestIdIssuer } from './kan-game/test-id-cookie';
+import { createFakeIdPlatform, type FakeIdPlatform } from './kan-game/fake-id-platform';
+
+/** Signs the test cookies; its key is the only one in ID_PUBLIC_KEYS (see call) */
+export const idIssuer = await createTestIdIssuer({ issuer: 'test.kan-game.app', cookieName: '__Secure-kgtest_id' });
+
+/** The ID platform's RPC (the ID binding). Reset by resetDb */
+export let idPlatform: FakeIdPlatform = createFakeIdPlatform();
+
+/** The origin the API accepts in the tests (ALLOWED_ORIGINS at the top of wrangler.jsonc) */
+export const ORIGIN = 'http://localhost:5173';
+
+/**
+ * Calls the Worker with the test's ID settings: the fake ID platform as the ID binding and the test
+ * issuer's key. `overrides` replaces more of the env (e.g. LEGACY_HOST, or the ID binding's fetch)
+ */
+export async function call(input: string, init?: RequestInit, overrides: Partial<Bindings> = {}): Promise<Response> {
+  const request = new Request(input, init);
+  // A test ID's cookie is signed now, by the clock the test may have faked (useFakeToday): a cookie
+  // signed by the real clock is in the future of a faked day, and refused
+  const testId = /^test-id:(.+)$/.exec(request.headers.get('Cookie') ?? '');
+  if (testId) request.headers.set('Cookie', await idIssuer.cookie(testId[1]));
+  const ctx = createExecutionContext();
+  const res = await worker.fetch(request, { ...testEnv(), ...overrides }, ctx);
+  await waitOnExecutionContext(ctx);
+  return res;
+}
+
+/** The env the tests' Worker runs with: the fake ID platform and the test issuer's key */
+export function testEnv(): Bindings {
+  return {
+    ...(env as unknown as Bindings),
+    ID: idPlatform.rpc as unknown as Bindings['ID'],
+    ID_PUBLIC_KEYS: idIssuer.publicKeys,
+    ID_ISSUER: idIssuer.issuer,
+    ID_COOKIE_NAME: idIssuer.cookieName,
+  };
+}
 
 /** Empty every table and the ranking cache so each test starts clean (the schema comes from test/apply-migrations.ts) */
 export async function resetDb() {
-  for (const table of ['achievements', 'play_scores', 'puzzle_seeds', 'user_devices', 'push_subscriptions', 'refresh_token_families', 'transfer_codes', 'users']) {
+  for (const table of [
+    'achievements', 'play_scores', 'puzzle_seeds', 'user_devices', 'push_subscriptions', 'refresh_token_families',
+    'transfer_codes', 'users', 'profiles', 'deleted_accounts', 'legacy_handoffs', 'legacy_claims',
+  ]) {
     await env.DB.exec(`DELETE FROM ${table}`);
   }
   for (const { name } of (await env.KV.list({ prefix: 'ranking:' })).keys) await env.KV.delete(name);
+  idPlatform = createFakeIdPlatform();
 }
 
-export async function registerUser(deviceId: string) {
-  const res = await SELF.fetch('http://localhost/api/auth/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ deviceId }),
-  });
-  return res.json() as Promise<{ userId: string; accessToken: string; refreshToken: string }>;
+/**
+ * A new kan-game.app ID. `accessToken` stands for its cookie, for authHeader: `call` signs it when
+ * the request is made. With `name`, the ID has registered the name and consented to publish it here
+ * (it is ranked)
+ */
+export async function registerUser(options: { name?: string } = {}): Promise<{ userId: string; accessToken: string }> {
+  const userId = crypto.randomUUID();
+  if (options.name) {
+    idPlatform.setName(userId, options.name);
+    await env.DB.prepare('INSERT INTO profiles (account_id, display_name, consented_at) VALUES (?, ?, ?)')
+      .bind(userId, options.name, Date.now()).run();
+  }
+  return { userId, accessToken: `test-id:${userId}` };
 }
 
-export function authHeader(token: string) {
-  return { Authorization: `Bearer ${token}` };
+/** The headers of a request with the ID's cookie, from the allowed origin */
+export function authHeader(cookie: string) {
+  return { Cookie: cookie, Origin: ORIGIN };
+}
+
+/** An old vegtab.app account (users row) with its Bearer tokens, as the old screen holds them */
+export async function createLegacyUser(displayName: string | null = null) {
+  const userId = crypto.randomUUID();
+  await env.DB.prepare('INSERT INTO users (id, device_id, display_name) VALUES (?, ?, ?)')
+    .bind(userId, crypto.randomUUID(), displayName).run();
+  const tokens = await issueTokens(env.DB, (env as unknown as Bindings).JWT_SECRET, userId);
+  return { userId, ...tokens };
 }
 
 /**
@@ -56,10 +117,10 @@ export function buildReplay(moves: number, date = todayJST()): { replayLog: Acti
 }
 
 /**
- * A day whose daily seed buildReplay(Infinity) clears: 36 moves, max chain 4.
+ * A day whose daily seed buildReplay(Infinity) clears: 74 moves, max chain 5 (boards of #106).
  * Short replays cannot clear a board, so tests that need a cleared run fix the clock to this day.
  */
-export const CLEARED_DATE = '2026-09-17';
+export const CLEARED_DATE = '2026-09-03';
 
 let clearedRunCache: ReturnType<typeof buildReplay> | undefined;
 
@@ -75,7 +136,7 @@ export function useFakeToday(date: string) {
 }
 
 export function submitScore(token: string, body: Record<string, unknown>) {
-  return SELF.fetch('http://localhost/api/scores', {
+  return call('http://localhost/api/scores', {
     method: 'POST',
     headers: { ...authHeader(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -96,16 +157,16 @@ export const PUSH_KEYS = {
 };
 
 export function subscribePush(token: string | null, endpoint: string) {
-  return SELF.fetch('http://localhost/api/push/subscribe', {
+  return call('http://localhost/api/push/subscribe', {
     method: 'POST',
-    headers: { ...(token ? authHeader(token) : {}), 'Content-Type': 'application/json' },
+    headers: { ...(token ? authHeader(token) : { Origin: ORIGIN }), 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint, keys: PUSH_KEYS }),
   });
 }
 
 /** Get (and auto-create) today's daily seed id */
 export async function getTodaySeedId(token: string): Promise<string> {
-  const res = await SELF.fetch('http://localhost/api/seeds/daily', { headers: authHeader(token) });
+  const res = await call('http://localhost/api/seeds/daily', { headers: authHeader(token) });
   const data = await res.json() as { seedId: string };
   return data.seedId;
 }

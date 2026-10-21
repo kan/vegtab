@@ -39,6 +39,9 @@ export default defineConfig({
           },
         ],
         importScripts: ['/push-sw.js'],
+        // The Worker answers these, not the SPA: share pages (OGP, and the old host's redirect to
+        // the new URL) and the API
+        navigateFallbackDenylist: [/^\/s\//, /^\/api\//],
         // API の応答はキャッシュしない。/api/* はすべて認証付きでユーザーごとに内容が変わる（ランキングも
         // 自分の順位を含む）のに、キャッシュキーに Authorization が入らず、引き継ぎ後に旧アカウントの応答が返っていた
       },
@@ -53,5 +56,12 @@ export default defineConfig({
   server: {
     port: 5173,
     allowedHosts: true,
+    // The API is same-origin (the kan-game.app ID cookie goes only with it): the backend's
+    // `wrangler dev` (backend/package.json, port 8788) answers /api and the share pages.
+    // Origin is passed as it is, so the API sees this page's origin (ALLOWED_ORIGINS)
+    proxy: {
+      '/api': 'http://localhost:8788',
+      '/s/': 'http://localhost:8788',
+    },
   },
 });

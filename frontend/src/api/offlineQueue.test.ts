@@ -50,6 +50,12 @@ describe('offlineQueue', () => {
     expect(last).toEqual({ succeeded: 0, failed: 1, remaining: 0 });
   });
 
+  it('ID の Cookie を断られた項目（401 / 410）は捨てずに残す', async () => {
+    enqueue('/api/scores', 'POST', '{"a":1}', USER);
+    const refused = async () => new Response('', { status: 401 });
+    expect(await processQueue(refused, asUser(USER))).toEqual({ succeeded: 0, failed: 0, remaining: 1 });
+  });
+
   it('別のアカウントが追加した項目は送らずに取り除く', async () => {
     enqueue('/api/scores', 'POST', '{"a":1}', 'user-old');
     const doFetch = vi.fn(async () => ok());
@@ -68,6 +74,14 @@ describe('offlineQueue', () => {
     });
     await processQueue(doFetch, () => current);
     expect(doFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('ID がまだ無いあいだは送らずに残し、ID ができたら ID なしで積んだ項目を送る', async () => {
+    enqueue('/api/scores', 'POST', '{"a":1}', null);
+    const doFetch = vi.fn(async () => ok());
+    expect(await processQueue(doFetch, asUser(null))).toEqual({ succeeded: 0, failed: 0, remaining: 1 });
+    expect(doFetch).not.toHaveBeenCalled();
+    expect(await processQueue(doFetch, asUser(USER))).toEqual({ succeeded: 1, failed: 0, remaining: 0 });
   });
 
   it('localStorage への保存が例外を投げても enqueue は例外を投げない', () => {

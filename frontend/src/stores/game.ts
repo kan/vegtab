@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { formatDateJST, todayJST } from '@/utils/date';
-import { api, register, isAuthenticated, showToast } from '@/api/client';
+import { api, apiErrorCode, flushOfflineQueue, showToast, ApiError } from '@/api/client';
+import { getUserId, onIdChange, rememberKanGameName, startId } from '@/api/id';
 import { setLocalItem } from '@/lib/storage';
 import { filterPlayRecords } from '@/lib/legacyData';
 import { isBetterResult, type ResultSummary } from '@/lib/bestResult';
@@ -28,7 +29,16 @@ export interface PlayRecord {
 
 // --- Store ---
 
+/** What became of setting the name (registerName on kan-game.app, then the consent here) */
+export type NameResult = 'ok' | 'name_taken' | 'invalid_name' | 'failed';
+
+/** The result of handing an old vegtab.app account over (POST /api/legacy/claim) */
+export type HandoffResult =
+  | { ok: true; name: 'registered' | 'kept' | 'taken' | 'invalid' | 'none' }
+  | { ok: false; reason: 'invalid' | 'failed' };
+
 export const useGameStore = defineStore('game', () => {
+  /** The name published in the rankings (kan-game.app name with consent here), or '' before that */
   const displayName = ref(loadStr('vegtab_display_name', ''));
   const playRecords = ref<PlayRecord[]>(loadPlayRecords());
   const initialized = ref(false);
@@ -37,36 +47,61 @@ export const useGameStore = defineStore('game', () => {
     loadJson('vegtab_share_codes_v2', {})
   );
 
-  /** Initialize: ensure authenticated and sync with server */
-  async function init() {
-    if (initialized.value) return;
-    try {
-      if (!isAuthenticated()) {
-        await register();
-      }
-      await Promise.all([syncProfile(), syncScoresFromServer(), useAchievementStore().fetchAchievements()]);
+  let initializing: Promise<void> | undefined;
+
+  /** Initialize once: get the kan-game.app ID and sync with the server. Without an ID, local data only */
+  function init(): Promise<void> {
+    initializing ??= (async () => {
+      await startId();
+      if (getUserId()) await syncWithServer();
       initialized.value = true;
+    })();
+    return initializing;
+  }
+
+  async function syncWithServer() {
+    try {
+      await Promise.all([syncProfile(), syncScoresFromServer(), useAchievementStore().fetchAchievements()]);
       // After sync, try to submit any local scores that were never sent to backend
       resubmitUnsentScores();
     } catch (e) {
-      console.warn('Failed to initialize with server, using local data', e);
-      initialized.value = true;
+      console.warn('Failed to sync with server, using local data', e);
     }
   }
 
   /** Sync local state with server profile */
   async function syncProfile() {
     try {
-      const profile = await api<{
-        id: string;
-        displayName: string | null;
-      }>('/api/user/profile');
-
-      if (profile.displayName) displayName.value = profile.displayName;
+      const profile = await api<{ displayName: string | null }>('/api/user/profile');
+      setLocalName(profile.displayName ?? '');
     } catch {
       // Silently use local data on failure
     }
   }
+
+  /**
+   * The device moved to another ID (a transfer code, a withdrawal): the records shown are the new
+   * ID's, from the server. A device getting its first ID keeps what it played offline and syncs
+   * (init syncs by itself if it is still running)
+   */
+  onIdChange(async (newId, previous) => {
+    if (!previous) {
+      if (newId && initialized.value) {
+        // Scores played without an ID wait in the offline queue
+        flushOfflineQueue();
+        await syncWithServer();
+      }
+      return;
+    }
+    setLocalName('');
+    playRecords.value = [];
+    saveRecords();
+    shareCodeCache.value = {};
+    saveShareCodeCache();
+    serverBest.clear();
+    useAchievementStore().reset();
+    if (newId) await syncWithServer();
+  });
 
   // seed → the best result stored on the server (from /api/scores/my)
   const serverBest = new Map<number, ResultSummary>();
@@ -123,10 +158,12 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  async function setDisplayName(name: string) {
+  function setLocalName(name: string) {
     const oldName = effectiveName.value;
-    displayName.value = name.slice(0, 20);
-    setLocalItem('vegtab_display_name', displayName.value);
+    displayName.value = name;
+    setLocalItem('vegtab_display_name', name);
+    // The published name is the ID's kan-game.app name
+    if (name) rememberKanGameName(name);
 
     // Update playerName on existing local records that had the old name
     const newName = effectiveName.value;
@@ -136,14 +173,36 @@ export const useGameStore = defineStore('game', () => {
       }
       saveRecords();
     }
+  }
 
+  /**
+   * Registers the kan-game.app name and consents to publish it in the rankings. Names are shared by
+   * all kan-game.app games and cannot change: an ID already named keeps its name
+   */
+  async function setDisplayName(name: string): Promise<NameResult> {
     try {
-      await api('/api/user/profile', {
-        method: 'PATCH',
-        body: JSON.stringify({ displayName: displayName.value || null }),
+      const res = await api<{ displayName: string }>('/api/user/profile', {
+        method: 'POST',
+        body: JSON.stringify({ displayName: name, consent: true }),
       });
-    } catch {
-      // Local update still applied
+      setLocalName(res.displayName);
+      return 'ok';
+    } catch (e) {
+      const code = apiErrorCode(e);
+      return code === 'name_taken' || code === 'invalid_name' ? code : 'failed';
+    }
+  }
+
+  /** Moves the records of an old vegtab.app account onto this ID (the token came in the URL from the old URL) */
+  async function claimHandoff(token: string): Promise<HandoffResult> {
+    try {
+      const res = await api<{ name: Extract<HandoffResult, { ok: true }>['name'] }>(
+        '/api/legacy/claim', { method: 'POST', body: JSON.stringify({ token }) },
+      );
+      await syncWithServer();
+      return { ok: true, ...res };
+    } catch (e) {
+      return { ok: false, reason: e instanceof ApiError && e.status === 400 ? 'invalid' : 'failed' };
     }
   }
 
@@ -326,22 +385,8 @@ export const useGameStore = defineStore('game', () => {
     setLocalItem('vegtab_share_codes_v2', JSON.stringify(shareCodeCache.value));
   }
 
-  /** Reset local state after account transfer, then resync from server */
-  async function resetAfterTransfer(newDisplayName: string | null) {
-    displayName.value = newDisplayName ?? '';
-    setLocalItem('vegtab_display_name', displayName.value);
-    playRecords.value = [];
-    saveRecords();
-    shareCodeCache.value = {};
-    saveShareCodeCache();
-    initialized.value = false;
-    // Resync scores from the transferred account
-    await syncScoresFromServer();
-    initialized.value = true;
-  }
-
   return {
-    displayName, effectiveName, setDisplayName,
+    displayName, effectiveName, setDisplayName, claimHandoff,
     playRecords,
     generateDailySeed: dailySeed, randomSeed,
     isTodaysDailySeed,
@@ -349,7 +394,6 @@ export const useGameStore = defineStore('game', () => {
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, syncScoresFromServer, initialized,
     getShareCode,
-    resetAfterTransfer,
   };
 });
 
