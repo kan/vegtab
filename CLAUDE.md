@@ -74,8 +74,13 @@ npm install                    # ルートで全 workspace の依存をインス
   ```
 
 ### PWA アイコン
-`frontend/icons/` の PWA アイコンは、`frontend/assets/` の元画像から `@capacitor/assets` で
-生成したもの。アイコンは描き直す予定（#104）で、生成の手順はそのときに決め直す。
+元の絵は `frontend/public/vegtab-icon.svg`（favicon も兼ねる）。`frontend/public/` の `apple-touch-icon.png`（180）、
+`pwa-192x192.png`、`pwa-512x512.png`（maskable も兼ねる）は、この SVG から sharp で書き出したもの（背景は `#fff7ec` で塗る）。
+絵を変えたら 3 つとも書き出し直す。
+
+```bash
+cd frontend && node -e "const s=require('sharp'),svg=require('fs').readFileSync('public/vegtab-icon.svg');for(const [o,n] of [['apple-touch-icon.png',180],['pwa-192x192.png',192],['pwa-512x512.png',512]])s(svg,{density:300}).resize(n,n).flatten({background:'#fff7ec'}).png().toFile('public/'+o)"
+```
 
 ## ローカル開発の起動
 
@@ -185,7 +190,8 @@ cd backend && npm test         # バックエンドのみ
 - HOME の今日のパズルから直接プレイ開始（モード選択なし。過去日は案内を出してから開始）
 - おじゃまタイル表示（SVG、耐久値数字+ひび割れ、2層テキスト描画）
 - すり抜け落下のアニメーション
-- ブランドカラー: 緑（`--brand: #2e7d32` / dark `#66bb6a`）
+- 見た目は kan-game.app のゲーム（TAKO-SEN）にそろえる（#104）: クリームの背景とインクの太枠、主ボタンは緑（`--brand: #2e7d32`）。ライトテーマだけ。色の変数と共通のクラス（ボタン、ダイアログ、盤面の枠など）は `frontend/src/theme.css`
+- メニューは下からのシート（`frontend/src/components/MenuSheet.vue`）。パズル画面のメニューにはアカウントの欄を出さない（プレイ中に ID を切り替えさせない）
 - トースト通知（エラー/成功/情報、自動消去+手動閉じ）
 - オフラインキュー（スコア送信の自動リトライ）
 - プレイ時間の計測と表示（`frontend/src/composables/usePlayTimer.ts`、累計は localStorage の `vegtab_play_time`）
