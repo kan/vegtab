@@ -59,12 +59,17 @@
         "ID_ISSUER": "dev.kan-game.app",
         "ID_PUBLIC_KEYS": "[{\"kid\":\"2026-10-18-2515ed\",\"kty\":\"EC\",\"crv\":\"P-256\",\"x\":\"0KpEL8A2l9DupwZ2uVJVr_ZGy-sRbGJcJg-2Wwi8McU\",\"y\":\"yMVIO135BT3klr-T0Xtr4cRkdkAvfkwxAMaTzoH5EC4\"}]",
         "VAPID_SUBJECT": "mailto:admin@vegtab.app",
-        "VAPID_PUBLIC_KEY": "TODO-dev-vapid-public-key",
+        "VAPID_PUBLIC_KEY": "BBxUshK9WiZ6i_V9Z5JYeE93aaYFMI6l7_6zgIrB2WH9P9KLg_QQbaeXEEuRbcS6v0087qYTZDljRtI-iHdKk7U",
       },
       "d1_databases": [
-        { "binding": "DB", "database_name": "vegtab-dev", "database_id": "TODO-vegtab-dev", "migrations_dir": "migrations" },
+        {
+          "binding": "DB",
+          "database_name": "vegtab-dev",
+          "database_id": "87d0d69e-8fe1-448d-a1c7-53ba705c46ff",
+          "migrations_dir": "migrations",
+        },
       ],
-      "kv_namespaces": [{ "binding": "KV", "id": "TODO-vegtab-dev" }],
+      "kv_namespaces": [{ "binding": "KV", "id": "715e3a920b88433185d158fface638f9" }],
       "r2_buckets": [{ "binding": "R2", "bucket_name": "vegtab-dev-replays" }],
       // kan/game's development Worker, which calls back GameService (src/game-service.ts) as
       // GAME_VEGTAB when a player withdraws
