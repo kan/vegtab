@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import BottomNav from '@/components/BottomNav.vue';
 import { portalUrl } from '@/api/id';
 
 const { t } = useI18n();
@@ -29,15 +28,17 @@ const { t } = useI18n();
         </div>
       </section>
     </div>
-    <BottomNav />
   </div>
 </template>
 
 <style scoped>
+/* Fills the room above the footer menu (App.vue) and scrolls inside, as the other screens */
 .about-page {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  overflow-y: auto;
 }
 .about-content {
   flex: 1;
