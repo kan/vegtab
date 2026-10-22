@@ -62,16 +62,32 @@ function withDependencies(roots: string[], fromDir: string): Set<string> {
   return found;
 }
 
+const isWebUrl = (url: string) => /^https?:\/\//.test(url);
+
+/** A web URL for the repository field's forms (https, git+https, git+ssh, git@host:o/r, github:, gitlab:, o/r) */
 function repositoryUrl(pkg: Record<string, unknown>): string | null {
   const repo = pkg.repository as string | { url?: string } | undefined;
   const raw = typeof repo === 'string' ? repo : repo?.url;
   if (raw) {
-    const url = raw.replace(/^git\+/, '').replace(/\.git$/, '').replace(/^git:\/\//, 'https://')
-      .replace(/^github:/, 'https://github.com/');
-    if (/^https?:\/\//.test(url)) return url;
+    const url = raw.replace(/^git\+/, '').replace(/\.git$/, '')
+      .replace(/^(git|ssh):\/\/(git@)?/, 'https://')
+      .replace(/^git@([^:]+):/, 'https://$1/')
+      .replace(/^github:/, 'https://github.com/')
+      .replace(/^gitlab:/, 'https://gitlab.com/')
+      .replace(/^bitbucket:/, 'https://bitbucket.org/');
+    if (isWebUrl(url)) return url;
     if (/^[\w.-]+\/[\w.-]+$/.test(url)) return `https://github.com/${url}`;
   }
-  return typeof pkg.homepage === 'string' ? pkg.homepage : null;
+  return typeof pkg.homepage === 'string' && isWebUrl(pkg.homepage) ? pkg.homepage : null;
+}
+
+/**
+ * Oxc's syntax helpers come in as virtual modules ("\0@oxc-project+runtime@<version>/helpers/...")
+ * from inside the bundler, with no package on disk
+ */
+const OXC_RUNTIME = /^\0@oxc-project\+runtime@([^/]+)\//;
+function oxcRuntimeEntry(version: string): Omit<LicenseEntry, 'usedIn'> {
+  return { name: '@oxc-project/runtime', version, license: 'MIT', url: 'https://github.com/oxc-project/oxc', text: null };
 }
 
 function readEntry(dir: string): Omit<LicenseEntry, 'usedIn'> {
@@ -115,15 +131,29 @@ export function licensesPlugin(options: {
       };
 
       const appDirs = new Set<string>();
+      let oxcRuntime: string | null = null;
+      // Modules that only re-export (vue's own entry) are dropped from moduleIds, so the packages
+      // that import a bundled package module, within node_modules, count too
+      const seen = new Set<string>();
+      const addWithImporters = (id: string) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        const dir = packageDirOf(id);
+        if (!dir) return;
+        appDirs.add(dir);
+        const info = this.getModuleInfo(id);
+        for (const importer of [...(info?.importers ?? []), ...(info?.dynamicImporters ?? [])]) addWithImporters(importer);
+      };
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk') continue;
         for (const id of chunk.moduleIds) {
-          const dir = packageDirOf(id);
-          if (dir) appDirs.add(dir);
+          if (packageDirOf(id)) addWithImporters(id);
           // Vite's own runtime (preload helper, modulepreload polyfill) comes in as virtual modules
           else if (id.startsWith('\0vite/')) {
             const vite = resolvePackageDir('vite', root);
             if (vite) appDirs.add(vite);
+          } else {
+            oxcRuntime ??= OXC_RUNTIME.exec(id)?.[1] ?? null;
           }
         }
       }
@@ -138,6 +168,7 @@ export function licensesPlugin(options: {
         ...readEntry(dir),
         usedIn: (['app', 'sw', 'server'] as const).filter(u => used.has(u)),
       }));
+      if (oxcRuntime) entries.push({ ...oxcRuntimeEntry(oxcRuntime), usedIn: ['app'] });
       entries.sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
       for (const e of entries) {
         if (!e.text) this.warn(`${e.name}@${e.version}: no licence file in the package; the licences page points to ${e.url ?? '(no repository)'}`);
