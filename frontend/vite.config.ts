@@ -2,10 +2,19 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { licensesPlugin } from './licenses.plugin';
 
 export default defineConfig({
   plugins: [
     vue(),
+    licensesPlugin({
+      // What generateSW inlines into the service worker: the names in dist/workbox-*.js
+      // ("workbox:<name>:"). Update this when the workbox options below change
+      serviceWorker: ['workbox-core', 'workbox-precaching', 'workbox-routing', 'workbox-strategies'],
+      serverPackageJson: path.resolve(__dirname, '../backend/package.json'),
+      // Seen in the Worker's bundle (wrangler deploy --dry-run --metafile)
+      serverBundledByWrangler: ['wrangler', 'unenv', '@cloudflare/unenv-preset'],
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
@@ -24,7 +33,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // json: licenses.json, so the licences page opens offline too
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,json}'],
         importScripts: ['/push-sw.js'],
         // The Worker answers these, not the SPA: share pages (OGP, and the old host's redirect to
         // the new URL) and the API

@@ -11,7 +11,13 @@ const { t } = useI18n();
       <h1 class="about-title">Vege-Table</h1>
 
       <section class="about-section">
-        <h2>kan-game.app</h2>
+        <!-- The portal's own icon, loaded from the portal so it follows any change there -->
+        <h2>
+          <a class="portal-link" :href="portalUrl('/')" target="_blank" rel="noopener">
+            <img class="portal-icon" :src="portalUrl('/favicon.svg')" alt="" width="28" height="28" />
+            kan-game.app
+          </a>
+        </h2>
         <p class="about-text">{{ t('about.kanGame') }}</p>
         <div class="credit-item">
           <a :href="portalUrl('/terms')" target="_blank" rel="noopener">{{ t('about.terms') }}</a>
@@ -21,11 +27,7 @@ const { t } = useI18n();
 
       <section class="about-section">
         <h2>{{ t('about.credits') }}</h2>
-        <div class="credit-item">
-          <span class="credit-label">{{ t('about.icons') }}</span>
-          <a href="https://openmoji.org/" target="_blank" rel="noopener noreferrer">OpenMoji</a>
-          <span class="credit-license">CC BY-SA 4.0</span>
-        </div>
+        <router-link to="/licenses" class="row-btn licenses-link">{{ t('about.licenses') }}</router-link>
       </section>
     </div>
   </div>
@@ -55,6 +57,22 @@ const { t } = useI18n();
 }
 .about-section {
   margin-bottom: 24px;
+}
+.portal-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.licenses-link {
+  text-decoration: none;
+}
+.portal-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
 }
 .about-section h2 {
   font-size: 16px;
@@ -86,13 +104,5 @@ const { t } = useI18n();
 }
 .credit-item a:hover {
   text-decoration: underline;
-}
-.credit-license {
-  font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg-card);
-  padding: 2px 6px;
-  border-radius: 4px;
-  margin-left: auto;
 }
 </style>

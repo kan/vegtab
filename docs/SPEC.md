@@ -417,7 +417,7 @@ project/
 - **移さないもの:** 端末の localStorage（送信前の記録、設定、プレイ中の盤面）。オリジンが変わり、新しい URL からは読めない。
 - **移行のときに捨てたもの（マイグレーション 0014）:** Clear 以外のモードの記録と、定義にない実績。リプレイはすべて（#106 で盤面の生成が変わり、旧い盤面では再生できないため）。R2 の旧リプレイ（`replays/` の下）は、バケットのライフサイクルのルールで消す。新しいリプレイは `replays-v2/` の下に置く。移行の時点でまだ締め切っていないランキング（当日と、猶予中の前日）の記録も捨てた。旧い盤面と新しい盤面の記録が混ざるため。
   - `npm run deploy` はマイグレーションを当ててから Worker を出す。そのあいだに、旧い Worker が旧い盤面の記録を書きうる。旧い Worker の記録はリプレイのキーが `replays/` で始まる。デプロイの直後に `npx wrangler d1 execute DB --env production --remote --command "DELETE FROM play_scores WHERE replay_log_key LIKE 'replays/%'"` で消す。
-- **旧 URL を閉じる手順:** `vegtab.app` は route（`vegtab.app/*`）で Worker に向けており、dashboard の proxied の `AAAA 100::` が要る。閉じるときは route を設定と dashboard の両方から消し、`AAAA 100::` を消す。旧 URL を残すあいだは、どちらも消さない。閉じたら、`users`・`user_devices`・`transfer_codes`・`refresh_token_families`・`legacy_handoffs` と JWT の秘密鍵（`JWT_SECRET`）、`/api/auth/refresh` と `/api/legacy/handoff` を外せる。閉じる時期は未定。
+- **旧 URL を閉じる手順:** `vegtab.app` は route（`vegtab.app/*`）で Worker に向けており、dashboard の proxied の `AAAA 100::` が要る。閉じるときは route を設定と dashboard の両方から消し、`AAAA 100::` を消す。旧 URL を残すあいだは、どちらも消さない。閉じたら、`users`・`user_devices`・`transfer_codes`・`refresh_token_families`・`legacy_handoffs` と JWT の秘密鍵（`JWT_SECRET`）、`/api/auth/refresh` と `/api/legacy/handoff` を外せる。閉じるのは 2027 年に入ってから（TAKO-SEN の旧 URL と同じ扱い、2026-10-22 に決定）。それまでは引き継ぎを受け付ける。
 
 ## 6. データベース設計 (Cloudflare D1)
 

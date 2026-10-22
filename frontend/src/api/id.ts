@@ -204,7 +204,7 @@ async function sendRedeem(path: string, body: unknown): Promise<Redeem> {
  * portal. A local run (scripts/dev.mjs, also under roji's domain) gets kan/game's local portal
  * (VITE_KAN_GAME_PORTAL)
  */
-export function portalUrl(path: '/account' | '/privacy' | '/terms', host = window.location.hostname): string {
+export function portalUrl(path: '/' | '/account' | '/privacy' | '/terms' | '/favicon.svg', host = window.location.hostname): string {
   const local = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost') || /^\d+\.\d+\.\d+\.\d+$/.test(host);
   const portal = host.endsWith('.kan-game.app')
     ? host.split('.')[0].endsWith('-dev') ? 'https://dev.kan-game.app' : 'https://kan-game.app'

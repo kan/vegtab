@@ -36,6 +36,7 @@ function startGame() {
       // The tutorial hides the footer menu to give the board and its card the room (as TAKO-SEN)
       { path: '/tutorial', component: () => import('./views/TutorialView.vue'), meta: { hideNav: true } },
       { path: '/about', component: () => import('./views/AboutView.vue') },
+      { path: '/licenses', component: () => import('./views/LicensesView.vue') },
     ],
   });
 

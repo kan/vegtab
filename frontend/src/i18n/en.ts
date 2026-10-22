@@ -56,7 +56,21 @@ export default {
     terms: 'Terms of Service',
     privacy: 'Privacy Policy',
     credits: 'Credits',
-    icons: 'Icons',
+    licenses: 'Open source licences',
+  },
+  licenses: {
+    title: 'Open source licences',
+    back: 'Back to About',
+    desc: 'Vege-Table uses the following open source software.',
+    unavailable: 'The list could not be loaded.',
+    showText: 'Full licence text',
+    meta: '{license} · used in {usedIn}',
+    textAtSource: 'The full licence text is in the repository the name links to.',
+    usedIn: {
+      app: 'screens',
+      sw: 'offline support',
+      server: 'server',
+    },
   },
   weekdays: {
     sun: 'Sun',

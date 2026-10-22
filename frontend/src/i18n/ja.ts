@@ -56,7 +56,21 @@ export default {
     terms: '利用規約',
     privacy: 'プライバシーポリシー',
     credits: 'クレジット',
-    icons: 'アイコン',
+    licenses: 'オープンソースのライセンス',
+  },
+  licenses: {
+    title: 'オープンソースのライセンス',
+    back: 'About に戻る',
+    desc: 'Vege-Table は次のオープンソースのソフトウェアを使っています。',
+    unavailable: '一覧を読み込めませんでした。',
+    showText: 'ライセンスの全文',
+    meta: '{license} ・ {usedIn}で使用',
+    textAtSource: 'ライセンスの全文は、名前のリンク先のリポジトリにあります。',
+    usedIn: {
+      app: '画面',
+      sw: 'オフライン対応',
+      server: 'サーバー',
+    },
   },
   weekdays: {
     sun: '日',

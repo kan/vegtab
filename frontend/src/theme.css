@@ -204,7 +204,8 @@ button:not(:disabled):active {
   cursor: pointer;
 }
 @media (hover: hover) {
-  button.row-btn:hover {
+  /* Buttons and links alike (About's licences row is a link) */
+  .row-btn:not(:disabled):hover {
     background: var(--bg-hover);
   }
 }
