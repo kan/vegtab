@@ -6,6 +6,7 @@
 
 import type { Cell } from './types.js';
 import { BOARD_SIZE } from './types.js';
+import { isPinned } from './lock.js';
 import type { DropMove, NewTileEntry } from './traceCollector.js';
 
 /**
@@ -37,23 +38,23 @@ function computeDropMovesForPlainColumn(
   }
 }
 
-/** applyGravity と同じく、おじゃまタイルを固定して他のタイルがすり抜けて落ちる前提で計算する */
+/** applyGravity と同じく、おじゃまタイルと鎖の付いた野菜を固定して他のタイルがすり抜けて落ちる前提で計算する */
 export function computeDropMoves(board: (Cell | null)[][]) {
   const moves: DropMove[] = [];
   const newTileEntries: NewTileEntry[] = [];
   for (let col = 0; col < BOARD_SIZE; col++) {
-    let hasObstacle = false;
+    let hasPinned = false;
     for (let row = 0; row < BOARD_SIZE; row++) {
-      if (board[row][col]?.obstacle) { hasObstacle = true; break; }
+      if (isPinned(board[row][col])) { hasPinned = true; break; }
     }
 
-    if (!hasObstacle) {
+    if (!hasPinned) {
       computeDropMovesForPlainColumn(board, col, moves, newTileEntries);
     } else {
       const freeRows: number[] = [];
       const tiles: { row: number; cell: Cell }[] = [];
       for (let row = BOARD_SIZE - 1; row >= 0; row--) {
-        if (board[row][col]?.obstacle) continue;
+        if (isPinned(board[row][col])) continue;
         freeRows.push(row);
         if (board[row][col] !== null) {
           tiles.push({ row, cell: board[row][col]! });

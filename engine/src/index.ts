@@ -7,6 +7,7 @@ export * from './item.js';
 export * from './score.js';
 export * from './gameOver.js';
 export * from './obstacle.js';
+export * from './lock.js';
 export * from './traceCollector.js';
 export * from './dropMoves.js';
 export * from './trace.js';

@@ -188,6 +188,9 @@ function puzzleStoreSetup() {
 
 export const usePuzzleStore = defineStore('puzzle', puzzleStoreSetup);
 export const useTutorialPuzzleStore = defineStore('puzzle-tutorial', puzzleStoreSetup);
+/** The lock mode's prototype page (#107, dev only) */
+export const useLockProtoPuzzleStore = defineStore('puzzle-lock-proto', puzzleStoreSetup);
 
-export type PuzzleStore = ReturnType<typeof usePuzzleStore> | ReturnType<typeof useTutorialPuzzleStore>;
+export type PuzzleStore = ReturnType<typeof usePuzzleStore> | ReturnType<typeof useTutorialPuzzleStore>
+  | ReturnType<typeof useLockProtoPuzzleStore>;
 export const PUZZLE_STORE_KEY: InjectionKey<PuzzleStore> = Symbol('puzzle-store');

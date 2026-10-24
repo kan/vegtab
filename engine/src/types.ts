@@ -12,6 +12,11 @@ export type Cell = {
   color: Color;
   item?: ItemType;
   obstacle?: Obstacle;
+  /**
+   * 鎖の段数（鎖のモードの試作、#107。連鎖の chain と区別するため lock と呼ぶ）。鎖の付いた野菜は入れ替えできず、落下しない。
+   * 同じ色のマッチに入るか、アイテムの効果範囲に入ると 1 段外れ、野菜はその場に残る
+   */
+  lock?: number;
 };
 
 /** 盤面座標 */
@@ -62,6 +67,19 @@ export type SynthesisEffect =
 /** ゲーム初期化パラメータ */
 export type GameInitParams = {
   obstacleCount?: number;    // default OBSTACLE_DURABILITIES (16, durability total 28). For tests
+  /**
+   * 鎖のモードの盤にする（#107 の試作）。おじゃまタイルを置かず、代わりに鎖を置く。
+   * 鎖をすべて外すとクリア
+   */
+  locks?: LockParams;
+};
+
+/** 鎖の置き方（#107 の試作） */
+export type LockParams = {
+  /** 鎖の付いた野菜の数 */
+  count: number;
+  /** そのうち 2 段の鎖の数 */
+  double: number;
 };
 
 /** ゲーム状態 */

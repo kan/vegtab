@@ -2,6 +2,7 @@ import { Cell, GameState, BOARD_SIZE } from './types.js';
 import { findMatches, hasMatches, hasMatchAt } from './match.js';
 import { cloneBoard } from './board.js';
 import { allObstaclesCleared } from './obstacle.js';
+import { allLocksCleared, isImmovable } from './lock.js';
 
 /**
  * (r1, c1) と (r2, c2) を入れ替えるとマッチが成立するか。processAction がスワイプを受け付ける条件
@@ -49,6 +50,8 @@ export function hasValidSwap(board: (Cell | null)[][]): boolean {
 
         // おじゃま同士のスワイプは不可
         if (cell.obstacle && neighbor.obstacle) continue;
+        // 鎖の付いた野菜は入れ替えられない
+        if (isImmovable(cell) || isImmovable(neighbor)) continue;
 
         // 片方がおじゃまタイルの場合
         if (cell.obstacle || neighbor.obstacle) {
@@ -90,12 +93,12 @@ function isStuck(board: (Cell | null)[][]): boolean {
   return !hasValidSwap(board) && !hasActivatableItems(board);
 }
 
-/** ゲーム終了判定: 全おじゃまタイル除去でクリア、詰みで失敗 */
+/** ゲーム終了判定: 全おじゃまタイル除去（鎖のモードでは全部の鎖を外す）でクリア、詰みで失敗 */
 export function checkGameOverState(state: GameState): {
   gameOver: boolean;
   isCleared?: boolean;
 } {
-  if (allObstaclesCleared(state.board)) return { gameOver: true, isCleared: true };
+  if (allObstaclesCleared(state.board) && allLocksCleared(state.board)) return { gameOver: true, isCleared: true };
   if (isStuck(state.board)) return { gameOver: true, isCleared: false };
   return { gameOver: false };
 }

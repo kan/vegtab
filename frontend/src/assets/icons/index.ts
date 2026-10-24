@@ -5,6 +5,10 @@ export { default as eggplantIcon } from './1F346.svg';
 export { default as tomatoIcon } from './1F345.svg';
 export { default as daikonIcon } from './1FADC-daikon.svg';
 
+// Locks on a vegetable (#107 prototype): 1 and 2 layers
+export { default as chainLock1Icon } from './chain-1.svg';
+export { default as chainLock2Icon } from './chain-2.svg';
+
 // Item icons
 export { default as spoonIcon } from './1F50E.svg';
 export { default as scissorsIcon } from './2702.svg';

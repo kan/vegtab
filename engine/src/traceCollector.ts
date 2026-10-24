@@ -51,6 +51,8 @@ export interface ItemEffectData {
   detonations: { pos: Position; item: ItemType }[];
   depth: number;
   score: number;
+  /** 効果範囲で鎖が 1 段外れた位置（野菜は残るので targets には入らない。#107 の試作） */
+  unlocked?: Position[];
 }
 
 /** 合成効果のデータ（processSynthesis 内で通知） */

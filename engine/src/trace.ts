@@ -63,6 +63,8 @@ export interface ItemEffectStep {
   detonations: { pos: Position; item: ItemType }[];
   depth: number;
   score: number;
+  /** 効果範囲で鎖が 1 段外れた位置（鎖を外したときだけ。#107 の試作） */
+  unlocked?: Position[];
 }
 
 export interface ItemAnimPlan {
@@ -221,6 +223,7 @@ function createCollector(cs: CollectorState): TraceCollector {
         detonations: data.detonations,
         depth: data.depth,
         score: data.score,
+        ...(data.unlocked?.length ? { unlocked: data.unlocked } : {}),
       });
     },
 

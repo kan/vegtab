@@ -1,5 +1,5 @@
 import { ref, reactive } from 'vue';
-import { BOARD_SIZE, type Position, type Direction } from '@vegtab/engine';
+import { BOARD_SIZE, isValidPosition, type Position, type Direction } from '@vegtab/engine';
 import { useAnim } from '@/anim';
 import { adj } from '@/lib/boardInput';
 
@@ -15,7 +15,11 @@ export function useDragHandler(
   boardEl: { value: HTMLElement | null },
   onSwap: (pos: Position, dir: Direction) => void,
   onTap: (pos: Position) => void,
-  options?: { isDragSuppressed?: () => boolean },
+  options?: {
+    isDragSuppressed?: () => boolean;
+    /** 動かせないマス（鎖の付いた野菜、#107）。そこから、またはそこへのドラッグはタイルを少しだけ揺らして止める */
+    isImmovable?: (pos: Position) => boolean;
+  },
 ) {
   const { ANIM } = useAnim();
   const cellOffsets = reactive<Record<string, { x: number; y: number; transition: boolean; z: number }>>({});
@@ -85,14 +89,25 @@ export function useDragHandler(
     let cx = 0, cy = 0;
     if (dragAxis === 'x') cx = Math.max(-cs, Math.min(cs, dx));
     else cy = Math.max(-cs, Math.min(cs, dy));
-    setOff(ptrPos.row, ptrPos.col, cx, cy, false, 10);
     const dir = dragDir(cx, cy);
-    if (dir) {
-      const nb = adj(ptrPos, dir);
-      if (nb.row >= 0 && nb.row < BOARD_SIZE && nb.col >= 0 && nb.col < BOARD_SIZE) {
-        setOff(nb.row, nb.col, -cx, -cy, false, 0);
+    const nb = dir ? adj(ptrPos, dir) : null;
+    const target = nb && isValidPosition(nb) ? nb : null;
+    const selfStuck = options?.isImmovable?.(ptrPos) ?? false;
+    if (selfStuck || (target && options?.isImmovable?.(target))) {
+      // 動かせない: 指の方向へ少しだけ引っかかって止まる（鎖の野菜自身はさらに小さく）。
+      // 入れ替えは起こさず、指を離すと戻る
+      const tug = cs * (selfStuck ? 0.04 : 0.08);
+      const clamp = (v: number) => Math.max(-tug, Math.min(tug, v));
+      setOff(ptrPos.row, ptrPos.col, clamp(cx), clamp(cy), false, 10);
+      // 同じドラッグで先に反対側の隣を動かしていたら、元の位置へ戻す
+      for (const d of ['up', 'down', 'left', 'right'] as Direction[]) {
+        const n = adj(ptrPos, d);
+        if (isValidPosition(n)) clearOff(n.row, n.col);
       }
+      return;
     }
+    setOff(ptrPos.row, ptrPos.col, cx, cy, false, 10);
+    if (target) setOff(target.row, target.col, -cx, -cy, false, 0);
     if (Math.abs(cx) > cs * 0.4 || Math.abs(cy) > cs * 0.4) {
       handled = true;
       onSwap(ptrPos, dir!);

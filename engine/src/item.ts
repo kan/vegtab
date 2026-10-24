@@ -171,7 +171,14 @@ function groupMatchesByComponent(matches: Match[]): Match[][] {
 function determineBestItemForComponent(
   componentMatches: Match[],
   swapPositions?: [Position, Position],
+  isBlocked?: (pos: Position) => boolean,
 ): { item: ItemType; pos: Position } | null {
+  // 置けない位置（鎖の付いた野菜）を除いた中央。全部置けないときは null
+  const center = (positions: Position[]): Position | null => {
+    if (!isBlocked || !positions.some(isBlocked)) return getCenterPosition(positions);
+    const free = positions.filter(p => !isBlocked(p));
+    return free.length > 0 ? getCenterPosition(free) : null;
+  };
   // コンポーネント内の全位置
   const allPositions = new Set<string>();
   for (const m of componentMatches) {
@@ -191,6 +198,7 @@ function determineBestItemForComponent(
     }
   }
 
+  // 置き場所が無い候補（全部が鎖の付いた野菜）は選ばず、次の候補に譲る
   let best: { item: ItemType; pos: Position; priority: number } | null = null;
 
   // 1. 個別マッチから直線アイテム判定 (v_cut, h_cut, flush)
@@ -200,8 +208,8 @@ function determineBestItemForComponent(
 
     const p = ITEM_PRIORITY[item];
     if (best === null || p > best.priority) {
-      const pos = swapPos ?? getCenterPosition(match.positions);
-      best = { item, pos, priority: p };
+      const pos = swapPos ?? center(match.positions);
+      if (pos) best = { item, pos, priority: p };
     }
   }
 
@@ -216,8 +224,8 @@ function determineBestItemForComponent(
         if (!isH && !isV) {
           const p = ITEM_PRIORITY.burst;
           if (!best || p > best.priority) {
-            const pos = swapPos ?? getCenterPosition(group.positions);
-            best = { item: 'burst', pos, priority: p };
+            const pos = swapPos ?? center(group.positions);
+            if (pos) best = { item: 'burst', pos, priority: p };
           }
         }
       }
@@ -229,8 +237,8 @@ function determineBestItemForComponent(
   if (has2x2) {
     if (!best || best.priority < ITEM_PRIORITY.v_cut) {
       const match2x2 = componentMatches.find(m => m.shape === '2x2')!;
-      const pos = swapPos ?? getCenterPosition(match2x2.positions);
-      best = { item: 'scope', pos, priority: ITEM_PRIORITY.scope };
+      const pos = swapPos ?? center(match2x2.positions);
+      if (pos) best = { item: 'scope', pos, priority: ITEM_PRIORITY.scope };
     }
   }
 
@@ -244,16 +252,18 @@ function determineBestItemForComponent(
  * 2×2マッチと直線マッチの重複ルール:
  *   - 2×2と3直線の重複 → scope成立
  *   - 2×2と4直線以上 or L/T字5マス以上の重複 → 上位アイテム優先、scope消滅
+ * isBlocked: アイテムを置けない位置（鎖の付いた野菜。マッチしても残るため）
  */
 export function determineItemFromMatches(
   matches: Match[],
-  swapPositions?: [Position, Position]
+  swapPositions?: [Position, Position],
+  isBlocked?: (pos: Position) => boolean,
 ): { item: ItemType; pos: Position }[] {
   const components = groupMatchesByComponent(matches);
   const results: { item: ItemType; pos: Position }[] = [];
 
   for (const component of components) {
-    const item = determineBestItemForComponent(component, swapPositions);
+    const item = determineBestItemForComponent(component, swapPositions, isBlocked);
     if (item) results.push(item);
   }
 

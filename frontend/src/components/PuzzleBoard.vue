@@ -2,7 +2,7 @@
 import { ref, reactive, computed, inject, watch, onMounted, onUnmounted, triggerRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { usePuzzleStore, PUZZLE_STORE_KEY, calcItemEffectScore, type ItemAnimPlan, type ItemEffectStep, type ChainAnimData, type SynthesisAnimPlan } from '@/stores/puzzle';
-import { BOARD_SIZE, cloneBoard, getSynthesisEffect, type Position, type Direction, type Cell, type Color, type ItemType, type GameState } from '@vegtab/engine';
+import { BOARD_SIZE, cloneBoard, getSynthesisEffect, getUniquePositions, hitLock, type Position, type Direction, type Cell, type Color, type ItemType, type GameState } from '@vegtab/engine';
 import { useScopeSelection } from '@/composables/useMagGlassSelection';
 import { useDragHandler, pk } from '@/composables/useDragHandler';
 import { adj, dirBetween, type BoardHint, type BoardInput } from '@/lib/boardInput';
@@ -10,7 +10,7 @@ import { playSE, vibrate } from '@/sound';
 import { useAnim } from '@/anim';
 import ItemIcon from './ItemIcon.vue';
 import VegetableIcon from './VegetableIcon.vue';
-import { checkIcon } from '@/assets/icons';
+import { checkIcon, chainLock1Icon, chainLock2Icon } from '@/assets/icons';
 import ObstacleTile from './ObstacleTile.vue';
 import type DebugPanel from './DebugPanel.vue';
 
@@ -120,6 +120,55 @@ function vbRemove(pos: Position) {
   triggerRef(visualBoard);
 }
 
+// --- Locks (#107 prototype) ---
+/**
+ * 鎖が外れる演出の最中のマス → 外れる前の段数（その段数の鎖の絵を弾けさせて消す）と、演出ごとの番号
+ * （同じマスで続けて外れたとき、絵を作り直して演出をやり直すため）
+ */
+const lockBreaking = reactive(new Map<string, { layers: number; id: number }>());
+let lockBreakSeq = 0;
+
+const lockIcon = (layers: number) => layers >= 2 ? chainLock2Icon : chainLock1Icon;
+
+function showLockBreak(pos: Position, layers: number) {
+  const k = pk(pos.row, pos.col);
+  const id = ++lockBreakSeq;
+  lockBreaking.set(k, { layers, id });
+  setTimeout(() => { if (lockBreaking.get(k)?.id === id) lockBreaking.delete(k); }, ANIM.value.CLEAR + scaled(150));
+}
+
+/** 表示中の盤の pos の鎖を 1 段外し、外れる演出を出す（エンジンの結果に、表示を先回りして合わせる） */
+function vbHitLock(pos: Position) {
+  const layers = visualBoard.value?.[pos.row]?.[pos.col]?.lock;
+  if (!layers) return;
+  hitLock(visualBoard.value!, pos);
+  showLockBreak(pos, layers);
+  triggerRef(visualBoard);
+}
+
+/** 表示中の盤から pos のタイルを消す。鎖の付いた野菜は消さずに鎖を 1 段外す（エンジンと同じ扱い） */
+function vbClearCell(pos: Position) {
+  if (visualBoard.value?.[pos.row]?.[pos.col]?.lock) vbHitLock(pos);
+  else vbRemove(pos);
+}
+
+/**
+ * 表示中の盤を next に差し替える。鎖が減ったマスには外れる演出を出す（合成などで、鎖が外れた後の盤を
+ * まとめて受け取る経路のため）。鎖の野菜は動かないので、同じ位置の段数で比べる
+ */
+function vbReplace(next: (Cell | null)[][]) {
+  const prev = visualBoard.value;
+  if (prev) {
+    for (let row = 0; row < BOARD_SIZE; row++) {
+      for (let col = 0; col < BOARD_SIZE; col++) {
+        const was = prev[row][col]?.lock ?? 0;
+        if (was > (next[row][col]?.lock ?? 0)) showLockBreak({ row, col }, was);
+      }
+    }
+  }
+  visualBoard.value = next;
+}
+
 // --- Match/clear animation state ---
 const matchedCells = reactive(new Set<string>());
 const clearingCells = reactive(new Set<string>());
@@ -192,6 +241,7 @@ function showScopeHint(key: string) {
 // --- Drag handling ---
 const drag = useDragHandler(cellSize, boardEl, commitSwap, handleTap, {
   isDragSuppressed: () => scope.scopeSelecting.value,
+  isImmovable: pos => !!activeBoard.value?.[pos.row]?.[pos.col]?.lock,
 });
 const { cellOffsets, getOff, setOff, clearOff } = drag;
 
@@ -323,7 +373,7 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
   if (adjNonItem.length > 0) {
     await animateRadial(scopePos, adjNonItem, 'scope');
     addFloatingScore([scopePos, ...adjNonItem], plan.effectScore);
-    for (const t of adjNonItem) vbRemove(t);
+    for (const t of adjNonItem) vbClearCell(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
   } else if (plan.effectScore > 0) {
@@ -344,14 +394,14 @@ async function animateScope(scopePos: Position, targetCells: Position[]) {
     cellItemOverlay.set(key, 'scope');
     await wait(scaled(120));
     itemClearingCells.add(key);
-    vbRemove(target);
+    vbClearCell(target);
     await wait(ANIM.value.ITEM_CLEAR);
     itemClearingCells.clear();
     cellItemOverlay.clear();
   }
 
   // Switch to board after clear
-  visualBoard.value = plan.boardAfterClear;
+  vbReplace(plan.boardAfterClear);
 
   // Animate item detonations if any
   for (const effect of plan.itemEffects) {
@@ -398,7 +448,7 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
   if (adjNonItem.length > 0) {
     await animateRadial(pos1, adjNonItem, 'scope');
     addFloatingScore([pos1, ...adjNonItem], plan.effectScore);
-    for (const t of adjNonItem) vbRemove(t);
+    for (const t of adjNonItem) vbClearCell(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
   } else if (plan.effectScore > 0) {
@@ -410,28 +460,28 @@ async function animateScopeSynthesis(pos1: Position, pos2: Position, targetCells
     const remaining = plan.effectTargets.filter(t => visualBoard.value?.[t.row]?.[t.col]);
     if (remaining.length > 0) {
       await animateRadial(pos1, remaining, 'scope');
-      for (const t of remaining) vbRemove(t);
+      for (const t of remaining) vbClearCell(t);
       itemClearingCells.clear();
       cellItemOverlay.clear();
     }
   } else if (plan.synthEffect === 'scope+v_cut') {
     await animateVCut(targetCells[0], plan.effectTargets);
-    for (const t of plan.effectTargets) vbRemove(t);
+    for (const t of plan.effectTargets) vbClearCell(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
   } else if (plan.synthEffect === 'scope+h_cut') {
     await animateHCut(targetCells[0], plan.effectTargets);
-    for (const t of plan.effectTargets) vbRemove(t);
+    for (const t of plan.effectTargets) vbClearCell(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
   } else if (plan.synthEffect === 'scope+burst') {
     await animateRadial(targetCells[0], plan.effectTargets, 'burst');
-    for (const t of plan.effectTargets) vbRemove(t);
+    for (const t of plan.effectTargets) vbClearCell(t);
     itemClearingCells.clear();
     cellItemOverlay.clear();
   }
 
-  visualBoard.value = plan.boardAfterClear;
+  vbReplace(plan.boardAfterClear);
 
   // Animate item detonations if any
   for (const effect of plan.itemEffects) {
@@ -606,6 +656,7 @@ async function animateItemEffects(plan: ItemAnimPlan) {
     await animateSingleEffect(effect.itemType, effect.itemPos, effect.targets);
     showItemEffectScore(effect);
     for (const t of effect.targets) vbRemove(t);
+    effect.unlocked?.forEach(vbHitLock);
     itemClearingCells.clear();
     cellItemOverlay.clear();
   }
@@ -908,7 +959,7 @@ async function animateDrop(
   const cs = cellSize.value;
   for (const m of dropMoves) dropOffsets[pk(m.toRow, m.col)] = (m.fromRow - m.toRow) * cs;
   for (const e of newTileEntries) dropOffsets[pk(e.row, e.col)] = -e.segNulls * cs;
-  visualBoard.value = boardAfterDrop;
+  vbReplace(boardAfterDrop);
   await nextFrame();
   dropTransitioning.value = true;
   const keys = Object.keys(dropOffsets);
@@ -951,13 +1002,17 @@ async function animateChainStep(chain: ChainAnimData) {
   } else {
     playSE('match'); vibrate(15);
   }
+  // マッチに入った鎖の野菜は消えずに鎖が外れる（clearedPositions には入らない）
+  const unlocked = getUniquePositions(chain.matches).filter(p => visualBoard.value?.[p.row]?.[p.col]?.lock);
   for (const p of chain.clearedPositions) matchedCells.add(pk(p.row, p.col));
+  for (const p of unlocked) matchedCells.add(pk(p.row, p.col));
   addFloatingScore(chain.clearedPositions, chain.score);
   await wait(ANIM.value.MATCH_SHOW);
 
   // Fade out
   playSE('clear');
   for (const p of chain.clearedPositions) clearingCells.add(pk(p.row, p.col));
+  unlocked.forEach(vbHitLock);
   await wait(ANIM.value.CLEAR);
   matchedCells.clear();
   clearingCells.clear();
@@ -1101,6 +1156,21 @@ function tileTransition(r: number, c: number) {
                   <VegetableIcon
                     :color="activeBoard[row - 1][col - 1]!.color"
                     :size="Math.max(0, cellSize - 5)"
+                  />
+                  <img
+                    v-if="activeBoard[row - 1][col - 1]!.lock"
+                    :src="lockIcon(activeBoard[row - 1][col - 1]!.lock!)"
+                    class="lock-overlay"
+                    alt=""
+                    draggable="false"
+                  />
+                  <img
+                    v-if="lockBreaking.size && lockBreaking.has(pk(row - 1, col - 1))"
+                    :key="`break-${lockBreaking.get(pk(row - 1, col - 1))!.id}`"
+                    :src="lockIcon(lockBreaking.get(pk(row - 1, col - 1))!.layers)"
+                    class="lock-overlay lock-breaking"
+                    alt=""
+                    draggable="false"
                   />
                   <span
                     v-if="matchedCells.has(pk(row - 1, col - 1)) || clearingCells.has(pk(row - 1, col - 1))"
@@ -1416,6 +1486,23 @@ function tileTransition(r: number, c: number) {
 .check-icon {
   width: 1.6em;
   height: 1.6em;
+}
+/* 鎖（#107 の試作）。野菜の上に重ね、入力は下のタイルへ通す */
+.lock-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* 外れた鎖: 外へ弾けて消える。残る段の鎖（あれば）は下にそのまま描く */
+.lock-breaking {
+  animation: lock-break calc(0.45s / var(--anim-duration-factor, 1)) ease-out forwards;
+}
+@keyframes lock-break {
+  0%   { transform: scale(1); opacity: 1; }
+  30%  { transform: scale(1.15) rotate(-6deg); opacity: 1; }
+  100% { transform: scale(1.5) rotate(10deg); opacity: 0; }
 }
 .check-overlay {
   position: absolute;

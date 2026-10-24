@@ -37,6 +37,10 @@ function startGame() {
       { path: '/tutorial', component: () => import('./views/TutorialView.vue'), meta: { hideNav: true } },
       { path: '/about', component: () => import('./views/AboutView.vue') },
       { path: '/licenses', component: () => import('./views/LicensesView.vue') },
+      // 鎖のモードの試作（#107）。開発時だけ。本番のビルドには入らない
+      ...(import.meta.env.DEV
+        ? [{ path: '/proto/lock', component: () => import('./views/LockProtoView.vue'), meta: { hideNav: true } }]
+        : []),
     ],
   });
 

@@ -18,6 +18,7 @@ import {
 import { calculateStepScore, getFullClearBonus } from './score.js';
 import { checkGameOverState } from './gameOver.js';
 import { generateObstacles, damageObstacles, damageObstacleAt, damageAllObstacles } from './obstacle.js';
+import { generateLocks, hitLock, clearMatchedPositions, isImmovable } from './lock.js';
 import type { TraceCollector } from './traceCollector.js';
 import { computeDropMoves } from './dropMoves.js';
 
@@ -82,11 +83,13 @@ export function initializeGame(seed: number, params?: GameInitParams): GameState
     rngState = fillEmptyCells(board, rngState);
   }
 
-  const obstacles = generateObstacles(board, rngState, params?.obstacleCount);
+  const placed = params?.locks
+    ? generateLocks(board, rngState, params.locks)
+    : generateObstacles(board, rngState, params?.obstacleCount);
   return {
     board,
     score: 0,
-    rngState: obstacles.rngState,
+    rngState: placed.rngState,
     moveCount: 0,
     isGameOver: false,
     seed,
@@ -159,6 +162,7 @@ function activateItem(
 
     const targets = getItemTargets(board, current.pos, current.item, current.targetColor, current.targetCells);
     const cleared: Position[] = [];
+    let unlocked: Position[] | undefined;
     const detonations: { pos: Position; item: ItemType }[] = [];
 
     const flushColors = snapshotFlushColors(board, targets);
@@ -168,6 +172,10 @@ function activateItem(
       if (tCell === null) continue;
       if (tCell.obstacle) {
         if (damageObstacleAt(board, t)) allCleared.push(t);
+        continue;
+      }
+      if (hitLock(board, t)) {
+        (unlocked ??= []).push(t);
         continue;
       }
       if (tCell.item) {
@@ -201,6 +209,7 @@ function activateItem(
         detonations,
         depth: current.depth,
         score,
+        unlocked,
       });
     }
   }
@@ -235,12 +244,10 @@ function activateCoffeeSynthesis(
   const activated = new Set<string>();
   const allCleared: Position[] = [];
 
-  // 対象色タイルを消して、各位置からアイテム効果を発動
-  for (const ct of colorTargets) {
-    board[ct.row][ct.col] = null;
-    allCleared.push(ct);
-  }
-  totalScore += 10 * colorTargets.length * chainIndex;
+  // 対象色タイルを消して（鎖の付いた野菜は鎖を外すだけ）、各位置からアイテム効果を発動
+  const colorCleared = clearMatchedPositions(board, colorTargets);
+  allCleared.push(...colorCleared);
+  totalScore += 10 * colorCleared.length * chainIndex;
 
   // 各位置からアイテム効果を発動
   for (const ct of colorTargets) {
@@ -269,6 +276,7 @@ function activateCoffeeSynthesis(
         if (damageObstacleAt(board, t)) allCleared.push(t);
         continue;
       }
+      if (hitLock(board, t)) continue;
       if (cell.item) {
         // 誘爆（flushはスナップショットした色を渡す）
         const key = `${t.row},${t.col}`;
@@ -398,6 +406,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         if (damageObstacleAt(board, t)) allCleared.push(t);
         continue;
       }
+      if (hitLock(board, t)) continue;
       if (adjCell.item) {
         let tc: number | undefined;
         if (adjCell.item === 'flush') {
@@ -423,6 +432,7 @@ export function processAction(state: GameState, action: Action, collector?: Trac
         if (damageObstacleAt(board, target)) allCleared.push(target);
         continue;
       }
+      if (hitLock(board, target)) continue;
       if (targetCell.item) {
         let targetColor: number | undefined;
         if (targetCell.item === 'flush') {
@@ -481,6 +491,8 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     const cell1 = getCell(board, action.pos);
     const cell2 = getCell(board, targetPos);
     if (!cell1 || !cell2) return state;
+    // 鎖の付いた野菜は入れ替えられない
+    if (isImmovable(cell1) || isImmovable(cell2)) return state;
 
     // アイテム合成チェック
     if (cell1.item && cell2.item) {
@@ -609,13 +621,11 @@ export function processAction(state: GameState, action: Action, collector?: Trac
     newState.moveCount++;
 
     // アイテム生成判定
-    const itemGens = determineItemFromMatches(matches, [action.pos, targetPos]);
+    // 鎖の付いた野菜はマッチしても残るので、そこにはアイテムを置かない
+    const itemGens = determineItemFromMatches(matches, [action.pos, targetPos], p => isImmovable(board[p.row][p.col]));
 
-    // マッチ消去
-    const cleared = getUniquePositions(matches);
-    for (const pos of cleared) {
-      board[pos.row][pos.col] = null;
-    }
+    // マッチ消去（鎖の付いた野菜は鎖を外すだけ）
+    const cleared = clearMatchedPositions(board, getUniquePositions(matches));
 
     // スコア計算（1連鎖目）
     const stepScore = calculateStepScore(matches, 1);
@@ -693,6 +703,7 @@ function clearTargets(
       if (damageObstacleAt(board, t)) allCleared.push(t);
       continue;
     }
+    if (hitLock(board, t)) continue;
     if (cell.item) {
       const key = `${t.row},${t.col}`;
       if (!activated.has(key)) {
@@ -742,6 +753,7 @@ function processSynthesis(
         const cell = board[row][col];
         if (cell === null) continue;
         if (cell.obstacle) continue; // おじゃまタイルは残留
+        if (hitLock(board, { row, col })) continue; // 鎖の付いた野菜は鎖が 1 段外れて残る
         if (!cell.item) {
           board[row][col] = null;
           allCleared.push({ row, col });
@@ -771,8 +783,7 @@ function processSynthesis(
     }
 
     // Flush targets are plain tiles only (no items, no obstacles), so there is nothing to detonate
-    const targets = getFlushTargets(board, targetColor);
-    for (const t of targets) board[t.row][t.col] = null;
+    const targets = clearMatchedPositions(board, getFlushTargets(board, targetColor));
     allCleared.push(...targets);
     totalScore += 10 * targets.length;
 
@@ -874,6 +885,7 @@ export function processScopeSynthesis(
         if (damageObstacleAt(board, t)) allCleared.push(t);
         continue;
       }
+      if (hitLock(board, t)) continue;
       if (adjCell.item) {
         let tc: number | undefined;
         if (adjCell.item === 'flush') {
@@ -901,6 +913,7 @@ export function processScopeSynthesis(
         if (damageObstacleAt(board, target)) allCleared.push(target);
         continue;
       }
+      if (hitLock(board, target)) continue;
       if (cell.item) {
         let targetColor: number | undefined;
         if (cell.item === 'flush') {
@@ -957,6 +970,7 @@ export function processScopeSwapPreChains(
   const cell1 = getCell(state.board, pos);
   const cell2 = getCell(state.board, targetPos);
   if (!cell1 || !cell2 || !isScopeSwapPair(cell1, cell2)) return null;
+  if (isImmovable(cell1) || isImmovable(cell2)) return null;
 
   const newState = cloneGameState(state);
   const board = newState.board;
@@ -1035,8 +1049,7 @@ function processChains(
       while (stabilize++ < MAX_STABILIZE_ITERATIONS) {
         const m = findMatches(board);
         if (m.length === 0) break;
-        const c = getUniquePositions(m);
-        for (const p of c) board[p.row][p.col] = null;
+        const c = clearMatchedPositions(board, getUniquePositions(m));
         rng = processDamage(board, c, rng);
         applyGravity(board);
         rng = fillEmptyCells(board, rng);
@@ -1045,13 +1058,10 @@ function processChains(
     }
 
     // アイテム生成判定
-    const itemGens = determineItemFromMatches(matches);
+    const itemGens = determineItemFromMatches(matches, undefined, p => isImmovable(board[p.row][p.col]));
 
-    // 消去
-    const cleared = getUniquePositions(matches);
-    for (const pos of cleared) {
-      board[pos.row][pos.col] = null;
-    }
+    // 消去（鎖の付いた野菜は鎖を外すだけ）
+    const cleared = clearMatchedPositions(board, getUniquePositions(matches));
 
     // スコア
     const stepScore = calculateStepScore(matches, chainIndex);
