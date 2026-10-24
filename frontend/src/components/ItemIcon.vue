@@ -17,7 +17,7 @@ const icons: Record<string, string> = {
     :src="icons[item]"
     :width="size"
     :height="size"
-    :style="item === 'v_cut' ? { transform: 'rotate(135deg)' } : item === 'h_cut' ? { transform: 'rotate(45deg)' } : undefined"
+    :style="item === 'h_cut' ? { transform: 'rotate(90deg)' } : undefined"
     alt=""
     draggable="false"
   />
