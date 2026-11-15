@@ -2,6 +2,7 @@ import { env } from 'cloudflare:test';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   call, resetDb, registerUser, authHeader, submitReplay, submitScore, getTodaySeedId, insertPlayScore, useFakeToday,
+  dailySeedOf,
 } from './helpers';
 import { todayJST } from '../src/lib/date';
 
@@ -86,8 +87,16 @@ describe('Seeds & Ranking API', () => {
       return (await res.json() as { seeds: CalendarSeed[] }).seeds;
     }
 
+    /** A daily row of `date`, as the first play of that day leaves it */
+    async function insertDailyRow(date: string, id = `row-${date}`, value = '12345') {
+      await env.DB.prepare(
+        'INSERT INTO puzzle_seeds (id, seed_value, share_code, is_daily, daily_date) VALUES (?, ?, ?, 1, ?)'
+      ).bind(id, value, id.slice(-6).toUpperCase(), date).run();
+    }
+
     it('calendar lists every day of the month up to today, and none after it', async () => {
       useFakeToday('2026-11-20');
+      await insertDailyRow('2026-10-01');
       const seeds = await calendar('2026-11');
       expect(seeds.map(s => s.date)).toEqual(
         Array.from({ length: 20 }, (_, i) => `2026-11-${String(20 - i).padStart(2, '0')}`),
@@ -95,24 +104,53 @@ describe('Seeds & Ranking API', () => {
       expect(await calendar('2026-12')).toEqual([]);
     });
 
-    it('a day without a row gets the value that /daily stores for it later, without writing a row', async () => {
+    it('calendar lists no day before the first daily, and says which day that is', async () => {
       useFakeToday('2026-11-20');
-      const [listed] = await calendar('2026-11');
-      expect(listed).toMatchObject({ date: '2026-11-20', seedId: null });
+      await insertDailyRow('2026-11-18');
+      const res = await call('http://localhost/api/seeds/daily/calendar?month=2026-11', { headers: authHeader(accessToken) });
+      const body = await res.json() as { seeds: CalendarSeed[]; firstDate: string };
+      expect(body.seeds.map(s => s.date)).toEqual(['2026-11-20', '2026-11-19', '2026-11-18']);
+      expect(body.firstDate).toBe('2026-11-18');
+      expect(await calendar('2026-10')).toEqual([]);
+    });
+
+    it('by-value gives the day of a stored daily seed, and nothing for a value without a row', async () => {
+      useFakeToday('2026-11-20');
+      await insertDailyRow('2026-11-19', 'row-yesterday', '777');
+      const found = await call('http://localhost/api/seeds/by-value/777', { headers: authHeader(accessToken) });
+      expect(await found.json()).toEqual({ seedValue: '777', date: '2026-11-19' });
+
+      // Tomorrow has no row, so its value (whatever it is) is not looked up
+      const tomorrow = await dailySeedOf('2026-11-21');
+      const missing = await call(`http://localhost/api/seeds/by-value/${tomorrow}`, { headers: authHeader(accessToken) });
+      expect(missing.status).toBe(404);
+    });
+
+    it('a day handed out by the calendar gets its row, the same one /daily and by-value give', async () => {
+      useFakeToday('2026-11-20');
+      await insertDailyRow('2026-11-18');
+      const listed = await calendar('2026-11');
+      expect(listed.map(s => s.date)).toEqual(['2026-11-20', '2026-11-19', '2026-11-18']);
+      expect(listed[0].seedValue).toBe(String(await dailySeedOf('2026-11-20')));
       const rows = await env.DB.prepare('SELECT COUNT(*) AS n FROM puzzle_seeds').first<{ n: number }>();
-      expect(rows?.n).toBe(0);
+      expect(rows?.n).toBe(3);
 
       const res = await call('http://localhost/api/seeds/daily', { headers: authHeader(accessToken) });
-      const daily = await res.json() as { seedId: string; seedValue: string };
-      expect(daily.seedValue).toBe(listed.seedValue);
-      expect((await calendar('2026-11'))[0]).toMatchObject({ seedId: daily.seedId, seedValue: daily.seedValue });
+      expect(await res.json()).toMatchObject({ seedId: listed[0].seedId, seedValue: listed[0].seedValue });
+      const byValue = await call(`http://localhost/api/seeds/by-value/${listed[1].seedValue}`, { headers: authHeader(accessToken) });
+      expect(await byValue.json()).toEqual({ seedValue: listed[1].seedValue, date: '2026-11-19' });
+    });
+
+    it('with no daily yet, the calendar hands out today and makes it the first day', async () => {
+      useFakeToday('2026-11-20');
+      expect((await calendar('2026-11')).map(s => s.date)).toEqual(['2026-11-20']);
+      useFakeToday('2026-11-21');
+      expect((await calendar('2026-11')).map(s => s.date)).toEqual(['2026-11-21', '2026-11-20']);
     });
 
     it('a stored row wins over the derived value', async () => {
       useFakeToday('2026-11-20');
-      await env.DB.prepare(
-        "INSERT INTO puzzle_seeds (id, seed_value, share_code, is_daily, daily_date) VALUES ('old', '12345', 'ABCDEF', 1, '2026-11-20')"
-      ).run();
+      await insertDailyRow('2026-11-20', 'old', '12345');
       const res = await call('http://localhost/api/seeds/daily', { headers: authHeader(accessToken) });
       expect(await res.json()).toMatchObject({ seedId: 'old', seedValue: '12345' });
       expect((await calendar('2026-11'))[0]).toMatchObject({ seedId: 'old', seedValue: '12345' });

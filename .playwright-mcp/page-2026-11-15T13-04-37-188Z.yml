@@ -1,0 +1,35 @@
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e3]:
+    - generic [ref=f1e4]:
+      - banner [ref=f1e5]:
+        - heading "Vege-Table" [level=1] [ref=f1e6]
+        - button "メニュー" [ref=f1e7] [cursor=pointer]
+      - generic [ref=f1e10]:
+        - generic [ref=f1e11]:
+          - generic [ref=f1e12]:
+            - paragraph [ref=f1e13]: 今日のデイリーパズル
+            - paragraph [ref=f1e14]: 2026-11-15
+          - button "デイリーパズルについて" [ref=f1e15] [cursor=pointer]: "?"
+        - paragraph [ref=f1e17]: おじゃまタイルを全て消そう
+        - button "プレイ" [ref=f1e18] [cursor=pointer]
+        - paragraph [ref=f1e19]:
+          - text: 次のパズルまで
+          - generic [ref=f1e20]: 01:55:22
+      - generic [ref=f1e21]:
+        - heading "ランキング" [level=2] [ref=f1e22]
+        - paragraph [ref=f1e24]: まだ記録がありません
+        - button "ランキングを見る" [ref=f1e25] [cursor=pointer]
+        - button "名前を決めてランキングに参加" [ref=f1e26] [cursor=pointer]
+      - button [ref=f1e28] [cursor=pointer]:
+        - heading "過去のデイリーパズル" [level=2] [ref=f1e29]
+        - generic [aria-hidden] [ref=f1e30]: ▼
+    - navigation [ref=f1e31]:
+      - button "HOME" [ref=f1e32] [cursor=pointer]
+      - button "PUZZLE" [ref=f1e37] [cursor=pointer]
+      - button "実績" [ref=f1e44] [cursor=pointer]
+  - generic [ref=f1e51]:
+    - heading "練習してみますか？" [level=3] [ref=f1e52]
+    - paragraph [ref=f1e53]: 盤を実際に動かしながら遊び方を覚えられます。練習の結果は記録に残りません。
+    - generic [ref=f1e54]:
+      - button "練習する" [ref=f1e55] [cursor=pointer]
+      - button "あとで" [ref=f1e56] [cursor=pointer]

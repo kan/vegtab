@@ -1,0 +1,41 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e3]:
+    - generic [ref=f3e4]:
+      - banner [ref=f3e5]:
+        - heading "Vege-Table" [level=1] [ref=f3e6]
+        - button "メニュー" [ref=f3e7] [cursor=pointer]
+      - generic [ref=f3e10]:
+        - generic [ref=f3e11]:
+          - generic [ref=f3e12]:
+            - paragraph [ref=f3e13]: 今日のデイリーパズル
+            - paragraph [ref=f3e14]: 2026-11-15
+          - button "デイリーパズルについて" [ref=f3e15] [cursor=pointer]: "?"
+        - paragraph [ref=f3e17]: おじゃまタイルを全て消そう
+        - button "プレイ" [ref=f3e18] [cursor=pointer]
+        - paragraph [ref=f3e19]:
+          - text: 次のパズルまで
+          - generic [ref=f3e20]: 01:53:50
+          - generic [ref=f3e21]: "シード: 1162589286"
+      - generic [ref=f3e22]:
+        - heading "ランキング" [level=2] [ref=f3e23]
+        - button "ランキングを見る" [ref=f3e37] [cursor=pointer]
+        - button "名前を決めてランキングに参加" [ref=f3e38] [cursor=pointer]
+      - button [ref=f3e40] [cursor=pointer]:
+        - heading "過去のデイリーパズル" [level=2] [ref=f3e41]
+        - generic [aria-hidden] [ref=f3e42]: ▼
+    - navigation [ref=f3e43]:
+      - button "HOME" [ref=f3e44] [cursor=pointer]
+      - button "PUZZLE" [ref=f3e49] [cursor=pointer]
+      - button "実績" [ref=f3e56] [cursor=pointer]
+  - generic [ref=f3e63]:
+    - heading "サウンドを有効にしますか？" [level=3] [ref=f3e64]
+    - paragraph [ref=f3e65]: 効果音を有効にしますか？
+    - generic [ref=f3e66]:
+      - button "サウンドON" [ref=f3e67] [cursor=pointer]
+      - button "いいえ" [ref=f3e68] [cursor=pointer]
+  - generic [ref=f3e70]:
+    - heading "練習してみますか？" [level=3] [ref=f3e71]
+    - paragraph [ref=f3e72]: 盤を実際に動かしながら遊び方を覚えられます。練習の結果は記録に残りません。
+    - generic [ref=f3e73]:
+      - button "練習する" [ref=f3e74] [cursor=pointer]
+      - button "あとで" [ref=f3e75] [cursor=pointer]

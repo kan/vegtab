@@ -1,0 +1,35 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: α
+      - text: α版のためデータがリセットされる場合があります
+    - generic [ref=e7]:
+      - heading "Vege-Table" [level=1] [ref=e8]
+      - paragraph [ref=e9]: デイリー3マッチパズル
+      - generic [ref=e10]: 名前を決める
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - heading "今日のデイリーパズル" [level=2] [ref=e14]
+        - button "?" [ref=e15] [cursor=pointer]
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic [ref=e18]: 2026-11-15
+          - generic [ref=e19]: "シード: 1162589286"
+          - button "ランキング" [ref=e20] [cursor=pointer]
+        - generic [ref=e21]:
+          - generic [ref=e22]: 次のパズルまで
+          - generic [ref=e23]: 01:56:01
+        - button "おじゃまタイルを全て消そう プレイ" [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]: おじゃまタイルを全て消そう
+          - generic [ref=e26]: プレイ
+        - generic [ref=e28]:
+          - generic [ref=e29]: ランキング
+          - button "もっと見る" [ref=e30] [cursor=pointer]
+    - button "過去のデイリーパズル ▼" [ref=e32] [cursor=pointer]:
+      - heading "過去のデイリーパズル" [level=2] [ref=e33]
+      - generic [ref=e34]: ▼
+    - button "☰" [ref=e35] [cursor=pointer]
+  - navigation [ref=e37]:
+    - button "HOME" [ref=e38] [cursor=pointer]
+    - button "PUZZLE" [ref=e43] [cursor=pointer]
+    - button "実績" [ref=e50] [cursor=pointer]

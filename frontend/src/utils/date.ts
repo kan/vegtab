@@ -37,12 +37,6 @@ export function daysOfMonth(month: string): string[] {
   return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
 
-/** The month after `month` ('YYYY-MM') */
-export function nextMonth(month: string): string {
-  const [year, mon] = month.split('-').map(Number);
-  return mon === 12 ? `${year + 1}-01` : `${year}-${String(mon + 1).padStart(2, '0')}`;
-}
-
 // Legacy aliases — kept for calendar UI that only needs local formatting
 export const formatDateLocal = formatDateJST;
 export const todayLocal = todayJST;

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { daysOfMonth, nextMonth, shiftDateStr, todayJST } from '@/utils/date';
+import { daysOfMonth, shiftDateStr, todayJST } from '@/utils/date';
 import { api, apiErrorCode, flushOfflineQueue, showToast, ApiError } from '@/api/client';
 import { getUserId, onIdChange, rememberKanGameName, startId } from '@/api/id';
 import { setLocalItem } from '@/lib/storage';
@@ -24,6 +24,8 @@ export interface PlayRecord {
   clearTimeMs?: number | null;
   generatedItemTypes?: string[];
   replayLog?: ReplayAction[];
+  /** その日のデイリーの日付（YYYY-MM-DD、JST）。スコアの送信に使う。日付を持つ前の記録と、日付が分からないまま遊んだ記録には無い */
+  date?: string;
 }
 
 // --- Store ---
@@ -60,12 +62,7 @@ export const useGameStore = defineStore('game', () => {
 
   async function syncWithServer() {
     try {
-      await Promise.all([
-        syncProfile(),
-        // Matching the records to their days (findDailyDate) needs the seeds
-        loadRecentSeeds().then(syncScoresFromServer),
-        useAchievementStore().fetchAchievements(),
-      ]);
+      await Promise.all([syncProfile(), syncScoresFromServer(), useAchievementStore().fetchAchievements()]);
       // After sync, try to submit any local scores that were never sent to backend
       resubmitUnsentScores();
     } catch (e) {
@@ -150,12 +147,9 @@ export const useGameStore = defineStore('game', () => {
           playerName: effectiveName.value,
         });
       }
-      // サーバーのベストを超えない記録と、再送の期間を過ぎた日の記録は再送しないので、容量を食う replayLog はもう要らない
+      // サーバーのベストを超えない記録は再送しないので、容量を食う replayLog はもう要らない
       for (const r of playRecords.value) {
-        // 日の分からない記録は、seed を受け取れていないだけかもしれないので、受け取れたときだけ落とす
-        if (r.replayLog && (isCoveredByServer(r) || (recentSeedsLoaded && findDailyDate(r.seed) === null))) {
-          delete r.replayLog;
-        }
+        if (r.replayLog && isCoveredByServer(r)) delete r.replayLog;
       }
       saveRecords();
     } catch {
@@ -217,12 +211,11 @@ export const useGameStore = defineStore('game', () => {
   // 日ごとの seed は backend が secret から作り、その日になってから配る（#116）。端末では計算できないので、
   // 受け取った値を date → seed で覚えておき、オフラインでも一度受け取った日は遊べるようにする
 
-  /** スコアを送れる過去の日数（backend の isDateNearToday と同じ） */
-  const SUBMITTABLE_DAYS = 60;
-
-  const dailySeeds = ref<Record<string, number>>(loadJson('vegtab_daily_seeds', {}));
-  /** このセッションで、スコアを送れる期間の seed を受け取れた */
-  let recentSeedsLoaded = false;
+  const dailySeeds = ref<Record<string, number>>(loadDailySeeds());
+  /** seed → its day, for the records and links that name only the seed */
+  const dateBySeed = computed(() => new Map(Object.entries(dailySeeds.value).map(([date, seed]) => [seed, date])));
+  /** The first daily ever handed out (the calendar stops paging back at its month); from the calendar API */
+  const firstDailyDate = ref<string | null>(loadStr('vegtab_first_daily_date', '') || null);
 
   function rememberDailySeeds(entries: Array<{ date: string; seedValue: string }>) {
     let changed = false;
@@ -245,7 +238,7 @@ export const useGameStore = defineStore('game', () => {
 
   /** Today's seed, from the API unless already received. null when it cannot be reached and was never received */
   async function fetchTodaySeed(): Promise<number | null> {
-    // This month's seeds (loadRecentSeeds at start) include today's
+    // This month's seeds (the calendar on HOME) include today's
     await monthSeedRequests.get(todayJST().slice(0, 7));
     if (dailySeed() === null) {
       todaySeedRequest ??= api<{ date: string; seedValue: string }>('/api/seeds/daily')
@@ -268,11 +261,20 @@ export const useGameStore = defineStore('game', () => {
   /** Receives the seeds of `month` ('YYYY-MM') up to today, unless all are here. Resolves to whether they are */
   function fetchMonthSeeds(month: string): Promise<boolean> {
     const today = todayJST();
-    if (daysOfMonth(month).every((d) => d > today || dailySeeds.value[d] !== undefined)) return Promise.resolve(true);
+    const first = firstDailyDate.value ?? '';
+    if (daysOfMonth(month).every((d) => d > today || d < first || dailySeeds.value[d] !== undefined)) return Promise.resolve(true);
     let request = monthSeedRequests.get(month);
     if (!request) {
-      request = api<{ seeds: Array<{ date: string; seedValue: string }> }>(`/api/seeds/daily/calendar?month=${month}`)
-        .then((res) => { rememberDailySeeds(res.seeds); return true; })
+      request = api<{ seeds: Array<{ date: string; seedValue: string }>; firstDate: string }>(`/api/seeds/daily/calendar?month=${month}`)
+        .then((res) => {
+          rememberDailySeeds(res.seeds);
+          // Only a real day is kept: a wrong value would stop the calendar from paging and asking
+          if (/^\d{4}-\d{2}-\d{2}$/.test(res.firstDate)) {
+            firstDailyDate.value = res.firstDate;
+            setLocalItem('vegtab_first_daily_date', res.firstDate);
+          }
+          return true;
+        })
         .catch(() => false)
         .finally(() => monthSeedRequests.delete(month));
       monthSeedRequests.set(month, request);
@@ -280,36 +282,27 @@ export const useGameStore = defineStore('game', () => {
     return request;
   }
 
-  /** The seeds of the days a score can still be sent for (today and the 60 days before) */
-  async function loadRecentSeeds() {
-    const today = todayJST().slice(0, 7);
-    const months: string[] = [];
-    for (let m = shiftDateStr(todayJST(), -SUBMITTABLE_DAYS).slice(0, 7); m <= today; m = nextMonth(m)) months.push(m);
-    const results = await Promise.all(months.map(fetchMonthSeeds));
-    recentSeedsLoaded ||= results.every(Boolean);
-  }
-
   /**
-   * Whether `seed` is a past day's puzzle. Without today's seed (offline, never received) only a seed
-   * this device knows for another day counts as past: an unknown one may well be today's
+   * The day of daily `seed`: from the seeds received here, else asked of the server (a shared link,
+   * a bookmark). null when it is no daily; throws when the server cannot be reached
    */
-  function isPastDailySeed(seed: number): boolean {
-    const today = dailySeed();
-    if (today !== null) return seed !== today;
-    return Object.entries(dailySeeds.value).some(([date, s]) => s === seed && date !== todayJST());
+  async function resolveDailyDate(seed: number): Promise<string | null> {
+    // A calendar request on its way (HOME) may bring the seed
+    await Promise.all(monthSeedRequests.values());
+    const known = dateBySeed.value.get(seed);
+    if (known) return known;
+    try {
+      const res = await api<{ seedValue: string; date: string }>(`/api/seeds/by-value/${seed}`);
+      rememberDailySeeds([res]);
+      return res.date;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
   }
 
   function randomSeed(): number {
     return ((Date.now() & 0x7fffffff) ^ (Math.random() * 0x7fffffff)) >>> 0;
-  }
-
-  /** The day of a daily seed received on this device, if a score can still be sent for it; else null */
-  function findDailyDate(seed: number): string | null {
-    const oldest = shiftDateStr(todayJST(), -SUBMITTABLE_DAYS);
-    for (const [date, s] of Object.entries(dailySeeds.value)) {
-      if (s === seed && date >= oldest) return date;
-    }
-    return null;
   }
 
   // --- Play records ---
@@ -350,7 +343,8 @@ export const useGameStore = defineStore('game', () => {
   }
 
   async function submitScoreToBackend(record: PlayRecord) {
-    const date = findDailyDate(record.seed);
+    // Without a day (the puzzle was opened offline from a link) resubmitUnsentScores asks for it later
+    const date = record.date;
     if (!date || !hasReplayLog(record)) return;
     try {
       const res = await api<{ scoreId: string | null; shareCode: string; newAchievements: string[]; pastDate?: boolean; verifiedScore?: number; verifiedMoveCount?: number }>('/api/scores', {
@@ -379,26 +373,37 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
-  /** Re-submit local scores that are missing from the server (e.g., due to past findDailyDate bug). */
+  /**
+   * Re-submits the local results the server does not have. A record without its day (from before
+   * records kept one, or opened offline from a link) gets it first. The replay log, kept only to be
+   * sent, is dropped once the server took the run or refused it for good (400: past the days it
+   * accepts, or a replay of another board). Other failures keep it for the next start
+   */
   async function resubmitUnsentScores() {
-    const pending = playRecords.value.filter(r => {
-      if (isCoveredByServer(r) || !hasReplayLog(r)) return false;
-      return findDailyDate(r.seed) !== null;
-    });
+    const pending = playRecords.value.filter(r => hasReplayLog(r) && !isCoveredByServer(r));
     if (pending.length === 0) return;
 
-    const results = await Promise.allSettled(pending.map(async (record) => {
-      const date = findDailyDate(record.seed)!;
-      const res = await api<{ scoreId: string; shareCode: string; newAchievements: string[] }>('/api/scores', {
-        method: 'POST',
-        body: JSON.stringify(buildScorePayload(record, date)),
-      });
-      serverBest.set(record.seed, toSummary(record));
-      handleScoreResponse(res, record.seed);
-      delete record.replayLog;
+    await Promise.allSettled(pending.map(async (record) => {
+      record.date ??= (await resolveDailyDate(record.seed)) ?? undefined;
+      if (!record.date) {
+        delete record.replayLog; // no daily: nothing would accept it
+        return;
+      }
+      try {
+        const res = await api<{ scoreId: string; shareCode: string; newAchievements: string[] }>('/api/scores', {
+          method: 'POST',
+          body: JSON.stringify(buildScorePayload(record, record.date)),
+        });
+        serverBest.set(record.seed, toSummary(record));
+        handleScoreResponse(res, record.seed);
+        delete record.replayLog;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 400) delete record.replayLog;
+        else throw e;
+      }
     }));
-    // Silently ignore failures — will retry on next init
-    if (results.some(r => r.status === 'fulfilled')) saveRecords();
+    // Saved even when a send failed: a record may have got its day
+    saveRecords();
   }
 
   function getRecordsForSeed(seed: number): PlayRecord[] {
@@ -463,7 +468,7 @@ export const useGameStore = defineStore('game', () => {
     displayName, effectiveName, setDisplayName, claimHandoff,
     playRecords,
     dailySeed, fetchTodaySeed, todayPuzzlePath, fetchMonthSeeds, randomSeed,
-    isPastDailySeed,
+    resolveDailyDate, firstDailyDate,
     addPlayRecord, getRecordsForSeed, getBestResult, getBestMoves,
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, syncScoresFromServer, initialized,
@@ -484,6 +489,18 @@ function loadStr(key: string, fallback: string): string {
 /** 撤去したモード（Sprint / Survival / Cascade）の記録は読み込まない（次の保存で消える） */
 function loadPlayRecords(): PlayRecord[] {
   return filterPlayRecords<PlayRecord>(loadJson<unknown>('vegtab_play_records', []));
+}
+
+/**
+ * 覚えておく日ごとの seed の日数。これより古い日は読み込みで捨てる（カレンダーで開けば、また受け取る）。
+ * 記録は日付を持つので、送信のために古い seed を覚えておく必要は無い
+ */
+const SEED_CACHE_DAYS = 62;
+
+function loadDailySeeds(): Record<string, number> {
+  const oldest = shiftDateStr(todayJST(), -SEED_CACHE_DAYS);
+  const seeds = loadJson<Record<string, number>>('vegtab_daily_seeds', {});
+  return Object.fromEntries(Object.entries(seeds).filter(([date]) => date >= oldest));
 }
 
 function loadJson<T>(key: string, fallback: T): T {

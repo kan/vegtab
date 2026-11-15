@@ -255,7 +255,7 @@ onUnmounted(() => {
       </button>
       <div v-if="showCalendar" class="calendar">
         <div class="calendar-header">
-          <button class="icon-btn icon-btn-sm" @click="cal.prevMonth">&lt;</button>
+          <button class="icon-btn icon-btn-sm" :disabled="cal.isFirstMonth.value" @click="cal.prevMonth">&lt;</button>
           <span class="cal-month">{{ cal.monthLabel.value }}</span>
           <button class="icon-btn icon-btn-sm" :disabled="cal.isCurrentMonth.value" @click="cal.nextMonth">&gt;</button>
         </div>

@@ -34,7 +34,14 @@ export function useCalendar() {
     return year.value === n.getFullYear() && month.value === n.getMonth();
   });
 
+  /** The month of the first daily ever handed out: the calendar does not page back past it (unknown until the API says) */
+  const isFirstMonth = computed(() => {
+    const first = gameStore.firstDailyDate;
+    return first !== null && monthKey.value <= first.slice(0, 7);
+  });
+
   function prevMonth() {
+    if (isFirstMonth.value) return;
     if (month.value === 0) {
       month.value = 11;
       year.value--;
@@ -66,6 +73,7 @@ export function useCalendar() {
     monthLabel,
     grid,
     isCurrentMonth,
+    isFirstMonth,
     prevMonth,
     nextMonth,
     bestMoves,

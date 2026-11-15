@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
 import { daysOfMonth, todayJST } from '../lib/date';
-import { deriveDailySeed, findOrCreateDailySeed } from '../lib/seed';
+import { findOrCreateDailySeed } from '../lib/seed';
 import { MODE } from '../lib/mode';
 
 /** The user's stored best for a seed (POST /api/scores keeps only the best row) */
@@ -47,25 +47,28 @@ seedRoutes.get('/daily/calendar', async (c) => {
   const month = c.req.query('month') ?? '';
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return c.json({ error: 'Invalid month' }, 400);
 
-  const rows = await c.env.DB.prepare(
-    'SELECT id, seed_value, share_code, daily_date FROM puzzle_seeds WHERE is_daily = 1 AND daily_date LIKE ?'
-  ).bind(`${month}-%`).all<{ id: string; seed_value: string; share_code: string; daily_date: string }>();
+  const [rows, first] = await Promise.all([
+    c.env.DB.prepare(
+      'SELECT id, seed_value, share_code, daily_date FROM puzzle_seeds WHERE is_daily = 1 AND daily_date LIKE ?'
+    ).bind(`${month}-%`).all<{ id: string; seed_value: string; share_code: string; daily_date: string }>(),
+    c.env.DB.prepare('SELECT MIN(daily_date) AS date FROM puzzle_seeds WHERE is_daily = 1').first<{ date: string | null }>(),
+  ]);
   const rowByDate = new Map((rows.results ?? []).map((r) => [r.daily_date, r]));
 
-  // Newest first, and never a day after today: its seed is not handed out yet.
-  // A day nobody has played has no row yet. Its value is the one findOrCreateDailySeed will store,
-  // so the calendar does not write rows (a GET that anyone can repeat for any month)
+  // Newest first, from the first daily that was ever handed out to today. Never a day after today:
+  // its seed is not handed out yet. A day handed out here without a row yet (nobody opened it) gets
+  // its row now, so every seed handed out has one (by-value and the first day rely on it). Only the
+  // days between the first row and today get one, each once, so a GET cannot make rows for any month
   const today = todayJST();
-  const days = daysOfMonth(month).filter((d) => d <= today).reverse();
+  const firstDate = first?.date ?? today;
+  const days = daysOfMonth(month).filter((d) => d >= firstDate && d <= today).reverse();
   const seeds = await Promise.all(days.map(async (date) => {
-    const row = rowByDate.get(date);
-    return row
-      ? { seedId: row.id, seedValue: row.seed_value, shareCode: row.share_code, date }
-      : { seedId: null, seedValue: String(await deriveDailySeed(c.env.DAILY_SEED_SECRET, date)), shareCode: null, date };
+    const row = rowByDate.get(date) ?? await findOrCreateDailySeed(c.env.DB, c.env.DAILY_SEED_SECRET, date);
+    return { seedId: row.id, seedValue: row.seed_value, shareCode: row.share_code, date };
   }));
 
   // The user's stored best per seed (one row per user×seed×mode)
-  const seedIds = seeds.flatMap((s) => (s.seedId ? [s.seedId] : []));
+  const seedIds = seeds.map((s) => s.seedId);
   const userScores: Record<string, BestScore> = {};
   if (seedIds.length > 0) {
     const placeholders = seedIds.map(() => '?').join(',');
@@ -80,7 +83,9 @@ seedRoutes.get('/daily/calendar', async (c) => {
   }
 
   return c.json({
-    seeds: seeds.map((s) => ({ ...s, userScores: (s.seedId && userScores[s.seedId]) || null })),
+    seeds: seeds.map((s) => ({ ...s, userScores: userScores[s.seedId] ?? null })),
+    /** The first day the calendar lists (the screen stops paging back at its month) */
+    firstDate,
   });
 });
 
@@ -109,6 +114,17 @@ seedRoutes.get('/:id', async (c) => {
     dailyDate: seed.daily_date,
     best: best ? toBestScore(best) : null,
   });
+});
+
+// GET /api/seeds/by-value/:value - The day of a daily seed (a shared link names only the seed)
+// Only rows answer, and a row exists only for a day up to today, so no seed of a day ahead is revealed
+seedRoutes.get('/by-value/:value', async (c) => {
+  const seed = await c.env.DB.prepare(
+    'SELECT seed_value, daily_date FROM puzzle_seeds WHERE is_daily = 1 AND seed_value = ?'
+  ).bind(c.req.param('value')).first<{ seed_value: string; daily_date: string }>();
+  if (!seed) return c.json({ error: 'Seed not found' }, 404);
+
+  return c.json({ seedValue: seed.seed_value, date: seed.daily_date });
 });
 
 // GET /api/seeds/by-code/:code - Lookup seed by share code

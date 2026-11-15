@@ -16,6 +16,7 @@ import { buildShareUrl } from '@/utils/shareUrl';
 import { isRemovedMode } from '@/lib/legacyData';
 import { formatPlayTime } from '@/lib/playTime';
 import { usePlayTimer } from '@/composables/usePlayTimer';
+import { todayJST } from '@/utils/date';
 
 const isDev = import.meta.env.DEV;
 const { t } = useI18n();
@@ -34,6 +35,8 @@ const showNamePrompt = ref(false);
 type ViewPhase = 'loading' | 'pastNotice' | 'playing';
 const viewPhase = ref<ViewPhase>('loading');
 const isPastPuzzle = ref(false);
+/** The day of the daily on the board (YYYY-MM-DD), or null when it could not be known */
+const puzzleDate = ref<string | null>(null);
 
 // --- Play time (その日の累計。リトライをまたぐ。アニメーション中と画面を離れている間は数えない) ---
 const timer = usePlayTimer(
@@ -116,10 +119,13 @@ async function handleRoute() {
     return;
   }
 
-  // Today's seed comes from the API (a link may open this page first)
-  await gameStore.fetchTodaySeed();
+  // The day of the seed: the records keep it to send the score. A link may name a seed this device
+  // has not received, so it may come from the server; offline and unknown, the day stays unknown
+  // (the record gets it when it is sent later) and the puzzle is not taken for a past one
+  const date = await gameStore.resolveDailyDate(seed).catch(() => null);
   if (Number(route.params.seed) !== seed) return; // moved on while waiting
-  isPastPuzzle.value = gameStore.isPastDailySeed(seed);
+  puzzleDate.value = date;
+  isPastPuzzle.value = date !== null && date !== todayJST();
 
   // Try to restore an in-progress session first
   if (tryRestoreSession(seed)) return;
@@ -169,6 +175,7 @@ watch(() => store.isGameOver, (ended) => {
       clearTimeMs: clearTimeMs.value,
       generatedItemTypes: [...store.generatedItemTypes],
       replayLog: [...store.replayLog],
+      date: puzzleDate.value ?? undefined,
     });
     // Prompt for name if not set
     if (!gameStore.displayName) showNamePrompt.value = true;
