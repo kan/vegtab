@@ -128,6 +128,7 @@ export default {
     pastDateNoRanking: '過去のパズルのスコアはランキングに記録されません',
     scoreSubmitFailed: 'スコアの送信に失敗しました。',
     rankingFetchFailed: 'ランキングを取得できませんでした。',
+    dailySeedUnavailable: '今日のパズルを受け取れませんでした。接続を確かめてから、もう一度お試しください。',
     pushFailed: 'プッシュ通知の設定に失敗しました。',
   },
   achievement: {

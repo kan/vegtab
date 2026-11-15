@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, provide } from 'vue';
 import { useRouter } from 'vue-router';
-import { initializeGame, generateDailySeed, countLocks, countLockLayers } from '@vegtab/engine';
+import { initializeGame, countLocks, countLockLayers } from '@vegtab/engine';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import { useLockProtoPuzzleStore, PUZZLE_STORE_KEY } from '@/stores/puzzle';
 import { playSE, vibrate } from '@/sound';
-import { todayJST } from '@/utils/date';
+import { shiftDateStr, todayJST } from '@/utils/date';
 
 /**
  * 鎖のモードの試作ページ（#107、開発時だけ開ける /proto/lock）。日付から作ったシードの盤に鎖を置いて遊ぶ。
@@ -21,7 +21,11 @@ const doubleCount = ref(4);
 /** Bumped on every (re)start to remount the board, so its animation state starts clean */
 const attempt = ref(0);
 
-const seed = computed(() => generateDailySeed(date.value));
+/**
+ * 試作用に日付から作る seed（20261115 のような数）。本物の日ごとの seed（backend が secret から作る、#116）とは別の盤になる。
+ * 日を送れば別の盤を試せればよい
+ */
+const seed = computed(() => Number(date.value.replace(/-/g, '')));
 const locks = computed(() => store.gameState ? countLocks(store.gameState.board) : 0);
 const layers = computed(() => store.gameState ? countLockLayers(store.gameState.board) : 0);
 const status = computed(() => {
@@ -38,9 +42,7 @@ function start() {
 }
 
 function shiftDay(days: number) {
-  const d = new Date(`${date.value}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  date.value = d.toISOString().slice(0, 10);
+  date.value = shiftDateStr(date.value, days);
   start();
 }
 

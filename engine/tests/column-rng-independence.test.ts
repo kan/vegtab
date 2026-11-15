@@ -3,7 +3,7 @@ import { createColumnRngStates } from '../src/board.js';
 import { createRng, nextRng } from '../src/rng.js';
 import { initializeGame } from '../src/engine.js';
 import { hasMatches } from '../src/match.js';
-import { generateDailySeed } from '../src/seed.js';
+import { generateDailySeed } from './date-seed.js';
 import { playGame } from '../src/autoPlayer.js';
 
 /**

@@ -3,7 +3,7 @@ import { initializeGame, processAction, cloneGameState } from '../src/engine.js'
 import { hasMatches, findMatches } from '../src/match.js';
 import { checkGameOverState } from '../src/gameOver.js';
 import { countObstacles } from '../src/obstacle.js';
-import { generateDailySeed } from '../src/seed.js';
+import { generateDailySeed } from './date-seed.js';
 import { BOARD_SIZE, Color, GameState } from '../src/types.js';
 
 describe('Game Initialization', () => {

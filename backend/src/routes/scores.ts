@@ -67,7 +67,7 @@ scoreRoutes.post('/', bodyLimit({
   }
 
   // Find or create the daily seed
-  const seed = await findOrCreateDailySeed(c.env.DB, data.date);
+  const seed = await findOrCreateDailySeed(c.env.DB, c.env.DAILY_SEED_SECRET, data.date);
 
   // Past dates: allow play but don't record to ranking (yesterday is still recorded shortly after midnight)
   if (isRankingClosed(data.date)) {

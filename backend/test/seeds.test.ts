@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { env } from 'cloudflare:test';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  call, resetDb, registerUser, authHeader, submitReplay, getTodaySeedId, insertPlayScore,
+  call, resetDb, registerUser, authHeader, submitReplay, submitScore, getTodaySeedId, insertPlayScore, useFakeToday,
 } from './helpers';
 import { todayJST } from '../src/lib/date';
 
@@ -63,9 +64,69 @@ describe('Seeds & Ranking API', () => {
     const seedId = await getTodaySeedId(accessToken);
     await insertPlayScore({ userId, seedId, mode: 'cascade', moveCount: 15, score: 9000, cascadePoints: 20 });
 
-    const res = await call('http://localhost/api/seeds/daily/calendar', { headers: authHeader(accessToken) });
+    const res = await call(`http://localhost/api/seeds/daily/calendar?month=${todayJST().slice(0, 7)}`, {
+      headers: authHeader(accessToken),
+    });
     const { seeds } = await res.json() as { seeds: Array<{ seedId: string; userScores: unknown }> };
     expect(seeds.find(s => s.seedId === seedId)?.userScores).toBeNull();
+  });
+
+  it.each(['', '?month=2026-13', '?month=2026-1', '?month=abc'])('calendar rejects a missing or malformed month (%s)', async (query) => {
+    const res = await call(`http://localhost/api/seeds/daily/calendar${query}`, { headers: authHeader(accessToken) });
+    expect(res.status).toBe(400);
+  });
+
+  describe('the seeds of days not handed out yet (#116)', () => {
+    afterEach(() => vi.useRealTimers());
+
+    type CalendarSeed = { seedId: string | null; seedValue: string; date: string };
+    async function calendar(month: string): Promise<CalendarSeed[]> {
+      const res = await call(`http://localhost/api/seeds/daily/calendar?month=${month}`, { headers: authHeader(accessToken) });
+      expect(res.status).toBe(200);
+      return (await res.json() as { seeds: CalendarSeed[] }).seeds;
+    }
+
+    it('calendar lists every day of the month up to today, and none after it', async () => {
+      useFakeToday('2026-11-20');
+      const seeds = await calendar('2026-11');
+      expect(seeds.map(s => s.date)).toEqual(
+        Array.from({ length: 20 }, (_, i) => `2026-11-${String(20 - i).padStart(2, '0')}`),
+      );
+      expect(await calendar('2026-12')).toEqual([]);
+    });
+
+    it('a day without a row gets the value that /daily stores for it later, without writing a row', async () => {
+      useFakeToday('2026-11-20');
+      const [listed] = await calendar('2026-11');
+      expect(listed).toMatchObject({ date: '2026-11-20', seedId: null });
+      const rows = await env.DB.prepare('SELECT COUNT(*) AS n FROM puzzle_seeds').first<{ n: number }>();
+      expect(rows?.n).toBe(0);
+
+      const res = await call('http://localhost/api/seeds/daily', { headers: authHeader(accessToken) });
+      const daily = await res.json() as { seedId: string; seedValue: string };
+      expect(daily.seedValue).toBe(listed.seedValue);
+      expect((await calendar('2026-11'))[0]).toMatchObject({ seedId: daily.seedId, seedValue: daily.seedValue });
+    });
+
+    it('a stored row wins over the derived value', async () => {
+      useFakeToday('2026-11-20');
+      await env.DB.prepare(
+        "INSERT INTO puzzle_seeds (id, seed_value, share_code, is_daily, daily_date) VALUES ('old', '12345', 'ABCDEF', 1, '2026-11-20')"
+      ).run();
+      const res = await call('http://localhost/api/seeds/daily', { headers: authHeader(accessToken) });
+      expect(await res.json()).toMatchObject({ seedId: 'old', seedValue: '12345' });
+      expect((await calendar('2026-11'))[0]).toMatchObject({ seedId: 'old', seedValue: '12345' });
+    });
+
+    it('a score for tomorrow is refused, so its seed is not created', async () => {
+      useFakeToday('2026-11-20');
+      const res = await submitScore(accessToken, {
+        date: '2026-11-21', mode: 'clear', replayLog: [{ type: 'swap', pos: { row: 0, col: 0 }, dir: 'right' }],
+      });
+      expect(res.status).toBe(400);
+      const row = await env.DB.prepare("SELECT 1 FROM puzzle_seeds WHERE daily_date = '2026-11-21'").first();
+      expect(row).toBeNull();
+    });
   });
 
   it('score submission creates seed and returns shareCode', async () => {

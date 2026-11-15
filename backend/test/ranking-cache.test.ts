@@ -42,7 +42,7 @@ describe('Ranking cache invalidation', () => {
 
   /** Submit the run that clears today's board */
   async function submitClearedRun(token: string) {
-    const { replayLog, state } = clearedRun();
+    const { replayLog, state } = await clearedRun();
     expect(state.isCleared).toBe(true);
     const res = await submitScore(token, { date: CLEARED_DATE, mode: 'clear', clearTimeMs: CLEAR_TIME_MS, replayLog });
     return { status: res.status, data: await res.json() as Record<string, unknown>, state };

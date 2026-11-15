@@ -13,7 +13,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { initializeGame, processAction, processDamage } from '../src/engine.js';
-import { generateDailySeed } from '../src/seed.js';
+import { generateDailySeed } from './date-seed.js';
 import { BOARD_SIZE, Cell, Action, Position, Color } from '../src/types.js';
 import { countObstacles, damageObstacles } from '../src/obstacle.js';
 import { applyGravity } from '../src/gravity.js';

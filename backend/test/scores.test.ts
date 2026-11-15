@@ -33,7 +33,7 @@ describe('POST /api/scores replay verification', () => {
   });
 
   it.each(['sprint', 'survival', 'cascade', undefined])('rejects mode %s (only clear is accepted)', async (mode) => {
-    const { replayLog } = buildReplay(1);
+    const { replayLog } = await buildReplay(1);
     const res = await submitScore(token, { ...basePayload(), mode, replayLog });
     expect(res.status).toBe(400);
   });
@@ -44,7 +44,7 @@ describe('POST /api/scores replay verification', () => {
   });
 
   it('rejects the removed auto_activate action', async () => {
-    const { replayLog } = buildReplay(1);
+    const { replayLog } = await buildReplay(1);
     const res = await submitScore(token, { ...basePayload(), replayLog: [...replayLog, { type: 'auto_activate' }] });
     expect(res.status).toBe(400);
   });
@@ -73,13 +73,13 @@ describe('POST /api/scores replay verification', () => {
   });
 
   it('rejects oversized request bodies', async () => {
-    const { replayLog } = buildReplay(1);
+    const { replayLog } = await buildReplay(1);
     const res = await submitScore(token, { ...basePayload(), replayLog, padding: 'x'.repeat(300 * 1024) });
     expect(res.status).toBe(413);
   });
 
   it('stores the re-simulated score and a normalized replay log', async () => {
-    const { replayLog: [action], state } = buildReplay(1);
+    const { replayLog: [action], state } = await buildReplay(1);
     const res = await submitScore(token, {
       ...basePayload(),
       replayLog: [{ ...action, injected: 'x'.repeat(100) }],
@@ -131,7 +131,7 @@ describe('POST /api/scores: ベスト記録の upsert', () => {
 
   /** Submit the run that clears CLEARED_DATE's board (the clock must already be fixed to that day) */
   async function submitClearedRun(clearTimeMs?: number) {
-    const { replayLog, state } = clearedRun();
+    const { replayLog, state } = await clearedRun();
     expect(state.isCleared).toBe(true);
     const res = await submitScore(token, { date: CLEARED_DATE, mode: 'clear', clearTimeMs, replayLog });
     expect(res.status).toBe(201);
@@ -185,7 +185,7 @@ describe('POST /api/scores: ベスト記録の upsert', () => {
   it('同じ手数なら短い時間のクリアで更新し、長い時間なら更新しない（スコアは比べない）', async () => {
     useFakeToday(CLEARED_DATE);
     const seedId = await getTodaySeedId(token);
-    const { state } = clearedRun();
+    const { state } = await clearedRun();
     // 保存済み: 同じ手数、スコアは高いが時間は遅い
     await insertPlayScore({ userId, seedId, moveCount: state.moveCount, score: 999_999, isCleared: true, clearTimeMs: 90_000 });
 
@@ -199,7 +199,7 @@ describe('POST /api/scores: ベスト記録の upsert', () => {
   it('時間の記録がない保存済みのクリアは、同じ手数で時間のあるクリアに置き換わる', async () => {
     useFakeToday(CLEARED_DATE);
     const seedId = await getTodaySeedId(token);
-    const { state } = clearedRun();
+    const { state } = await clearedRun();
     await insertPlayScore({ userId, seedId, moveCount: state.moveCount, score: 1, isCleared: true, clearTimeMs: null });
 
     await submitClearedRun(600_000);
@@ -259,7 +259,7 @@ describe('POST /api/scores: 0 時をまたいだプレイ', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(`${iso}+09:00`));
     const { accessToken } = await registerUser();
-    const { replayLog } = buildReplay(2, '2026-09-23');
+    const { replayLog } = await buildReplay(2, '2026-09-23');
     const res = await submitScore(accessToken, { date: '2026-09-23', mode: 'clear', replayLog });
     return { status: res.status, body: await res.json() as { scoreId: string | null; pastDate?: boolean } };
   }

@@ -103,6 +103,9 @@ const apiArgs = [
   // Signs the old vegtab.app accounts' tokens (the handover from the old URL)
   "--var",
   `JWT_SECRET:${process.env.JWT_SECRET || "local-dev-secret"}`,
+  // The key of the daily seeds (backend/src/lib/seed.ts)
+  "--var",
+  `DAILY_SEED_SECRET:${process.env.DAILY_SEED_SECRET || "local-dev-daily-seed-secret"}`,
 ];
 // Web Push stays off locally unless a key pair is given here
 // (backend/scripts/generate-vapid-keys.ts).

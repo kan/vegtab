@@ -8,9 +8,9 @@ const route = useRoute();
 const gameStore = useGameStore();
 const { t } = useI18n();
 
-function goToPuzzle() {
-  const seed = gameStore.generateDailySeed();
-  router.push(`/puzzle/${seed}`);
+async function goToPuzzle() {
+  const path = await gameStore.todayPuzzlePath();
+  if (path) router.push(path);
 }
 </script>
 

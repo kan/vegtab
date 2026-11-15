@@ -106,7 +106,7 @@ function onPopState(_e: PopStateEvent) {
   }
 }
 
-function handleRoute() {
+async function handleRoute() {
   const seedParam = route.params.seed;
   const seed = seedParam ? Number(seedParam) : undefined;
 
@@ -116,7 +116,10 @@ function handleRoute() {
     return;
   }
 
-  isPastPuzzle.value = !gameStore.isTodaysDailySeed(seed);
+  // Today's seed comes from the API (a link may open this page first)
+  await gameStore.fetchTodaySeed();
+  if (Number(route.params.seed) !== seed) return; // moved on while waiting
+  isPastPuzzle.value = gameStore.isPastDailySeed(seed);
 
   // Try to restore an in-progress session first
   if (tryRestoreSession(seed)) return;

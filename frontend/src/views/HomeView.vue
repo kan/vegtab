@@ -32,13 +32,15 @@ const showRanking = ref(false);
 
 // --- Today's daily ---
 const today = ref(todayJST());
-const todaySeed = computed(() => gameStore.generateDailySeed(today.value));
+/** null until today's seed has come from the API (it cannot be computed here, #116) */
+const todaySeed = computed(() => gameStore.dailySeed(today.value));
 
 /** This device's best result of today: cleared first, then fewest moves, then the shortest time */
-const todayBest = computed(() => gameStore.getBestResult(todaySeed.value));
+const todayBest = computed(() => todaySeed.value === null ? null : gameStore.getBestResult(todaySeed.value));
 
-function playToday() {
-  router.push(`/puzzle/${todaySeed.value}`);
+async function playToday() {
+  const path = await gameStore.todayPuzzlePath();
+  if (path) router.push(path);
 }
 
 // --- Daily help ---
@@ -48,8 +50,13 @@ const showDailyHelp = ref(false);
 const cal = useCalendar();
 const showCalendar = ref(false);
 
-function playCalendarSeed(dateStr: string, seed: number) {
+function playCalendarSeed(dateStr: string, seed: number | null) {
   if (dateStr > today.value) return;
+  if (seed === null) {
+    // Not received yet (offline when the month was shown): ask again
+    cal.loadMonth();
+    return;
+  }
   router.push(`/puzzle/${seed}`);
 }
 
@@ -78,7 +85,22 @@ function declineTutorial() {
 const countdown = ref('');
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
 
+/**
+ * HOME asks for today's seed while it has none: on the first visit of the day, and again because a
+ * device clock a little ahead of the server gets yesterday's seed just after midnight. A few tries a
+ * day (each failure shows a toast when offline); the play button asks once more when tapped
+ */
+const SEED_RETRY_MS = 10_000;
+const SEED_TRIES_PER_DAY = 6;
+let lastSeedTry = 0;
+let seedTries = 0;
+
 function updateCountdown() {
+  if (todaySeed.value === null && seedTries < SEED_TRIES_PER_DAY && Date.now() - lastSeedTry >= SEED_RETRY_MS) {
+    lastSeedTry = Date.now();
+    seedTries++;
+    gameStore.fetchTodaySeed(); // its ranking follows (the watch on todaySeed)
+  }
   const diff = nextMidnightJST() - Date.now();
   if (diff <= 0) {
     // Midnight passed — refresh daily seed
@@ -86,7 +108,8 @@ function updateCountdown() {
     if (newToday !== today.value) {
       today.value = newToday;
       showToast('info', 'home.newDailyReady');
-      fetchRankingPreview();
+      seedTries = 0;
+      lastSeedTry = 0;
     }
     countdown.value = '00:00:00';
     return;
@@ -107,6 +130,12 @@ let previewSeq = 0;
 
 async function fetchRankingPreview() {
   const seq = ++previewSeq;
+  if (todaySeed.value === null) {
+    rankingPreview.value = [];
+    myRank.value = null;
+    rankingLoading.value = false;
+    return;
+  }
   rankingLoading.value = true;
   try {
     const data = await api<{
@@ -135,11 +164,11 @@ onMounted(() => {
   updateCountdown();
   countdownTimer = setInterval(updateCountdown, 1000);
   if (isTutorialFirstVisit()) showTutorialPrompt.value = true;
-  fetchRankingPreview();
 });
 
-// A transfer code switches the ID, and naming it puts its records in the ranking (getUserId reads a ref)
-watch(() => [getUserId(), gameStore.displayName], () => fetchRankingPreview());
+// A transfer code switches the ID, and naming it puts its records in the ranking (getUserId reads a ref).
+// Today's seed may come after the page is shown (and changes at midnight)
+watch(() => [getUserId(), gameStore.displayName, todaySeed.value], () => fetchRankingPreview(), { immediate: true });
 
 onUnmounted(() => {
   clearInterval(countdownTimer);
@@ -185,7 +214,7 @@ onUnmounted(() => {
 
       <p class="today-meta">
         {{ t('home.nextPuzzleIn') }} <span class="countdown-time">{{ countdown }}</span>
-        <span class="today-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
+        <span v-if="todaySeed !== null" class="today-seed">{{ t('common.seed', { seed: todaySeed }) }}</span>
       </p>
     </section>
 
@@ -287,7 +316,7 @@ onUnmounted(() => {
       </div>
     </Teleport>
 
-    <RankingModal :seed="todaySeed" :open="showRanking" @close="showRanking = false" />
+    <RankingModal v-if="todaySeed !== null" :seed="todaySeed" :open="showRanking" @close="showRanking = false" />
     <NameDialog :open="showNameDialog" @close="showNameDialog = false" />
   </div>
 </template>

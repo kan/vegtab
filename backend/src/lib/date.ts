@@ -20,14 +20,11 @@ export function isRankingClosed(dateStr: string, now = Date.now()): boolean {
   return dateStr < todayJST(now) && dateStr !== todayJST(now - PREVIOUS_DAY_GRACE_MS);
 }
 
-/** Derive a deterministic engine seed number from a YYYY-MM-DD date string.
- *  Canonical implementation in engine/src/seed.ts — keep in sync. */
-export function generateDailySeed(dateStr: string): number {
-  let hash = 0;
-  for (let i = 0; i < dateStr.length; i++) {
-    hash = ((hash << 5) - hash + dateStr.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
+/** Every day of `month` ('YYYY-MM') as 'YYYY-MM-DD', first to last (the same as frontend/src/utils/date.ts) */
+export function daysOfMonth(month: string): string[] {
+  const [year, mon] = month.split('-').map(Number);
+  const count = new Date(Date.UTC(year, mon, 0)).getUTCDate();
+  return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
 }
 
 /** Parse a YYYY-MM-DD string as UTC midnight.

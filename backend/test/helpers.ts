@@ -3,7 +3,8 @@ import { vi } from 'vitest';
 import { initializeGame, processAction, BOARD_SIZE, type Action, type GameState } from '@vegtab/engine';
 import worker from '../src/index';
 import type { Bindings } from '../src/types';
-import { generateDailySeed, todayJST } from '../src/lib/date';
+import { todayJST } from '../src/lib/date';
+import { deriveDailySeed } from '../src/lib/seed';
 import { issueTokens } from '../src/lib/refresh-tokens';
 import { createTestIdIssuer } from './kan-game/test-id-cookie';
 import { createFakeIdPlatform, type FakeIdPlatform } from './kan-game/fake-id-platform';
@@ -85,13 +86,18 @@ export async function createLegacyUser(displayName: string | null = null) {
   return { userId, ...tokens };
 }
 
+/** The seed the Worker stores for `date` (with the test env's DAILY_SEED_SECRET) */
+export function dailySeedOf(date: string): Promise<number> {
+  return deriveDailySeed((env as unknown as Bindings).DAILY_SEED_SECRET, date);
+}
+
 /**
  * Build a replay log of `moves` valid swaps for the daily seed of `date` (the first valid swap each time).
  * Every valid swap adds points, so a longer replay always has a higher score.
  * `moves = Infinity` plays until the game is over.
  */
-export function buildReplay(moves: number, date = todayJST()): { replayLog: Action[]; state: GameState } {
-  let state = initializeGame(generateDailySeed(date));
+export async function buildReplay(moves: number, date = todayJST()): Promise<{ replayLog: Action[]; state: GameState }> {
+  let state = initializeGame(await dailySeedOf(date));
   const replayLog: Action[] = [];
   while (replayLog.length < moves && !state.isGameOver) {
     const before = state;
@@ -126,6 +132,7 @@ let clearedRunCache: ReturnType<typeof buildReplay> | undefined;
 
 /** The replay that clears CLEARED_DATE's board. It is the same for every test, so it is built once (do not mutate it) */
 export function clearedRun(): ReturnType<typeof buildReplay> {
+  // CLEARED_DATE is before KEYED_SEED_START, so its board does not depend on the secret
   return clearedRunCache ??= buildReplay(Infinity, CLEARED_DATE);
 }
 
@@ -145,7 +152,7 @@ export function submitScore(token: string, body: Record<string, unknown>) {
 
 /** Submit a replay of `moves` valid swaps for today's seed; returns the response and the expected final state */
 export async function submitReplay(token: string, moves: number, extra: Record<string, unknown> = {}) {
-  const { replayLog, state } = buildReplay(moves);
+  const { replayLog, state } = await buildReplay(moves);
   const res = await submitScore(token, { date: todayJST(), mode: 'clear', replayLog, ...extra });
   return { res, state };
 }

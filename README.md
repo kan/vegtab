@@ -110,6 +110,7 @@ kan/game と vegtab は互いを Service Binding で指す（vegtab → `ID`、k
 | `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` | vars | Web Push。環境ごとに鍵ペアを作る（`backend/scripts/generate-vapid-keys.ts`） |
 | `VAPID_PRIVATE_KEY` | secret | Web Push の秘密鍵 |
 | `JWT_SECRET` | secret | 旧 URL の旧アカウントのトークンの署名鍵。旧 URL を閉じたら外す |
+| `DAILY_SEED_SECRET` | secret | 日ごとの seed を作る HMAC の鍵（`backend/src/lib/seed.ts`）。環境ごとに別の値にする。漏れると、まだ配っていない日の盤面を計算できる。変えても、既に行のある日の seed は変わらない |
 | `ENVIRONMENT` | vars | `development` / `dev` / `production` |
 
 ## ドメイン

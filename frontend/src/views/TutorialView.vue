@@ -10,7 +10,6 @@ import { useGameStore } from '@/stores/game';
 import { useAchievementStore } from '@/stores/achievements';
 import { api } from '@/api/client';
 import { playSE, vibrate } from '@/sound';
-import { todayJST } from '@/utils/date';
 import type { BoardInput } from '@/lib/boardInput';
 import { LESSONS } from '@/tutorial/lessons';
 import { markTutorialSeen } from '@/tutorial/progress';
@@ -90,8 +89,9 @@ function finish() {
   }
 }
 
-function playToday() {
-  router.push(`/puzzle/${gameStore.generateDailySeed(todayJST())}`);
+async function playToday() {
+  const path = await gameStore.todayPuzzlePath();
+  if (path) router.push(path);
 }
 
 

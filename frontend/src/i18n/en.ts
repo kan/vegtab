@@ -128,6 +128,7 @@ export default {
     pastDateNoRanking: 'Scores for past puzzles are not recorded in the ranking',
     scoreSubmitFailed: 'Failed to submit score.',
     rankingFetchFailed: 'Could not load ranking.',
+    dailySeedUnavailable: "Could not get today's puzzle. Check your connection and try again.",
     pushFailed: 'Failed to set up push notifications.',
   },
   achievement: {

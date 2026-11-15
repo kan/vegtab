@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { formatDateJST, todayJST } from '@/utils/date';
+import { daysOfMonth, nextMonth, shiftDateStr, todayJST } from '@/utils/date';
 import { api, apiErrorCode, flushOfflineQueue, showToast, ApiError } from '@/api/client';
 import { getUserId, onIdChange, rememberKanGameName, startId } from '@/api/id';
 import { setLocalItem } from '@/lib/storage';
@@ -8,7 +8,6 @@ import { filterPlayRecords } from '@/lib/legacyData';
 import { isBetterResult, type ResultSummary } from '@/lib/bestResult';
 // 静的に import する（遅延 import だと、デプロイ後の旧バンドルのタブで旧チャンクが取れず実績の通知が消える）
 import { useAchievementStore } from '@/stores/achievements';
-import { generateDailySeed } from '@vegtab/engine';
 import { type ReplayAction } from '@/stores/puzzle';
 import { DEFAULT_DISPLAY_NAME } from '@/utils/constants';
 
@@ -61,7 +60,12 @@ export const useGameStore = defineStore('game', () => {
 
   async function syncWithServer() {
     try {
-      await Promise.all([syncProfile(), syncScoresFromServer(), useAchievementStore().fetchAchievements()]);
+      await Promise.all([
+        syncProfile(),
+        // Matching the records to their days (findDailyDate) needs the seeds
+        loadRecentSeeds().then(syncScoresFromServer),
+        useAchievementStore().fetchAchievements(),
+      ]);
       // After sync, try to submit any local scores that were never sent to backend
       resubmitUnsentScores();
     } catch (e) {
@@ -148,7 +152,8 @@ export const useGameStore = defineStore('game', () => {
       }
       // サーバーのベストを超えない記録と、再送の期間を過ぎた日の記録は再送しないので、容量を食う replayLog はもう要らない
       for (const r of playRecords.value) {
-        if (r.replayLog && (isCoveredByServer(r) || findDailyDate(r.seed) === null)) {
+        // 日の分からない記録は、seed を受け取れていないだけかもしれないので、受け取れたときだけ落とす
+        if (r.replayLog && (isCoveredByServer(r) || (recentSeedsLoaded && findDailyDate(r.seed) === null))) {
           delete r.replayLog;
         }
       }
@@ -209,36 +214,100 @@ export const useGameStore = defineStore('game', () => {
   const effectiveName = computed(() => displayName.value || DEFAULT_DISPLAY_NAME);
 
   // --- Seeds ---
+  // 日ごとの seed は backend が secret から作り、その日になってから配る（#116）。端末では計算できないので、
+  // 受け取った値を date → seed で覚えておき、オフラインでも一度受け取った日は遊べるようにする
 
-  function dailySeed(dateStr?: string): number {
-    return generateDailySeed(dateStr ?? todayJST());
+  /** スコアを送れる過去の日数（backend の isDateNearToday と同じ） */
+  const SUBMITTABLE_DAYS = 60;
+
+  const dailySeeds = ref<Record<string, number>>(loadJson('vegtab_daily_seeds', {}));
+  /** このセッションで、スコアを送れる期間の seed を受け取れた */
+  let recentSeedsLoaded = false;
+
+  function rememberDailySeeds(entries: Array<{ date: string; seedValue: string }>) {
+    let changed = false;
+    for (const { date, seedValue } of entries) {
+      const seed = Number(seedValue);
+      if (dailySeeds.value[date] === seed) continue;
+      dailySeeds.value[date] = seed;
+      changed = true;
+    }
+    if (changed) setLocalItem('vegtab_daily_seeds', JSON.stringify(dailySeeds.value));
   }
 
-  function isTodaysDailySeed(seed: number): boolean {
-    return seed === dailySeed(todayJST());
+  /** The seed of `dateStr` (default today, JST) if this device has received it, else null */
+  function dailySeed(dateStr?: string): number | null {
+    return dailySeeds.value[dateStr ?? todayJST()] ?? null;
+  }
+
+  let todaySeedRequest: Promise<void> | undefined;
+  const monthSeedRequests = new Map<string, Promise<boolean>>();
+
+  /** Today's seed, from the API unless already received. null when it cannot be reached and was never received */
+  async function fetchTodaySeed(): Promise<number | null> {
+    // This month's seeds (loadRecentSeeds at start) include today's
+    await monthSeedRequests.get(todayJST().slice(0, 7));
+    if (dailySeed() === null) {
+      todaySeedRequest ??= api<{ date: string; seedValue: string }>('/api/seeds/daily')
+        .then((res) => rememberDailySeeds([res]))
+        .catch(() => { /* offline: only the seeds received before */ })
+        .finally(() => { todaySeedRequest = undefined; });
+      await todaySeedRequest;
+    }
+    return dailySeed();
+  }
+
+  /** The route of today's puzzle, for a button that opens it. Says so in a toast when today's seed cannot be had */
+  async function todayPuzzlePath(): Promise<string | null> {
+    const seed = await fetchTodaySeed();
+    if (seed !== null) return `/puzzle/${seed}`;
+    showToast('error', 'toast.dailySeedUnavailable');
+    return null;
+  }
+
+  /** Receives the seeds of `month` ('YYYY-MM') up to today, unless all are here. Resolves to whether they are */
+  function fetchMonthSeeds(month: string): Promise<boolean> {
+    const today = todayJST();
+    if (daysOfMonth(month).every((d) => d > today || dailySeeds.value[d] !== undefined)) return Promise.resolve(true);
+    let request = monthSeedRequests.get(month);
+    if (!request) {
+      request = api<{ seeds: Array<{ date: string; seedValue: string }> }>(`/api/seeds/daily/calendar?month=${month}`)
+        .then((res) => { rememberDailySeeds(res.seeds); return true; })
+        .catch(() => false)
+        .finally(() => monthSeedRequests.delete(month));
+      monthSeedRequests.set(month, request);
+    }
+    return request;
+  }
+
+  /** The seeds of the days a score can still be sent for (today and the 60 days before) */
+  async function loadRecentSeeds() {
+    const today = todayJST().slice(0, 7);
+    const months: string[] = [];
+    for (let m = shiftDateStr(todayJST(), -SUBMITTABLE_DAYS).slice(0, 7); m <= today; m = nextMonth(m)) months.push(m);
+    const results = await Promise.all(months.map(fetchMonthSeeds));
+    recentSeedsLoaded ||= results.every(Boolean);
+  }
+
+  /**
+   * Whether `seed` is a past day's puzzle. Without today's seed (offline, never received) only a seed
+   * this device knows for another day counts as past: an unknown one may well be today's
+   */
+  function isPastDailySeed(seed: number): boolean {
+    const today = dailySeed();
+    if (today !== null) return seed !== today;
+    return Object.entries(dailySeeds.value).some(([date, s]) => s === seed && date !== todayJST());
   }
 
   function randomSeed(): number {
     return ((Date.now() & 0x7fffffff) ^ (Math.random() * 0x7fffffff)) >>> 0;
   }
 
-  /** Find the date string for a daily seed number, or null if not a daily seed.
-   *  Searches today ±1 day first (common case), then up to 60 days back for calendar plays. */
+  /** The day of a daily seed received on this device, if a score can still be sent for it; else null */
   function findDailyDate(seed: number): string | null {
-    const today = new Date();
-    // Fast path: today ±1 day (covers timezone edge cases)
-    for (let offset = -1; offset <= 1; offset++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() + offset);
-      const dateStr = formatDateJST(d);
-      if (generateDailySeed(dateStr) === seed) return dateStr;
-    }
-    // Extended search for calendar plays (up to 60 days back)
-    for (let offset = -2; offset >= -60; offset--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() + offset);
-      const dateStr = formatDateJST(d);
-      if (generateDailySeed(dateStr) === seed) return dateStr;
+    const oldest = shiftDateStr(todayJST(), -SUBMITTABLE_DAYS);
+    for (const [date, s] of Object.entries(dailySeeds.value)) {
+      if (s === seed && date >= oldest) return date;
     }
     return null;
   }
@@ -364,19 +433,14 @@ export const useGameStore = defineStore('game', () => {
 
   // --- Calendar helpers ---
 
-  function getDailySeeds(year: number, month: number): { date: string; seed: number }[] {
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const result: { date: string; seed: number }[] = [];
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      result.push({ date: dateStr, seed: generateDailySeed(dateStr) });
-    }
-    return result;
+  /** The days of `month` ('YYYY-MM') with their seeds; null for a day whose seed this device has not received */
+  function getDailySeeds(month: string): { date: string; seed: number | null }[] {
+    return daysOfMonth(month).map((date) => ({ date, seed: dailySeed(date) }));
   }
 
   function hasPlayedDaily(dateStr: string): boolean {
-    const seed = generateDailySeed(dateStr);
-    return playRecords.value.some(r => r.seed === seed);
+    const seed = dailySeed(dateStr);
+    return seed !== null && playRecords.value.some(r => r.seed === seed);
   }
 
   // --- Share ---
@@ -398,8 +462,8 @@ export const useGameStore = defineStore('game', () => {
   return {
     displayName, effectiveName, setDisplayName, claimHandoff,
     playRecords,
-    generateDailySeed: dailySeed, randomSeed,
-    isTodaysDailySeed,
+    dailySeed, fetchTodaySeed, todayPuzzlePath, fetchMonthSeeds, randomSeed,
+    isPastDailySeed,
     addPlayRecord, getRecordsForSeed, getBestResult, getBestMoves,
     getDailySeeds, hasPlayedDaily,
     init, syncProfile, syncScoresFromServer, initialized,

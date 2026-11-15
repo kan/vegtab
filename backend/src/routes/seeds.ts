@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Bindings, Variables } from '../types';
-import { todayJST } from '../lib/date';
-import { findOrCreateDailySeed } from '../lib/seed';
+import { daysOfMonth, todayJST } from '../lib/date';
+import { deriveDailySeed, findOrCreateDailySeed } from '../lib/seed';
 import { MODE } from '../lib/mode';
 
 /** The user's stored best for a seed (POST /api/scores keeps only the best row) */
@@ -31,7 +31,7 @@ export const seedRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>
 // GET /api/seeds/daily - Get today's daily seed
 seedRoutes.get('/daily', async (c) => {
   const today = todayJST();
-  const seed = await findOrCreateDailySeed(c.env.DB, today);
+  const seed = await findOrCreateDailySeed(c.env.DB, c.env.DAILY_SEED_SECRET, today);
 
   return c.json({
     seedId: seed.id,
@@ -41,26 +41,31 @@ seedRoutes.get('/daily', async (c) => {
   });
 });
 
-// GET /api/seeds/daily/calendar - List past daily seeds
+// GET /api/seeds/daily/calendar?month=YYYY-MM - The daily seed of every day of the month up to today
 seedRoutes.get('/daily/calendar', async (c) => {
   const userId = c.get('userId');
-  const month = c.req.query('month'); // YYYY-MM format
+  const month = c.req.query('month') ?? '';
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return c.json({ error: 'Invalid month' }, 400);
 
-  let query = 'SELECT ps.id, ps.seed_value, ps.share_code, ps.daily_date FROM puzzle_seeds ps WHERE ps.is_daily = 1';
-  const params: string[] = [];
+  const rows = await c.env.DB.prepare(
+    'SELECT id, seed_value, share_code, daily_date FROM puzzle_seeds WHERE is_daily = 1 AND daily_date LIKE ?'
+  ).bind(`${month}-%`).all<{ id: string; seed_value: string; share_code: string; daily_date: string }>();
+  const rowByDate = new Map((rows.results ?? []).map((r) => [r.daily_date, r]));
 
-  if (month) {
-    query += ' AND ps.daily_date LIKE ?';
-    params.push(`${month}%`);
-  }
-  query += ' ORDER BY ps.daily_date DESC';
-
-  const seeds = await c.env.DB.prepare(query).bind(...params).all<{
-    id: string; seed_value: string; share_code: string; daily_date: string;
-  }>();
+  // Newest first, and never a day after today: its seed is not handed out yet.
+  // A day nobody has played has no row yet. Its value is the one findOrCreateDailySeed will store,
+  // so the calendar does not write rows (a GET that anyone can repeat for any month)
+  const today = todayJST();
+  const days = daysOfMonth(month).filter((d) => d <= today).reverse();
+  const seeds = await Promise.all(days.map(async (date) => {
+    const row = rowByDate.get(date);
+    return row
+      ? { seedId: row.id, seedValue: row.seed_value, shareCode: row.share_code, date }
+      : { seedId: null, seedValue: String(await deriveDailySeed(c.env.DAILY_SEED_SECRET, date)), shareCode: null, date };
+  }));
 
   // The user's stored best per seed (one row per user×seed×mode)
-  const seedIds = (seeds.results ?? []).map((s) => s.id);
+  const seedIds = seeds.flatMap((s) => (s.seedId ? [s.seedId] : []));
   const userScores: Record<string, BestScore> = {};
   if (seedIds.length > 0) {
     const placeholders = seedIds.map(() => '?').join(',');
@@ -75,13 +80,7 @@ seedRoutes.get('/daily/calendar', async (c) => {
   }
 
   return c.json({
-    seeds: (seeds.results ?? []).map((s) => ({
-      seedId: s.id,
-      seedValue: s.seed_value,
-      shareCode: s.share_code,
-      date: s.daily_date,
-      userScores: userScores[s.id] ?? null,
-    })),
+    seeds: seeds.map((s) => ({ ...s, userScores: (s.seedId && userScores[s.seedId]) || null })),
   });
 });
 

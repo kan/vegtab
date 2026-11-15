@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useGameStore } from '@/stores/game';
 
 export function useCalendar() {
@@ -7,7 +7,14 @@ export function useCalendar() {
   const year = ref(now.getFullYear());
   const month = ref(now.getMonth()); // 0-indexed
 
-  const days = computed(() => gameStore.getDailySeeds(year.value, month.value));
+  const monthKey = computed(() => `${year.value}-${String(month.value + 1).padStart(2, '0')}`);
+  const days = computed(() => gameStore.getDailySeeds(monthKey.value));
+
+  /** The seeds come from the API (the device cannot compute them, #116); the days already received are not asked again */
+  function loadMonth() {
+    gameStore.fetchMonthSeeds(monthKey.value);
+  }
+  watch(monthKey, loadMonth, { immediate: true });
 
   const monthLabel = computed(() => {
     const d = new Date(year.value, month.value);
@@ -46,15 +53,16 @@ export function useCalendar() {
     }
   }
 
-  /** その日のクリアの最少手数（クリアしていなければ 0） */
-  function bestMoves(seed: number): number {
-    return gameStore.getBestMoves(seed);
+  /** その日のクリアの最少手数（クリアしていなければ 0。seed をまだ受け取っていない日も 0） */
+  function bestMoves(seed: number | null): number {
+    return seed === null ? 0 : gameStore.getBestMoves(seed);
   }
 
   return {
     year,
     month,
     days,
+    loadMonth,
     monthLabel,
     grid,
     isCurrentMonth,

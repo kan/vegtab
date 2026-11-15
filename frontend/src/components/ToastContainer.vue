@@ -21,6 +21,8 @@ const timers = new Map<number, ReturnType<typeof setTimeout>>();
 
 onMounted(() => {
   unsubscribe = onToast((event) => {
+    // Several requests failing together (offline at start) would stack the same message
+    if (toasts.value.some(t => !t.leaving && t.messageKey === event.messageKey)) return;
     const id = nextId++;
     toasts.value.push({ id, type: event.type, messageKey: event.messageKey, params: event.params, leaving: false });
     const duration = event.duration ?? 4000;
