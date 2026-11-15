@@ -4,3 +4,5 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .dev.vars
+# Playwright MCP のスナップショットとログ
+.playwright-mcp/
