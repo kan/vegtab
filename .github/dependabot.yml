@@ -9,6 +9,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # cooldown: 公開から 7 日（メジャーは 14 日）経った版だけを取り込む。TAKO-SEN と NYORO-RIN と同じ値。
+    # 問題のある版や乗っ取られて公開された版は、たいてい数日のうちに取り下げられるため。
+    # セキュリティ更新は対象外なので遅れない
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     ignore:
       # TypeScript 7.0 はネイティブ (Go) 実装で typescript/lib/tsc を公開しないため、
       # それを require する vue-tsc (Volar) が起動できない。

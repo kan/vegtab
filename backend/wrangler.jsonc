@@ -5,8 +5,11 @@
   // Bindings are not inherited by the environments, so each lists its own.
   "name": "vegtab-local",
   "main": "src/index.ts",
-  "compatibility_date": "2024-12-01",
+  "compatibility_date": "2026-09-15",
   "compatibility_flags": ["nodejs_compat"],
+  // Workers Logs: past logs can be read in the dashboard, not only while `wrangler tail` is open.
+  // Top-level only: environments inherit it (not a binding)
+  "observability": { "enabled": true },
 
   // The SPA is served by this same Worker (Static Assets). Build the frontend first: wrangler needs the directory to exist.
   // The API and share pages go to the Worker; everything else is the SPA (unknown paths fall back to index.html)
