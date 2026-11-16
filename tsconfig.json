@@ -1,19 +1,21 @@
 {
+  // The screen (src/main.ts, src/App.vue, src/ui) and the puzzle core (src/core), with their tests.
+  // The Worker (src/worker) has its own types (the Workers runtime, not the DOM): tsconfig.worker.json
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
+    "jsx": "preserve",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/ui/*"]
+    }
   },
-  "exclude": ["backend/**", "frontend/**", "engine/tests/**", "node_modules"],
-  "references": [
-    { "path": "engine" }
-  ]
+  "include": ["src/*.ts", "src/*.vue", "src/core/**/*.ts", "src/ui/**/*.ts", "src/ui/**/*.vue", "tests/core/**/*.ts", "tests/ui/**/*.ts"]
 }

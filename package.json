@@ -3,19 +3,48 @@
   "version": "0.0.1",
   "private": true,
   "description": "Vege-Table — daily 3-match puzzle game",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "npm run dev:all",
     "dev:all": "node scripts/dev.mjs",
     "dev:roji": "roji run vegtab -- node scripts/dev.mjs",
-    "test": "npm test --workspaces --if-present",
-    "build": "npm run build -w frontend",
-    "deploy": "npm run build && npm run deploy:prod -w backend"
+    "build": "vue-tsc --noEmit && vite build",
+    "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit && wrangler types --check --strict-vars=false && tsc --noEmit -p tsconfig.worker.json",
+    "deploy": "npm run deploy:production",
+    "deploy:dev": "npm run build && npm run db:migrate:dev && wrangler deploy --env dev",
+    "deploy:production": "npm run build && npm run db:migrate:prod && wrangler deploy --env production",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:dev": "wrangler d1 migrations apply DB --env dev --remote",
+    "db:migrate:prod": "wrangler d1 migrations apply DB --env production --remote",
+    "cf-typegen": "wrangler types --strict-vars=false"
   },
-  "workspaces": [
-    "engine",
-    "frontend",
-    "backend"
-  ],
+  "dependencies": {
+    "@block65/webcrypto-web-push": "^2.0.0",
+    "@hono/zod-validator": "^0.9.1",
+    "hono": "^4.13.16",
+    "jose": "^6.2.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.6.0",
+    "@types/qrcode": "^1.5.6",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "pinia": "^4.1.0",
+    "qrcode": "^1.5.4",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.6",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.1.0",
+    "vue": "^3.5.45",
+    "vue-i18n": "^11.4.18",
+    "vue-router": "^5.4.0",
+    "vue-tsc": "^3.3.14",
+    "wrangler": "^4.151.0"
+  },
   "overrides": {
     "sharp": "^0.35.5",
     "workbox-build": {
