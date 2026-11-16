@@ -6,7 +6,7 @@ import NameDialog from './NameDialog.vue';
 
 /**
  * Brings the records of an old vegtab.app account over to this device's ID. The old URL opens this
- * page with a handoff token in the fragment (docs/SPEC.md §5.4); the records move only after the
+ * page with a handoff token in the fragment (docs/DATA_CONTRACT.md「旧 URL からの引き継ぎ」); the records move only after the
  * player agrees, so a link from someone else cannot switch them unnoticed
  */
 const props = defineProps<{ token: string }>();

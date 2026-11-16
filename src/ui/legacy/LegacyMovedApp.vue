@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { requestHandoffUrl, hasLegacyAccount, NEW_ORIGIN } from './handoff';
 
 /**
- * The whole screen of the old URL (vegtab.app) after the move (docs/SPEC.md §5.4): the moving notice,
+ * The whole screen of the old URL (vegtab.app) after the move (docs/DATA_CONTRACT.md「旧 URL からの引き継ぎ」): the moving notice,
  * and the way to bring this device's records to the new URL
  */
 const { t } = useI18n();

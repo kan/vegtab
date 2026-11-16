@@ -12,7 +12,7 @@ export function getAllowedOrigins(env: Bindings): string[] {
 
 /**
  * Whether a request came to the old host (vegtab.app). It serves only the moving notice and the
- * handover of old accounts (routes/legacy.ts) until it is closed (docs/SPEC.md §5.4).
+ * handover of old accounts (routes/legacy.ts) until it is closed (docs/DATA_CONTRACT.md「旧 URL からの引き継ぎ」).
  */
 export function isLegacyHost(env: Bindings, url: string): boolean {
   return !!env.LEGACY_HOST && new URL(url).hostname === env.LEGACY_HOST;

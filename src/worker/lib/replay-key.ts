@@ -1,6 +1,6 @@
 /**
  * Where a replay log is stored in R2. Replays of the boards before #106 were under `replays/`, which
- * the bucket's lifecycle rule removes (docs/SPEC.md §5.4), so the prefix changed with the boards.
+ * the bucket's lifecycle rule removes (docs/DATA_CONTRACT.md「旧 URL からの引き継ぎ」), so the prefix changed with the boards.
  */
 const REPLAY_PREFIX = 'replays-v2';
 

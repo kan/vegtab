@@ -319,7 +319,7 @@ export function processDamage(board: (Cell | null)[][], clearedPositions: Positi
 }
 
 /**
- * アイテム効果の後に続く連鎖の chainIndex の開始値（SPEC §3.6.1: 操作で直接消えるのが1連鎖目、
+ * アイテム効果の後に続く連鎖の chainIndex の開始値（docs/DESIGN.md 3.6 節:操作で直接消えるのが1連鎖目、
  * 誘爆・落下で消えるのが2連鎖目以降）。
  * @param depthLevels タイルを消した発動の最も深い段。起動したアイテム・スプーン・合成の効果そのものを
  *   1段目とし、誘爆の深さごとに1段ずつ増える（同じ深さで同時に誘爆したアイテムは何個でも1段）

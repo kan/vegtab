@@ -1,5 +1,5 @@
 /**
- * Handing an old vegtab.app account over to a kan-game.app ID (#103, docs/SPEC.md §5.4).
+ * Handing an old vegtab.app account over to a kan-game.app ID (#103, docs/DATA_CONTRACT.md「旧 URL からの引き継ぎ」).
  *
  * The old screen on vegtab.app still holds the account's tokens, so it asks for a one-time handoff
  * token (issueHandoff) and opens vegtab.kan-game.app with the token in the URL fragment. There the

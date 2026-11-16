@@ -323,7 +323,7 @@ export const useGameStore = defineStore('game', () => {
     return {
       date,
       mode: 'clear',
-      // 時間はサーバーで検証できない自己申告の値（SPEC §5.3）
+      // 時間はサーバーで検証できない自己申告の値（docs/DATA_CONTRACT.md「POST /api/scores」）
       clearTimeMs: record.clearTimeMs ?? null,
       generatedItemTypes: record.generatedItemTypes ?? [],
       replayLog: record.replayLog,

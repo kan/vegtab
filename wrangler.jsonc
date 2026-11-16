@@ -87,7 +87,7 @@
       // The name the Worker had before (the top level was vegtab-api), so it is the same Worker
       "name": "vegtab-api-production",
       // vegtab.kan-game.app is a Custom Domain: Cloudflare keeps its DNS record. vegtab.app/* is a
-      // route, which needs the proxied AAAA 100:: record in the vegtab.app zone (docs/SPEC.md §5.4).
+      // route, which needs the proxied AAAA 100:: record in the vegtab.app zone (README「ドメイン」).
       // Removing a route from this file does not detach it; delete it in the dashboard too.
       "routes": [
         { "pattern": "vegtab.kan-game.app", "custom_domain": true },

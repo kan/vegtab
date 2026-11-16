@@ -5,7 +5,7 @@ import { BOARD_SIZE, Cell, Color, GameState } from '../../src/core/types.js';
 import type { ChainStepData, ItemEffectData, TraceCollector } from '../../src/core/traceCollector.js';
 
 /**
- * SPEC §3.6.1: アイテム効果の後に続く連鎖は「誘爆の段数 + 1」連鎖目から数える。
+ * docs/DESIGN.md 3.6 節:アイテム効果の後に続く連鎖は「誘爆の段数 + 1」連鎖目から数える。
  * 起動したアイテム（スプーン・合成ではその効果）を1段目とし、同じ深さの誘爆は何個でも1段。
  */
 

@@ -11,7 +11,7 @@ kan-game.app のゲームの 1 つで、本番は `https://vegtab.kan-game.app`�
 |---|---|---|
 | `src/core/` | TypeScript | パズルのコア。純粋関数、フレームワーク非依存。シード値による決定的な盤面生成・マッチ判定・連鎖処理・アイテム・スコア計算 |
 | `src/ui/`、`src/main.ts`、`src/App.vue` | Vue.js, Pinia | SPA。パズル画面、HOME、実績、リプレイ、チュートリアル |
-| `src/worker/` | Cloudflare Workers, Hono | API。シード、スコア、ランキング、実績、プッシュ通知、ID 基盤への中継。入口は `src/worker/main.ts` |
+| `src/worker/` | Cloudflare Workers | API。シード、スコア、ランキング、実績、プッシュ通知、ID 基盤への中継。入口は `src/worker/main.ts` |
 | `tests/core/`、`tests/ui/`、`tests/worker/` | Vitest | それぞれのテスト。Worker のテストは `@cloudflare/vitest-plugin` |
 | `migrations/` | D1 | マイグレーション |
 | `public/`、`index.html` | | 画面の静的ファイル |
@@ -87,7 +87,7 @@ npm run typecheck              # 型検査（画面と core、wrangler types --c
 | 開発 | `https://vegtab-dev.kan-game.app` | `vegtab-dev` | `vegtab-dev` | `dev.kan-game.app`（Worker `kan-game-dev`） |
 | 本番 | `https://vegtab.kan-game.app` | `vegtab-api-production` | `tomado-db` | `kan-game.app`（Worker `kan-game`） |
 
-本番の Worker は、旧 URL の `vegtab.app` も配信する。旧 URL は移転の案内と、旧アカウントの記録の引き継ぎだけを行う（`docs/SPEC.md` §5.4）。
+本番の Worker は、旧 URL の `vegtab.app` も配信する。旧 URL は移転の案内と、旧アカウントの記録の引き継ぎだけを行う（`docs/DATA_CONTRACT.md`「旧 URL からの引き継ぎ」）。
 
 ## デプロイ
 
@@ -124,7 +124,16 @@ kan/game と vegtab は互いを Service Binding で指す（vegtab → `ID`、k
 ## ドメイン
 
 `vegtab.kan-game.app` と `vegtab-dev.kan-game.app` は Worker の Custom Domain（`"custom_domain": true`）で、DNS レコードは Cloudflare が作って管理する。
-`vegtab.app` は route（`vegtab.app/*`）で本番の Worker に向けている。route は DNS レコードを作らないので、`vegtab.app` のゾーンに dashboard で足した proxied の `AAAA 100::` が要る。旧 URL を配信するあいだは消さない。閉じる手順は `docs/SPEC.md` §5.4。
+`vegtab.app` は route（`vegtab.app/*`）で本番の Worker に向けている。route は DNS レコードを作らないので、`vegtab.app` のゾーンに dashboard で足した proxied の `AAAA 100::` が要る。旧 URL を配信するあいだは消さない。
+
+旧 URL を閉じるのは 2027 年に入ってから（TAKO-SEN の旧 URL と同じ扱い、2026-10-22 に決定）。それまでは引き継ぎを受け付ける。閉じるときは次の順に行う。
+
+1. route（`vegtab.app/*`）を `wrangler.jsonc` と dashboard の両方から消す（設定から消しても dashboard の route は外れない）
+2. `vegtab.app` のゾーンの `AAAA 100::` を消す
+3. 旧 URL のための仕組みを外す（#109）。外すのは次のもの
+   - 旧アカウントの表: `users`、`user_devices`、`transfer_codes`、`refresh_token_families`、`legacy_handoffs`
+   - secret の `JWT_SECRET` と、API の `/api/auth/refresh`、`/api/legacy/handoff`
+   - 画面の `src/ui/legacy/`
 
 ## アーキテクチャ
 
@@ -139,12 +148,11 @@ localStorage        |   ← 退会（GameService.deleteAccount）
 (ゲーム進行)          (リプレイ検証)
 ```
 
-- 認証: kan-game.app の ID の Cookie（`HttpOnly`、`Domain=kan-game.app`）。Worker が公開鍵で検証する（`docs/SPEC.md` §5.1）
+- 認証: kan-game.app の ID の Cookie（`HttpOnly`、`Domain=kan-game.app`）。Worker が公開鍵で検証する（`docs/DATA_CONTRACT.md`「API」）
 - オフラインファースト: localStorage をフォールバックとして維持し、API が失敗してもローカルデータで動作を続ける
 - 不正対策: Worker がリプレイログを src/core で再計算してスコアを検証する
 
-テーブルは `docs/SPEC.md` §6、API は `src/worker/routes/` を参照。
-
 ## 仕様書
 
-詳細な仕様は `docs/SPEC.md` を参照。
+- `docs/DESIGN.md`: ゲームのルールと設計（盤面、アイテム、おじゃまタイル、スコア、デイリー、ランキング、実績、画面）
+- `docs/DATA_CONTRACT.md`: 操作の表現、端末の保存、API、回数の制限、退会、旧 URL からの引き継ぎ、D1

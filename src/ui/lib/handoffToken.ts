@@ -1,5 +1,5 @@
 /**
- * A handoff token from the old URL (#handoff=…, docs/SPEC.md §5.4). Taken out of the URL when this
+ * A handoff token from the old URL (#handoff=…, docs/DATA_CONTRACT.md「旧 URL からの引き継ぎ」). Taken out of the URL when this
  * module loads, before the router reads the URL (the router would put the fragment back), so the
  * token is not left in the history or shared by copying the address
  */

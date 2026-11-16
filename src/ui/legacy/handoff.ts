@@ -1,7 +1,7 @@
 import { getItemSync, setLocalItem } from '@/lib/storage';
 
 /**
- * The old URL's side of the move (docs/SPEC.md §5.4). The old screen kept its account's tokens in
+ * The old URL's side of the move (docs/DATA_CONTRACT.md「旧 URL からの引き継ぎ」). The old screen kept its account's tokens in
  * this origin's storage; they let it ask for a handoff URL, which opens the new URL with a one-time
  * token that moves the account's records to the device's kan-game.app ID there.
  */

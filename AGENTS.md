@@ -1,15 +1,16 @@
 # AGENTS.md
 
-このリポジトリで作業するときの規則。仕様（ゲームのルール、API、データ）はここに書かず、`docs/SPEC.md` に書く。
+このリポジトリで作業するときの規則。仕様はここに書かない。ゲームのルールと設計は `docs/DESIGN.md`、保存データ、API、D1 は
+`docs/DATA_CONTRACT.md` に書く。
 
 ## プロジェクト
 **Vege-Table** — デイリーパズル（3 マッチ）で、おじゃまタイルを全て消すまでの手数を競うカジュアルゲーム。Wordle モデル。
 モードは Clear だけ（Sprint / Survival / Cascade は #102 で撤去した）。
 
-- 仕様の正本は `docs/SPEC.md`。ゲームルール、API、データ構造に関わる変更の前に、該当する節を読む。今の実装の要点と、
-  ルールの細かい点は §8 にある
+- 仕様の正本は `docs/DESIGN.md`（ゲームのルール、画面、デイリー、ランキング、実績）と `docs/DATA_CONTRACT.md`（操作の表現、
+  端末の保存、API、回数の制限、退会、旧 URL からの引き継ぎ、D1）。ゲームルール、API、データ構造に関わる変更の前に、該当する節を読む
 - 本番 URL `https://vegtab.kan-game.app`（kan-game.app のゲームの 1 つ）。旧 URL `https://vegtab.app` は移転の案内と
-  旧アカウントの引き継ぎだけを行う（`docs/SPEC.md` §5.4）
+  旧アカウントの引き継ぎだけを行う（`docs/DATA_CONTRACT.md`「旧 URL からの引き継ぎ」）
 - ID、名前、退会は kan-game.app の ID 基盤（kan/game、`~/game`）と共通。kan/game 側の変更（`ALLOWED_ORIGINS`、
   `GAME_VEGTAB`、プライバシーポリシー、`docs/GAME_GUIDE.md` など）が要るときは、**vegtab の作業から kan/game を編集しない。**
   要る変更をまとめて、kan/game のセッションが動いていればそこへメッセージで、無ければ利用者に依頼する
@@ -20,24 +21,24 @@ TAKO-SEN と NYORO-RIN と同じく、1 つのパッケージに置く（#125）
 ```
 src/
 ├── core/        # パズルのコア（純粋 TypeScript、フレームワーク非依存）。画面と Worker が相対の import で使う
-├── ui/          # 画面（Vue、Pinia、vue-router、vue-i18n）。`@/` は src/ui を指す
-├── worker/      # Cloudflare Workers の API（Hono）。入口は main.ts（default と GameService を export）
+├── ui/          # 画面（Vue、Pinia、vue-i18n）。`@/` は src/ui を指す。画面と URL の表は routes.ts
+├── worker/      # Cloudflare Workers の API（素の fetch とルートの表）。入口は main.ts（default と GameService を export）
 ├── main.ts      # 画面の入口
 └── App.vue
 tests/{core,ui,worker}/   # テスト（vitest.config.ts の 3 つの project）
 migrations/      # D1 のマイグレーション
 public/、index.html       # 画面の静的ファイル（public/_headers は画面の応答のヘッダー）
 scripts/         # dev.mjs（開発サーバー）、licenses-plugin.ts（ライセンス一覧）、generate-vapid-keys.ts
-docs/SPEC.md     # 仕様
+docs/DESIGN.md、docs/DATA_CONTRACT.md   # 仕様
 wrangler.jsonc、vite.config.ts、vitest.config.ts、tsconfig.json（画面と core）、tsconfig.worker.json（Worker）
 ```
 
 ## 技術スタック
 - **言語:** TypeScript（strict）
 - **テスト:** Vitest（Worker は `@cloudflare/vitest-plugin`）
-- **画面:** Vue.js（Composition API）、Pinia、vue-router、vue-i18n
-- **Worker:** Cloudflare Workers（Hono、zod）、D1（SQLite）、KV、R2
-- **認証:** kan-game.app の ID（ID 基盤が発行する Cookie の JWT を、Worker が公開鍵で検証する。`docs/SPEC.md` §5.1）
+- **画面:** Vue.js（Composition API）、Pinia、vue-i18n。画面の切り替えは自前の router（`src/ui/lib/router.ts`）
+- **Worker:** Cloudflare Workers（素の fetch とルートの表。フレームワークは使わない）、D1（SQLite）、KV、R2
+- **認証:** kan-game.app の ID（ID 基盤が発行する Cookie の JWT を、Worker が公開鍵で検証する。`docs/DATA_CONTRACT.md`「API」）
 
 ## 環境セットアップ
 
@@ -108,7 +109,7 @@ SPA と API は 1 つの Worker で配信する。本番は `--env production` �
 （`wrangler.jsonc` の `assets`、`dist`）で、`/api/*` `/s/*` だけが Worker のコードに回る。
 
 ```bash
-# build（vue-tsc → vite build）→ 本番 D1 マイグレーション → Worker デプロイ（--env production）
+# build（vue-tsc → vite build → ライセンス一覧の検査）→ 本番 D1 マイグレーション → Worker デプロイ（--env production）
 npm run deploy                 # = npm run deploy:production
 
 # DB マイグレーションだけを適用する場合
@@ -132,7 +133,7 @@ kan/game に `GAME_VEGTAB` を足すのはその後にする（先の Worker が
 npm test                         # 全部（core、ui、worker の 3 つの project）
 npx vitest run --project core    # パズルのコアだけ（ui、worker も同じ形）
 npm run typecheck                # 画面と core（vue-tsc）、wrangler types --check、Worker（tsc -p tsconfig.worker.json）
-npm run build                    # vue-tsc → vite build
+npm run build                    # vue-tsc → vite build → scripts/check-sw-licenses.ts
 ```
 
 CI（`.github/workflows/ci.yml`）は型検査、テスト、build を回す。
@@ -152,23 +153,30 @@ CI（`.github/workflows/ci.yml`）は型検査、テスト、build を回す。
 - Clear の盤面計算（初期配置・落下・補充・連鎖・スコア）を変えると、記録済みのリプレイの再生と検証がずれる
 
 ### src/worker/
-- Hono フレームワークでルーティング
-- 認証: kan-game.app の ID の Cookie を `src/worker/lib/id-auth.ts` で検証し、`userId` に入れる（`src/worker/middleware/auth.ts`）。`/api/id/*` は ID 基盤へそのまま中継する
+- ルーティングは素の fetch とルートの表で行う（TAKO-SEN、NYORO-RIN と同じ。Hono、zod などのフレームワークを入れない）。
+  ルートは `src/worker/routes/*.ts` が `Route` の配列で export し、`src/worker/main.ts` が公開のルートと ID の要るルートの
+  2 つの表にまとめる。パスの照合は `src/core/path.ts`（画面の router と同じ規則）
+- 認証: ID の要るルートは、`src/worker/main.ts` がルートを引く前に `src/worker/lib/id-auth.ts` の `requireAccount` で
+  Cookie を検証し、ハンドラーに `accountId` を渡す。`/api/id/*` は ID 基盤へそのまま中継する
   - **`src/worker/lib/id-token.ts`、`src/worker/lib/id-rpc.ts`、`tests/worker/kan-game/` のファイルは書き換えない。** kan/game の `src/token.ts`、`src/rpc.ts`、`testing/`、`test-vectors/id-token.json` の写しで、kan/game が更新したら写し直す（今の写しは kan/game の `258c299`）
-  - 状態を変える API は `Origin` が `ALLOWED_ORIGINS` に含まれることを必須にする（ミドルウェアが確かめる）
+  - 状態を変える API は `Origin` が `ALLOWED_ORIGINS` に含まれることを必須にする（`requireAccount` が確かめる）
   - 名前は ID 基盤の `registerName`（RPC）で登録し、`profiles` に写す。名前の規則を vegtab で持たない
   - 記録を持つテーブルを足したら、退会（`src/worker/lib/account.ts` の `ACCOUNT_TABLES`）にも足す
 - 応答に、ほかの人の ID を入れない（自分の行かは `isSelf` などでサーバーが判定する）
-- エラーの本文は `{ error: "<コード>" }`（英小文字と `_`）。本文の検証は `src/worker/lib/validate.ts` の `jsonBody` を使う
+- エラーの本文は `{ error: "<コード>" }`（英小文字と `_`）。応答は `src/worker/lib/http.ts` の `json` などで作る
+- 本文は `src/worker/lib/http.ts` の `readJsonBody(request, parse, limit?)` で読み、ルートごとの `parseXxx`（値を知っている
+  フィールドだけで組み直して返すか、`undefined`）で検証する。部品は `src/worker/lib/validate.ts`。整数は安全な整数だけを受け付ける
 - 重い処理（リプレイの検証、ID 基盤の RPC）の前に、ID ごとの回数の制限（`src/worker/lib/rate-limit.ts`）を取る
 - 旧 URL（`vegtab.app`）の旧アカウントのための JWT（`src/worker/lib/jwt.ts`、`refresh-tokens.ts`、`routes/auth.ts`、`routes/legacy.ts`）は、移転の案内と引き継ぎにだけ使う。新しい機能で使わない
 - テスト: `@cloudflare/vitest-plugin` で Workers 環境をエミュレート。D1 のスキーマは `migrations/` を `tests/worker/apply-migrations.ts` で当てる（テスト用のスキーマを別に書かない）
   - API は `tests/worker/helpers.ts` の `call` で呼ぶ（`SELF.fetch` は使わない）。ID 基盤の偽物（`idPlatform`）とテスト用の鍵で動かすため。`registerUser({ name })` で名前と同意のある ID を作る
 - Workers の型は `wrangler types` で生成した `worker-configuration.d.ts` を使う（`@cloudflare/workers-types` は使わない）。`wrangler.jsonc` を変えたら `npm run cf-typegen` で作り直す。`npm run typecheck` は生成した型が古ければ失敗する。型は `.dev.vars` が無い状態で生成する（あると、その値が型に入って食い違う）
 - シークレット（`JWT_SECRET` など）は生成した型に入らないので、`src/worker/types.ts` の `Bindings` に足す
-- デイリーシードは Worker が `DAILY_SEED_SECRET` の HMAC から作り、当日になってから API で配る（#116、`docs/SPEC.md` §3.8）。**今日より先の日のシードを返す API を作らない**（先の日の盤を前日までに解けてしまうため）
+- デイリーシードは Worker が `DAILY_SEED_SECRET` の HMAC から作り、当日になってから API で配る（#116、`docs/DATA_CONTRACT.md`「デイリーシード」）。**今日より先の日のシードを返す API を作らない**（先の日の盤を前日までに解けてしまうため）
 
 ### src/ui/
+- 画面と URL の表は `src/ui/routes.ts`。画面は `@/routes` の `useRoute()` / `useRouter()`（`push`、`replace`、`back`）で
+  切り替える（vue-router は使わない）。`<a href>` で画面の中を移るときは、クリックを `router.push` に渡す
 - kan-game.app の ID の状態（発行、延長、`401` / `410` からの回復、引き継ぎコード、ポータルの URL）は `src/ui/api/id.ts` に集める。ID が変わると、ストアは `onIdChange` で中身を入れ替える
 - API クライアント（`src/ui/api/client.ts`）が API の呼び出しとオフラインのリトライを一元管理する。API は同一オリジンの相対パスで呼ぶ（Cookie を付けるため）
 - 旧 URL（`vegtab.app`）では、ゲームの代わりに移転の案内（`src/ui/legacy/`）を出す
