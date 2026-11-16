@@ -3,7 +3,7 @@
  * 時間はその日の累計（ミリ秒）で、クライアントの自己申告の値。サーバーでは検証できない（SPEC §5.3）。
  * 時間の記録がない（時間を順位に入れる前の）行は、同じ手数の中で最後に並ぶ。
  * ランキングの並び（RANKING_ORDER）とベストの置き換え（BETTER_THAN_STORED）を、ここで同じ規則から作る。
- * frontend の同じ比較は frontend/src/lib/bestResult.ts。
+ * frontend の同じ比較は src/ui/lib/bestResult.ts。
  */
 import { MODE } from './mode';
 

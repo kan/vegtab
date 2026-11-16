@@ -7,7 +7,7 @@ export interface ResultSummary {
 }
 
 /**
- * a が b より良い結果か。サーバーがベストを置き換える条件（backend/src/lib/ranking-rule.ts の BETTER_THAN_STORED）と同じ:
+ * a が b より良い結果か。サーバーがベストを置き換える条件（src/worker/lib/ranking-rule.ts の BETTER_THAN_STORED）と同じ:
  * クリアした記録を優先し、どちらもクリアなら少ない手数、同じ手数なら短い時間（時間の記録がないものは最も遅い扱い）
  */
 export function isBetterResult(a: ResultSummary, b: ResultSummary): boolean {

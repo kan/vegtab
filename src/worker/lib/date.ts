@@ -20,7 +20,7 @@ export function isRankingClosed(dateStr: string, now = Date.now()): boolean {
   return dateStr < todayJST(now) && dateStr !== todayJST(now - PREVIOUS_DAY_GRACE_MS);
 }
 
-/** Every day of `month` ('YYYY-MM') as 'YYYY-MM-DD', first to last (the same as frontend/src/utils/date.ts) */
+/** Every day of `month` ('YYYY-MM') as 'YYYY-MM-DD', first to last (the same as src/ui/utils/date.ts) */
 export function daysOfMonth(month: string): string[] {
   const [year, mon] = month.split('-').map(Number);
   const count = new Date(Date.UTC(year, mon, 0)).getUTCDate();

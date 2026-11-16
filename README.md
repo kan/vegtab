@@ -5,18 +5,25 @@ kan-game.app のゲームの 1 つで、本番は `https://vegtab.kan-game.app`�
 
 ## 構成
 
-| パッケージ | 技術 | 説明 |
-|---|---|---|
-| `engine/` | TypeScript | パズルエンジン。純粋関数、フレームワーク非依存。シード値による決定的な盤面生成・マッチ判定・連鎖処理・アイテム・スコア計算 |
-| `frontend/` | Vue.js, Pinia | SPA。パズル画面、HOME、実績、リプレイ、チュートリアル |
-| `backend/` | Cloudflare Workers, Hono | API。シード、スコア、ランキング、実績、プッシュ通知、ID 基盤への中継 |
+1 つのパッケージに、TAKO-SEN と NYORO-RIN と同じ形で置く（#125）。
 
-モノレポ構成（npm workspaces）。`engine/` は `frontend/` と `backend/` 双方から利用される。
+| 場所 | 技術 | 説明 |
+|---|---|---|
+| `src/core/` | TypeScript | パズルのコア。純粋関数、フレームワーク非依存。シード値による決定的な盤面生成・マッチ判定・連鎖処理・アイテム・スコア計算 |
+| `src/ui/`、`src/main.ts`、`src/App.vue` | Vue.js, Pinia | SPA。パズル画面、HOME、実績、リプレイ、チュートリアル |
+| `src/worker/` | Cloudflare Workers, Hono | API。シード、スコア、ランキング、実績、プッシュ通知、ID 基盤への中継。入口は `src/worker/main.ts` |
+| `tests/core/`、`tests/ui/`、`tests/worker/` | Vitest | それぞれのテスト。Worker のテストは `@cloudflare/vitest-plugin` |
+| `migrations/` | D1 | マイグレーション |
+| `public/`、`index.html` | | 画面の静的ファイル |
+| `scripts/` | | 開発サーバーの起動（`dev.mjs`）、ライセンス一覧の生成（`licenses-plugin.ts`）、VAPID の鍵の生成 |
+
+`src/core/` は画面と Worker の双方から相対の import で使う。設定（`wrangler.jsonc`、`vite.config.ts`、`vitest.config.ts`）はルートに 1 つずつ。
+型検査は 2 つに分ける: 画面と core は `tsconfig.json`（DOM）、Worker は `tsconfig.worker.json`（Workers の型）。
 
 ## セットアップ
 
 ### 前提
-- Node.js 18+
+- Node.js 22+
 - Cloudflare アカウント
 - kan/game（ID 基盤）をこのリポジトリの隣（`../game`）に置く。ローカルでも ID は本番と同じ経路（ID 基盤の Cookie）で発行と検証をする
 
@@ -43,12 +50,12 @@ kan/game を別の場所に置くときは、環境変数 `KAN_GAME_DIR` で指�
 ### ローカル D1（初回と、マイグレーションを足した後）
 
 ```bash
-npm run db:migrate -w backend
+npm run db:migrate
 ```
 
 ## 開発
 
-ID 基盤（kan/game の `wrangler dev`）、backend（`wrangler dev`）、frontend（`vite`）は `scripts/dev.mjs` がまとめて起動する（TAKO-SEN と同じ形）。
+ID 基盤（kan/game の `wrangler dev`）、Worker（`wrangler dev`）、画面（`vite`）は `scripts/dev.mjs` がまとめて起動する（TAKO-SEN と同じ形）。
 
 | コマンド | 用途 |
 |---|---|
@@ -56,19 +63,20 @@ ID 基盤（kan/game の `wrangler dev`）、backend（`wrangler dev`）、front
 | `npm run dev:all`（`npm run dev`） | roji なしで起動する。画面は `http://localhost:5173` |
 
 - roji が使える環境（`command -v roji` が成功し、`roji health` が「正常」）では `npm run dev:roji` を使う。開く URL は起動時に出る `roji: https://... -> localhost:<ポート>` の行か `roji routes` で確かめる
-- ID 基盤と backend のポートは、起動のたびに空いているものを選ぶ。frontend の `/api` と `/s/` は Vite が backend へ転送する（同一オリジン）。backend の `ID` binding は、wrangler の dev registry で ID 基盤（`kan-game-local`）につながる
-- `scripts/dev.mjs` は、画面の URL を `ALLOWED_ORIGINS` として backend と ID 基盤へ渡し、kan/game の `.dev.vars` の `ID_PUBLIC_KEYS` を backend へ渡す。kan/game と backend の `.dev.vars` に書き足す必要はない
+- ID 基盤と Worker のポートは、起動のたびに空いているものを選ぶ。画面の `/api` と `/s/` は Vite が Worker へ転送する（同一オリジン）。Worker の `ID` binding は、wrangler の dev registry で ID 基盤（`kan-game-local`）につながる
+- `scripts/dev.mjs` は、画面の URL を `ALLOWED_ORIGINS` として Worker と ID 基盤へ渡し、kan/game の `.dev.vars` の `ID_PUBLIC_KEYS` を Worker へ渡す。kan/game とこのリポジトリの `.dev.vars` に書き足す必要はない
 - roji 経由では、画面（roji の URL）とポータル（`localhost`）のホストが違い、ID の Cookie を共有しない。復旧コードや退会をポータルで試すときは `npm run dev:all` で起動し、起動時に出る ID 基盤の URL を開く
-- ローカルでは Web Push の送信は止まっている（秘密鍵が無い）。購読の登録はできるが、公開鍵は `wrangler.jsonc` の既定のもの。送信を試すときは、環境変数 `VAPID_PUBLIC_KEY` と `VAPID_PRIVATE_KEY` の組（`backend/scripts/generate-vapid-keys.ts`）を両方付けて起動する
+- ローカルでは Web Push の送信は止まっている（秘密鍵が無い）。購読の登録はできるが、公開鍵は `wrangler.jsonc` の既定のもの。送信を試すときは、環境変数 `VAPID_PUBLIC_KEY` と `VAPID_PRIVATE_KEY` の組（`scripts/generate-vapid-keys.ts`）を両方付けて起動する
 - 終了は `Ctrl+C`。3 つとも止まり、roji のルートも取り消される。どれかが落ちたときも、ほかを止めて終了する
 
 ## テスト
 
 ```bash
-npm test                       # 全パッケージ
-cd engine && npm test          # パズルエンジン
-cd backend && npm test         # backend（ID 基盤は test/kan-game/ の偽物を使う）
-cd frontend && npm test
+npm test                       # 全部（core、ui、worker の 3 つの project）
+npx vitest run --project core  # パズルのコアだけ
+npx vitest run --project worker  # Worker だけ（ID 基盤は tests/worker/kan-game/ の偽物を使う）
+npx vitest run --project ui    # 画面だけ
+npm run typecheck              # 型検査（画面と core、wrangler types --check、Worker）
 ```
 
 ## 環境
@@ -83,14 +91,14 @@ cd frontend && npm test
 
 ## デプロイ
 
-SPA と API は 1 つの Worker で配信する。SPA は Workers の Static Assets（`frontend/dist`）で、`/api/*` `/s/*` だけが Worker のコードに回る（`backend/wrangler.jsonc` の `assets`）。
+SPA と API は 1 つの Worker で配信する。SPA は Workers の Static Assets（`dist`）で、`/api/*` `/s/*` だけが Worker のコードに回る（`wrangler.jsonc` の `assets`）。
 
 ```bash
-# 本番: frontend build → 本番 D1 マイグレーション → Worker デプロイ（--env production）
-npm run deploy
+# 本番: build → 本番 D1 マイグレーション → Worker デプロイ（--env production）
+npm run deploy                 # = npm run deploy:production
 
-# 開発: frontend build の後に
-npm run build && npm run deploy:dev -w backend
+# 開発（vegtab-dev.kan-game.app）: build → 開発の D1 マイグレーション → Worker デプロイ（--env dev）
+npm run deploy:dev
 ```
 
 未適用の D1 マイグレーションは Worker のデプロイより先に適用される。
@@ -107,10 +115,10 @@ kan/game と vegtab は互いを Service Binding で指す（vegtab → `ID`、k
 | `ALLOWED_ORIGINS` | vars | API を呼べるオリジン（カンマ区切り）。状態を変えるリクエストは `Origin` が一致しないと `403` |
 | `LEGACY_HOST` | vars | 移転の案内だけを出す旧ホスト（本番は `vegtab.app`）。空なら無し |
 | `ID_COOKIE_NAME` / `ID_ISSUER` / `ID_PUBLIC_KEYS` | vars | ID の Cookie の名前、`iss`、検証用の公開鍵。kan/game の同じ環境の値に合わせる。鍵の入れ替えは kan/game の `docs/ID_DESIGN.md`「鍵の管理」 |
-| `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` | vars | Web Push。環境ごとに鍵ペアを作る（`backend/scripts/generate-vapid-keys.ts`） |
+| `VAPID_PUBLIC_KEY` / `VAPID_SUBJECT` | vars | Web Push。環境ごとに鍵ペアを作る（`scripts/generate-vapid-keys.ts`） |
 | `VAPID_PRIVATE_KEY` | secret | Web Push の秘密鍵 |
 | `JWT_SECRET` | secret | 旧 URL の旧アカウントのトークンの署名鍵。旧 URL を閉じたら外す |
-| `DAILY_SEED_SECRET` | secret | 日ごとの seed を作る HMAC の鍵（`backend/src/lib/seed.ts`）。環境ごとに別の値にする。漏れると、まだ配っていない日の盤面を計算できる。変えても、既に行のある日の seed は変わらない |
+| `DAILY_SEED_SECRET` | secret | 日ごとの seed を作る HMAC の鍵（`src/worker/lib/seed.ts`）。環境ごとに別の値にする。漏れると、まだ配っていない日の盤面を計算できる。変えても、既に行のある日の seed は変わらない |
 | `ENVIRONMENT` | vars | `development` / `dev` / `production` |
 
 ## ドメイン
@@ -121,21 +129,21 @@ kan/game と vegtab は互いを Service Binding で指す（vegtab → `ID`、k
 ## アーキテクチャ
 
 ```
-[frontend] ←→ [Worker（vegtab）] ←→ [Worker（kan/game、ID 基盤）]
+[画面]     ←→ [Worker（vegtab）] ←→ [Worker（kan/game、ID 基盤）]
      |              |   /api/id/* を中継、名前の登録（RPC）
 localStorage        |   ← 退会（GameService.deleteAccount）
 (オフライン)    D1 ... スコア、実績、名前の写し、プッシュ通知の購読
      |          KV ... ランキングのキャッシュ
      |          R2 ... リプレイ
-[@vegtab/engine]  ←→  [@vegtab/engine]
+[src/core]       ←→  [src/core]
 (ゲーム進行)          (リプレイ検証)
 ```
 
 - 認証: kan-game.app の ID の Cookie（`HttpOnly`、`Domain=kan-game.app`）。Worker が公開鍵で検証する（`docs/SPEC.md` §5.1）
 - オフラインファースト: localStorage をフォールバックとして維持し、API が失敗してもローカルデータで動作を続ける
-- 不正対策: backend がリプレイログを engine で再計算してスコアを検証する
+- 不正対策: Worker がリプレイログを src/core で再計算してスコアを検証する
 
-テーブルは `docs/SPEC.md` §6、API は `backend/src/routes/` を参照。
+テーブルは `docs/SPEC.md` §6、API は `src/worker/routes/` を参照。
 
 ## 仕様書
 

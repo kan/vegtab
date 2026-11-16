@@ -1,4 +1,4 @@
-/** 累計の上限。サーバーが受け付ける上限（backend/src/lib/ranking-rule.ts の MAX_CLEAR_TIME_MS）と同じ */
+/** 累計の上限。サーバーが受け付ける上限（src/worker/lib/ranking-rule.ts の MAX_CLEAR_TIME_MS）と同じ */
 export const MAX_PLAY_TIME_MS = 24 * 60 * 60 * 1000;
 
 /**

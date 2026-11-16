@@ -3,7 +3,7 @@ import type { Bindings, Variables } from '../types';
 
 /**
  * Headers for the responses of the Worker's code (/api/*, /s/*). The SPA from Static Assets gets the
- * same ones from frontend/public/_headers, which does not apply to responses the Worker makes.
+ * same ones from public/_headers, which does not apply to responses the Worker makes.
  *
  * - The screen may not be framed by other sites (clickjacking), and nosniff / Referrer-Policy as the
  *   other kan-game.app games
