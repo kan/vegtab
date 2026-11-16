@@ -59,7 +59,7 @@ if (!publicKeys) {
 }
 
 // wrangler dev needs the assets directory to exist; the SPA itself comes from vite.
-mkdirSync(resolve(root, "frontend/dist"), { recursive: true });
+mkdirSync(resolve(root, "dist"), { recursive: true });
 
 // Two wrangler dev processes: each needs its own devtools port too.
 const [apiPort, gamePort, apiInspector, gameInspector] = await freePorts(4);
@@ -82,7 +82,7 @@ const shellArg = (arg) =>
   shell && arg.includes('"') ? `"${arg.replaceAll('"', '\\"')}"` : arg;
 
 // The backend checks the ID cookie with kan/game's local public key, and
-// accepts the screen's origin. These override backend/wrangler.jsonc, so the
+// accepts the screen's origin. These override wrangler.jsonc, so the
 // backend needs no .dev.vars.
 // Both Workers listen on 127.0.0.1, where freePorts found the ports free and
 // vite's proxy connects.
@@ -103,12 +103,12 @@ const apiArgs = [
   // Signs the old vegtab.app accounts' tokens (the handover from the old URL)
   "--var",
   `JWT_SECRET:${process.env.JWT_SECRET || "local-dev-secret"}`,
-  // The key of the daily seeds (backend/src/lib/seed.ts)
+  // The key of the daily seeds (src/worker/lib/seed.ts)
   "--var",
   `DAILY_SEED_SECRET:${process.env.DAILY_SEED_SECRET || "local-dev-daily-seed-secret"}`,
 ];
 // Web Push stays off locally unless a key pair is given here
-// (backend/scripts/generate-vapid-keys.ts).
+// (scripts/generate-vapid-keys.ts).
 for (const name of ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"])
   if (process.env[name]) apiArgs.push("--var", `${name}:${process.env[name]}`);
 
@@ -148,13 +148,13 @@ const children = [
   // Only one process may read the keyboard: two readers would split the key
   // presses, so it is this repository's backend.
   spawn(bin(root, "wrangler"), apiArgs, {
-    cwd: resolve(root, "backend"),
+    cwd: root,
     stdio: "inherit",
     shell,
   }),
   // A moved port would be an origin the Workers reject, so fail instead.
   spawn(bin(root, "vite"), ["--port", screenPort, "--strictPort"], {
-    cwd: resolve(root, "frontend"),
+    cwd: root,
     stdio: ["ignore", "inherit", "inherit"],
     shell,
     env: {

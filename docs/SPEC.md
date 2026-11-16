@@ -128,7 +128,7 @@
 - **落下しない:** おじゃまタイルの下のタイルが消えても、おじゃまタイル自体は落下しない（位置が固定される）。
 - **すり抜け落下:** 通常タイルはおじゃまタイルをすり抜けて落下する。おじゃまタイルは固定されたまま、その上にある通常タイルは下方の空きスペースまで貫通して落下する。おじゃまタイルが消滅した場合も同様に、上のタイルがすり抜けて落下する。
 - **マッチに参加しない:** おじゃまタイルは通常タイルのマッチ判定には関与しない。
-- おじゃまタイルはどの日も 16 個で、耐久値は 1 が 6 個、2 が 8 個、3 が 2 個（合計 28。`engine/src/obstacle.ts` の `OBSTACLE_DURABILITIES`）。日ごとの難しさのぶれを抑えるため（#106）。位置と、どのおじゃまタイルにどの耐久値を割り当てるかはシード値によって決定される。
+- おじゃまタイルはどの日も 16 個で、耐久値は 1 が 6 個、2 が 8 個、3 が 2 個（合計 28。`src/core/obstacle.ts` の `OBSTACLE_DURABILITIES`）。日ごとの難しさのぶれを抑えるため（#106）。位置と、どのおじゃまタイルにどの耐久値を割り当てるかはシード値によって決定される。
 
 ### 3.6. スコア計算
 
@@ -176,7 +176,7 @@
 ### 3.8. シード管理
 
 - **デイリーシード:** JST 0時に更新される。全プレイヤーが同じシードに挑戦する。
-  - backend が secret（`DAILY_SEED_SECRET`）を鍵にした日付の HMAC-SHA256 から作る（`backend/src/lib/seed.ts`、#116）。secret を知らないと、まだ配っていない日のシードは計算できない
+  - backend が secret（`DAILY_SEED_SECRET`）を鍵にした日付の HMAC-SHA256 から作る（`src/worker/lib/seed.ts`、#116）。secret を知らないと、まだ配っていない日のシードは計算できない
   - その日の行が `puzzle_seeds` にあれば、その値を使う。行はその日の `GET /api/seeds/daily`、カレンダー、スコアの送信のうち最初のもので作る
   - 2026-11-16 より前の日は、HMAC を使う前の値（日付の文字列のハッシュ）のまま。既に配った値で、端末の記録とも合わせるため
   - フロントはシードを計算しない。`GET /api/seeds/daily`（今日）と `GET /api/seeds/daily/calendar?month=YYYY-MM`（その月の今日までの日）から受け取り、localStorage の `vegtab_daily_seeds` に日付 → シードで覚える。一度受け取った日はオフラインでも遊べる。その日に一度も受け取れていなければ、今日のパズルは始められない
@@ -287,10 +287,15 @@ API失敗時にリクエストをキューに保存し、オンライン復帰�
 - 実績同期（将来）
 
 **キュー仕様:**
-- localStorage に保存（`offline_queue` キー）
-- 各エントリ: `{ url, method, body, createdAt }`
-- リトライ上限: 3回（超過時はキューから除外し、ユーザーに通知）
+- localStorage に保存（`vegtab_offline_queue` キー。#123 より前の `offline_queue` に残る項目は、読むときに取り込んで旧キーを消す）
+- 各エントリ: `{ id, url, method, body, createdAt, retries, userId, dedupeKey?, summary? }`
+- 積む条件: 通信の失敗、5xx、429（回数の制限、§5.3）
+- リトライ上限: 3回（超過時はキューから除外し、ユーザーに通知）。429 は回数に入れず、その回の送信をやめて残りも次に回す
 - 有効期限: 24時間（期限切れエントリは起動時に削除）
+- 件数の上限: 20 件（#123）。超えたら古いものから捨てる。項目は操作列を持つので、ローカルの保存の容量を食い尽くさないため
+- まとめ: スコアの送信は、同じ ID・同じ日（`dedupeKey`）の項目のうち良い方の記録（`summary`、§3.7 と同じ比較）だけを残す。新しい方が良くなければ積まない。サーバーもベストだけを持つので、捨てた記録で順位は変わらない。ただし捨てた方のプレイだけで満たした実績（連鎖など）は、その送信では評価されない
+- 読めないキュー: `vegtab_offline_queue.corrupt` に退避して、空から始める（次の保存で上書きして失わないため）
+- 保存の失敗: 積もうとして端末に保存できなかった（容量超過など）ときは、「通信できず、端末にも保存できませんでした」のエラーのトーストを出す
 
 **リトライトリガー:**
 - `online` イベント検知時
@@ -306,7 +311,7 @@ API失敗時にリクエストをキューに保存し、オンライン復帰�
 - メニューの「遊び方」からいつでも最初から開ける
 - 既読は localStorage の `vegtab_tutorial_v2`。開いたときと「あとで」を選んだとき、既読として記録する。紙芝居の版の既読（`vegtab_tutorial`）は引き継がない
 
-**練習の構成（8 段）:** レッスンの定義は `frontend/src/tutorial/lessons.ts`
+**練習の構成（8 段）:** レッスンの定義は `src/ui/tutorial/lessons.ts`
 
 | 段 | 内容 | 操作 |
 |---|---|---|
@@ -328,7 +333,7 @@ API失敗時にリクエストをキューに保存し、オンライン復帰�
 - 段 8 はクリアで完了。詰んだら「やり直す」を案内する。どの段も「やり直す」で最初の盤に戻せる。前の段へは戻らない
 - 練習用の puzzle store（`useTutorialPuzzleStore`）で動かし、今日のパズルの途中の盤には触れない
 - 8 段を終えると、デイリー・ランキング・リプレイの説明と、今日のパズル・名前の設定・HOME への導線を出す。このとき「準備完了！」実績を解除する（`tutorial_complete`、`POST /api/achievements/unlock`）
-- `frontend/src/tutorial/lessons.test.ts` が、各段を示したとおりの手でエンジンに通し、狙いの結果（おじゃまが消える等）になることを確かめる
+- `tests/ui/tutorial/lessons.test.ts` が、各段を示したとおりの手でエンジンに通し、狙いの結果（おじゃまが消える等）になることを確かめる
 
 **アイテム表示名（野菜テーマ）:**
 
@@ -340,23 +345,35 @@ API失敗時にリクエストをキューに保存し、オンライン復帰�
 | burst | 食器セット / Dish Set | 🍽️ |
 | flush | サラダボウル / Salad Bowl | 🥗 |
 
+### 3.14. PWA（ホーム画面に追加、新しい版への切り替え、版の表示）
+
+TAKO-SEN と NYORO-RIN にそろえる（#121）。
+
+- **ホーム画面に追加:** メニュー（`MenuSheet.vue`）の「ホーム画面に追加」。ブラウザがインストールの案内（`beforeinstallprompt`、Android の Chrome など）を出すときは、ボタンでそれを開く。iPhone と iPad の Safari には、共有メニューから追加する手順（`InstallSteps.vue`）をダイアログで出す。Safari かは UA で見て、`Safari/` を含むアプリ内ブラウザ（`CriOS`、`FxiOS`、`EdgiOS`、`GSA/`、`YJApp`、`Line/`、`Instagram`、`FBAN` など）は除き、デスクトップ表示の iPad（`MacIntel` でタッチあり）は含める。ホーム画面から開いているとき（`display-mode: standalone`）と、どちらも使えないブラウザでは出さない（`src/ui/lib/install.ts`）
+- **古いチャンクの読み込みの失敗:** 新しい版を出した直後に、開いたままの画面が消えた旧チャンクを読みに行って失敗したら、読み込み直して新しい版で開く。画面の遷移の失敗（`router.onError`）は遷移先を、Vite の `vite:preloadError`（router を通らない動的 import、CSS や依存の preload）は遷移の途中なら遷移先、そうでなければ今の URL を開く。どちらも `src/ui/lib/staleChunk.ts` を通し、タブごとに 60 秒に 1 回まで（`sessionStorage` の `vegtab_stale_chunk_reload`）。オフラインでは読み込み直さない
+- **版の表示:** About に、build の版（`package.json` の version と短縮した commit、`0.0.1+a44dd3f`）を出す。問い合わせのときに遊んだ版を特定するため。`vite.config.ts` の `appVersion()` が `__APP_VERSION__` に入れる。git が無いときは version だけ
+
 ## 4. 技術スタックとアーキテクチャ
 
 Web版と PWA だけで提供する。ネイティブアプリ（iOS/Android）は作らない。
 
 ### 4.1. リポジトリ構成
 
-モノレポ構成を採用する。
+1 つのパッケージに、kan-game.app のゲームの基本形（TAKO-SEN、NYORO-RIN と同じ形）で置く（#125）。
 
 ```
-project/
-├── engine/             # パズルエンジン（純粋TypeScript、フレームワーク非依存）
-├── frontend/           # Vue.js SPA
-├── backend/            # Cloudflare Workers API
-├── docs/
-│   └── SPEC.md         # 全仕様書（このファイル）
-├── package.json        # npm workspaces
-└── CLAUDE.md
+src/
+├── core/        # パズルのコア（純粋 TypeScript、フレームワーク非依存）
+├── ui/          # 画面（Vue.js SPA）
+├── worker/      # Cloudflare Workers の API（入口は main.ts）
+├── main.ts、App.vue
+tests/{core,ui,worker}/
+migrations/      # D1
+public/、index.html
+scripts/
+docs/SPEC.md     # 全仕様書（このファイル）
+AGENTS.md        # 作業の規則（CLAUDE.md はこれを読み込むだけ）
+wrangler.jsonc、vite.config.ts、vitest.config.ts、tsconfig.json、tsconfig.worker.json
 ```
 
 ### 4.2. フロントエンド
@@ -372,7 +389,7 @@ project/
 - **キャッシュ/KVS:** Cloudflare KV (デイリーシードやランキングデータの高速配信)
 - **オブジェクトストレージ:** Cloudflare R2（replay_log等の大容量データ保存）
 
-### 4.4. パズルエンジン (`engine/`)
+### 4.4. パズルのコア (`src/core/`)
 - 純粋なTypeScriptで実装し、UIやネットワークに一切依存しない。
 - 盤面生成、マッチ判定、落下処理、連鎖、アイテム生成・起動・合成、おじゃまタイル処理、スコア計算を全て純粋関数として提供する。
 - シード値を入力として与えた場合に完全に決定的な結果を返すことを保証する。
@@ -386,18 +403,19 @@ project/
 
 - **資格情報:** ID 基盤が発行する、`Domain=kan-game.app` の `HttpOnly` Cookie（ES256 で署名した JWT、400 日）。画面はトークンを持たず、同一オリジンの `/api/*` に Cookie が付く。
 - **発行と延長:** 画面は起動時とオフラインからの復帰時に `POST /api/id/session` を呼ぶ。Worker は `/api/id/*` を Service Binding（`ID`）で ID 基盤へそのまま中継する。
-- **検証:** Worker は ID 基盤の公開鍵（`ID_PUBLIC_KEYS`）で Cookie を検証し、`sub` を `user_id` として使う。API ごとに ID 基盤へ問い合わせない。検証のコード（`backend/src/lib/id-token.ts`）と RPC の型（`id-rpc.ts`）は kan/game の `src/token.ts` と `src/rpc.ts` の写しで、書き換えない。テストベクター（`backend/test/kan-game/`）と一緒に写し直す。
+- **検証:** Worker は ID 基盤の公開鍵（`ID_PUBLIC_KEYS`）で Cookie を検証し、`sub` を `user_id` として使う。API ごとに ID 基盤へ問い合わせない。検証のコード（`src/worker/lib/id-token.ts`）と RPC の型（`id-rpc.ts`）は kan/game の `src/token.ts` と `src/rpc.ts` の写しで、書き換えない。テストベクター（`tests/worker/kan-game/`）と一緒に写し直す。
 - **エラー:** Cookie がない、または無効なら `401`。退会した ID の Cookie は `410 id_deleted`（`deleted_accounts` で判定）。画面は `410` で ID を捨てて新しい ID を受け取り、`401` で ID を取り直す。
 - **Origin:** 状態を変えるリクエストは、`Origin` が `ALLOWED_ORIGINS` に含まれることを必須にする（Cookie は他サイトからのリクエストにも付くため）。同一オリジンの `GET` は `Origin` を省けるので、`GET` では求めない。
-- **環境:** 環境ごとに Cookie 名、`iss`、公開鍵が違う（`backend/wrangler.jsonc`）。ローカルは `localhost` で kan/game の `wrangler dev` を使う。開発は `vegtab-dev.kan-game.app` で `dev.kan-game.app` を、本番は `vegtab.kan-game.app` で `kan-game.app` を使う。
+- **環境:** 環境ごとに Cookie 名、`iss`、公開鍵が違う（`wrangler.jsonc`）。ローカルは `localhost` で kan/game の `wrangler dev` を使う。開発は `vegtab-dev.kan-game.app` で `dev.kan-game.app` を、本番は `vegtab.kan-game.app` で `kan-game.app` を使う。
 
 ### 5.2. 名前、引き継ぎ、退会
 
 - **名前:** kan-game.app 全体で 1 つで、重複できず、変更できない。規則（2〜20 文字など）と重複の判定は ID 基盤が持つ。画面が名前と公開への同意を `POST /api/user/profile` に送り、Worker が `registerName` の RPC で登録してから、名前と同意を `profiles` に書く。別のゲームで名前を決めた ID は、名前を聞かずに同意だけを求める。
 - **ランキングへの公開:** 名前と同意（`profiles`）のある ID の記録だけをランキングに載せる。同意していない ID は、自分の順位（名前を決めたら何位か）だけを見られる。
+- **ランキングの API:** `GET /api/rankings/:seedId` と `GET /api/rankings/by-value/:seedValue`（認証必須）→ `{ ranking: [{ rank, displayName, isSelf, score, moveCount, clearTimeMs, isCleared, scoreId? }], userRank }`。ほかの人の ID は返さない。自分の行かは Worker が Cookie の ID と比べて `isSelf` で返す。KV のキャッシュは ID を持つが、応答に変えるときに外す。`scoreId` は締め切り前は自分の行だけ、締め切り後は全員の行に付く。
 - **引き継ぎコード:** kan-game.app の ID 基盤の機能（`/api/id/transfer-codes`、8 文字、10 分、1 回限り）。入力した端末はコードを発行した ID に切り替わり、その端末がそれまで使っていた ID の記録は移らない（統合しない）。
 - **復旧コードと退会:** kan-game.app のポータル（アカウント画面）にだけ置く。HOME のメニューからポータルを開く。
-- **退会:** ID 基盤が `GAME_VEGTAB` の Service Binding で `GameService.deleteAccount(id)`（`backend/src/game-service.ts`）を呼ぶ。`deleted_accounts` に記録し、その ID の記録（`play_scores`、`achievements`、`push_subscriptions`、`profiles`、`legacy_claims`）と R2 のリプレイを消す。何度呼んでも同じ結果になる。退会の途中に書き込まれた行は、毎日の定期実行（`sweepDeletedAccounts`）が消す。
+- **退会:** ID 基盤が `GAME_VEGTAB` の Service Binding で `GameService.deleteAccount(id)`（`src/worker/game-service.ts`）を呼ぶ。`deleted_accounts` に記録し、その ID の記録（`play_scores`、`achievements`、`push_subscriptions`、`profiles`、`legacy_claims`、`rate_limits`）と R2 のリプレイを消す。何度呼んでも同じ結果になる。退会の途中に書き込まれた行は、毎日の定期実行（`sweepDeletedAccounts`）が消す。
 
 ### 5.3. 不正対策
 
@@ -405,7 +423,12 @@ project/
 
 **初期リリース:**
 - **リプレイ検証:** スコア送信時にreplay_log（操作ログ）を送信し、バックエンド側でパズルエンジンを用いてリプレイ検証を行う。シード値の固定とエンジンの決定性により、操作列からスコアを再計算し整合性を確認する。
-- **レートリミット:** APIエンドポイントにレートリミットを設定。
+- **回数の制限（#119）:** ID ごとに D1 の `rate_limits` で数える（固定の時間枠、`src/worker/lib/rate-limit.ts`）。超えたら `429 { error: "rate_limited" }` と `Retry-After` を返す。
+  - `POST /api/scores`: 60 秒に 10 件。リプレイの検証（重い処理）より前に数えるので、断った送信は検証しない。締め切った日の送信は検証せずに答えるので数えない。1 日 1 問で、詰んでからの再挑戦にも数十秒はかかるので、ふつうの遊び方では当たらない
+  - `POST /api/user/profile`: 60 秒に 10 件（ID 基盤の `registerName` を呼ぶため）
+  - 数えないもの: 実績の解除（`POST /api/achievements/unlock`、ホワイトリストの upsert だけ）、通知の登録（軽い D1 の書き込みだけ）、旧 URL の `/api/auth/refresh` と `/api/legacy/handoff`（旧トークンの署名を確かめるだけで重い処理が無く、#109 で外す）
+  - 画面は、送れなかったスコアと同じく 429 の送信をキューに残して後で送り直す（retries は増やさない）
+  - 古い時間枠の行は毎日の定期実行で消す。退会でも消す
 
 **受け入れているリスク:**
 - **当日のうちにソルバーで解ける:** リトライが無制限でベストスコアだけを記録する仕様では、盤面を当日 0 時に初めて知っても、ソルバーで作った操作列をその日のうちに送信できる。リプレイ検証は操作列を再現できるかだけを確かめるので、ソルバーの操作列を区別できない。
@@ -415,11 +438,18 @@ project/
 - **クリアまでの時間は自己申告:** 時間はクライアントが測って送る値で、リプレイ検証では確かめられない。値を書き換えて送ることも、当日にソルバーで作った操作列を素早く入れることもできる。プレイヤーが少ない今は受け入れている（#91）。
   - 競技性を上げるときは、サーバーがその日の開始時刻を記録する方式を検討する（シードは既にサーバーが当日に配っているので、その日の初回プレイがオンラインであることは前提にできる）。
 
+### 5.5. 応答のヘッダーとエラー（#120）
+
+- **全ての応答:** `Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'; form-action 'self'`（ほかのサイトの iframe に入れさせない）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`。Static Assets の画面は `public/_headers` が、Worker のコードの応答（`/api/*`、`/s/*`）は `src/worker/middleware/headers.ts` が付ける（`_headers` は Worker の応答に効かないため）。
+- **本番以外:** `X-Robots-Tag: noindex`（開発の `vegtab-dev.kan-game.app` を検索エンジンに載せない）。
+- **API:** 全ての応答（`/api/id/*` の中継を含む）に `Cache-Control: no-store`。ID ごとに違う応答を途中のキャッシュに持たせないため。
+- **エラーの本文:** `{ error: "<コード>" }`（`invalid_request`、`invalid_date`、`invalid_replay`、`not_found`、`rate_limited`、`unauthorized`、`id_deleted` など、英小文字と `_`）。画面は状態コードと、名前の登録の `name_taken` / `invalid_name` だけを読む。本文の形が合わない、または JSON でない要求は `400 invalid_request`。例外は `500 internal_error` にして、ログ（`unhandled_error`）に出す。
+
 ### 5.4. vegtab.app からの移行
 
 `vegtab.app` の旧アカウント（端末に `deviceId` と JWT を置く方式）は、`vegtab.kan-game.app` の ID へ本人が引き継ぐ。同じ Worker と D1 が両方のホストを配信する。
 
-- **旧 URL（`LEGACY_HOST` = `vegtab.app`）:** 画面は移転の案内だけを出す（`frontend/src/legacy/`）。Worker は `/s/*` を新しい URL へ `301` で送り、`/api/health`、`/api/auth/refresh`、`/api/legacy/handoff` 以外の API に `410 moved` を返す。旧アカウントは新しく作れず、書き込みも止まる。
+- **旧 URL（`LEGACY_HOST` = `vegtab.app`）:** 画面は移転の案内だけを出す（`src/ui/legacy/`）。Worker は `/s/*` を新しい URL へ `301` で送り、`/api/health`、`/api/auth/refresh`、`/api/legacy/handoff` 以外の API に `410 moved` を返す。旧アカウントは新しく作れず、書き込みも止まる。
 - **引き継ぎ:** 旧 URL の画面が、端末に残る旧トークンで `POST /api/legacy/handoff` を呼び、1 回限りのトークン（32 バイト、30 分、D1 にはハッシュだけ）を受け取る。新しい URL を `#handoff=<トークン>` 付きで開き、画面が確認を取ってから `POST /api/legacy/claim` に送る。トークンを URL のフラグメントに載せるのは、サーバーのログとリファラーに残さないため。確認を挟むのは、他人のリンクで気付かないまま記録を移されないようにするため。
 - **移すもの:** 旧アカウントの `play_scores` と `achievements` を、今の ID の `user_id` に付け替える。今の ID に同じシードの記録があれば、今の ID の記録を残す。実績は進み具合の良い方にまとめる。旧アカウントの名前は `registerName` で今の ID の名前として登録し、公開への同意も引き継ぐ（旧 URL でランキングに載せていたため）。取られている名前や規則に合わない名前は登録せず、画面が名前を決め直すよう求める。今の ID に名前があれば、その名前を使う。
 - **移した後:** 旧アカウントの `users` の行と、端末・トークン・購読の行を消し、`legacy_claims` に移した先を残す。同じ旧アカウントは 1 回しか引き継げない。旧 URL で再び引き継ぐと `409` になり、画面は新しい URL の引き継ぎコードを使うよう案内する。
@@ -437,6 +467,7 @@ project/
 - **`deleted_accounts`**: `account_id`, `deleted_at` (ミリ秒) — 退会した ID。Cookie は最長 400 日有効なので残し続ける
 - **`legacy_handoffs`**: `token_hash` (SHA-256), `user_id` (旧アカウント), `expires_at` (ミリ秒) — 旧 URL から新しい URL へ渡す 1 回限りのトークン
 - **`legacy_claims`**: `legacy_user_id`, `account_id`, `claimed_at` (ミリ秒) — 引き継いだ旧アカウントと移した先
+- **`rate_limits`**: `account_id`, `action` (`score` / `profile`), `window_start` (ミリ秒), `count` — 書き込みの API の回数の制限（§5.3）
 - **`users`**: `id` (UUID), `display_name` (表示名, 最大 20 文字), `device_id`, `created_at` — `vegtab.app` の旧アカウント。引き継ぐと消える
 - **`user_devices`** / **`transfer_codes`** / **`refresh_token_families`**: 旧アカウントの端末、引き継ぎコード、リフレッシュトークン。旧 URL を閉じたら捨てる
 - **`puzzle_seeds`**: `seed_id`, `seed_value` (ユニーク), `share_code` (ユニーク, 6〜8文字の英数字), `daily_date` (YYYY-MM-DD), `created_at`
@@ -550,3 +581,89 @@ Cloudflare Workers + D1によるAPI実装。
 ### Phase 4: Native App（中止）
 
 ネイティブアプリは作らず、Web版と PWA だけで提供する。一時は Capacitor の Android / iOS プロジェクトと CI ビルドを置いていたが、2026-10 に撤去した。
+
+## 8. 実装の要点
+
+今の実装の要点と、ルールの細かい点。#125 で `CLAUDE.md` から移した（`AGENTS.md` には作業の規則だけを置く）。
+
+### 8.1. 開発の経緯の要約
+
+Phase 1 〜 3.12 は完了、Phase 4 は中止。各Phaseの詳細は §7 を参照。
+- Phase 1 (Core Engine): 完了。3モード・おじゃまタイル・スプーンバフ・Survivalウェーブ制侵食実装済み。
+- Phase 2 (Frontend UI): 完了。野菜テーマ・モード選択UI・おじゃまタイル表示・Survivalウェーブ表示実装済み。
+- Phase 3 (Backend API): 完了。モード対応・ベストスコアupsert・ランキング実装済み。
+- Phase 3.5 (Pre-release): 完了。α版公開済み。シェア・i18n・ダークモード・SE/BGM。
+- Phase 3.7 (UXポリッシュ & 機能追加): 完了。実績システム・アカウント引き継ぎ・各種UX改善。
+- Phase 3.8 (手順再生 & スコア送信修正): 完了。リプレイビューア・カレンダースコア送信・未送信スコア再送。
+- Phase 3.9 (チュートリアル): 完了。紙芝居チュートリアル（21 ステップ）・準備完了実績・アイテム名リネーム。紙芝居は #108 で操作しながら覚える練習に置き換えた。
+- Phase 3.11 (Cascade改善Phase1): 完了。連鎖ポテンシャル表示・連鎖メーター・マイルストーンボーナス・NEW BEST演出。
+- Phase 3.12 (Cascade改善Phase2): 完了。キラキラ野菜（初期配置+補充+キラキラCP加算+ネクスト表示反映）。
+- Phase 4 (Native & Monetization): 中止。ネイティブアプリ（Capacitor の Android / iOS）は作らず、Web と PWA だけにする。
+- #102 (Clear への絞り込み): Sprint / Survival / Cascade とその専用の仕組みを engine・frontend・backend から撤去した。上の Phase の記述のうちそれらに関するものは、現在の仕様ではない。
+- #103 (kan-game.app への移行): `vegtab.kan-game.app` へ移り、独自の JWT と端末の登録を kan-game.app の ID に置き換えた。上の Phase のアカウント引き継ぎの記述は、現在の仕様ではない。#106（おじゃまの量の固定）も同時に入れた。
+
+### 8.2. 実装済みの機能
+
+**パズルのコア（`src/core/`）:**
+- Clear 専用（`GameMode` 型と `GameState.mode` は無い。`initializeGame(seed, params?)` が常におじゃまタイルを配置する）
+- おじゃまタイル（どの日も 16 個・耐久値は 1 が 6 個、2 が 8 個、3 が 2 個で、位置と割り当てはシードから決める（#106）。隣接マッチ/アイテム/スプーン直接タップでダメージ、非落下、消滅時に上タイル落下）
+- スプーンバフ（周囲4マス消去 + 任意マス選択、連鎖時は周囲のみ、合成時追加消去）
+- 重力はすり抜け落下だけ（おじゃまを固定して非おじゃまがすり抜けて下詰め）
+- 最大連鎖数（`maxChainIndex`）を全てのゲームで記録する（連鎖の実績に使う）
+
+**画面（`src/ui/`）:**
+- 野菜テーマ（5種類の野菜SVGアイコン）
+- HOME の今日のパズルから直接プレイ開始（モード選択なし。過去日は案内を出してから開始）
+- おじゃまタイル表示（SVG、耐久値数字+ひび割れ、2層テキスト描画）
+- すり抜け落下のアニメーション
+- 見た目は kan-game.app のゲーム（TAKO-SEN）にそろえる（#104）: クリームの背景とインクの太枠、主ボタンは緑（`--brand: #2e7d32`）。ライトテーマだけ。色の変数と共通のクラス（ボタン、ダイアログ、盤面の枠など）は `src/ui/theme.css`
+- メニューは下からのシート（`src/ui/components/MenuSheet.vue`）。パズル画面のメニューにはアカウントの欄を出さない（プレイ中に ID を切り替えさせない）
+- トースト通知（エラー/成功/情報、自動消去+手動閉じ）
+- オフラインキュー（スコア送信の自動リトライ。上限 20 件、同じ日は良い方だけ。§3.12）
+- プレイ時間の計測と表示（`src/ui/composables/usePlayTimer.ts`、累計は localStorage の `vegtab_play_time`）
+- バックエンドスコア送信（ゲーム終了時に自動送信、オフラインキュー対応）
+- 実績一覧ページ（`/achievements`）、解除時トースト通知
+- フッターナビ（HOME / PUZZLE / 実績）、SVGアイコン
+- kan-game.app の ID（引き継ぎコードの発行/入力、名前と公開の同意のダイアログ、ポータルへの導線）、旧 URL からの引き継ぎの確認（`#handoff=`）
+- 手順再生ビューア（`/replay/:scoreId`）、ランキングからの導線
+- チュートリアル（`/tutorial`）: 盤を操作しながら覚える 8 段の練習（#108、`docs/SPEC.md` §3.13）。パズル画面と同じ `PuzzleBoard` とエンジンを練習用の puzzle store で動かす。段の盤を変えたら `tests/ui/tutorial/lessons.test.ts` を通す。初回訪問の案内、メニューの「遊び方」から開く
+- ブラウザに残る撤去したモードのデータ（プレイ記録、途中経過、実績のキャッシュ、オフラインキューのスコア送信）は読み込まない（`src/ui/lib/legacyData.ts`）
+
+**Worker（`src/worker/`）:**
+- スコア送信・ランキング（API と D1 の `mode` は残し、`clear` だけを受け付ける。照会は全て `mode = 'clear'` で絞る。撤去したモードの行はマイグレーション 0014 で捨てた。列は後で捨てる）。ランキングに載るのは名前と同意（`profiles`）のある ID と、引き継がれていない旧アカウント
+- ベスト記録upsert（クリア優先+最少手数、同手数ならクリアまでの時間が短い方）
+- OGP動的生成（Vege-Tableブランド、最少クリア手数、QRコード付きSVG）
+- 実績解除判定（スコア送信時に自動評価 + クライアントトリガー。定義は `src/core/achievements.ts` の `ACHIEVEMENT_DEFS` で、判定に使う値は各定義の `metric`。DB に残る撤去した実績は返さない）
+- クライアント実績解除API（`POST /api/achievements/unlock`、ホワイトリスト制御）
+- kan-game.app の ID の検証と `/api/id/*` の中継、名前の登録（`registerName`）、退会（`GameService.deleteAccount`）
+- 旧 URL の旧アカウントの引き継ぎ（`/api/legacy/handoff` と `/api/legacy/claim`。`docs/SPEC.md` §5.4）
+- リプレイデータ取得API（R2からの操作ログ読み出し）
+- 書き込みの API の ID ごとの回数の制限（§5.3、#119）、応答のヘッダーとエラーのコード（§5.5、#120）
+
+### 8.3. ルールの細かい点
+
+- 初期盤面の自動消去ではスコア0、アイテム生成なし
+- マッチ判定は「縦横3直線」と「2×2正方形」の2種類がある
+- 2×2は3直線と重複してもスプーン成立。4直線以上やL/T字5マス以上と重複した場合のみ上位優先
+- スプーンのタップは1手消費。周囲4マス消去の後、任意1マス選択（手数消費なし）
+- スプーンの連鎖発動時は周囲4マス消去のみ（ユーザー選択なし）
+- スプーンの合成時は元の位置で周囲4マス消去が追加発動
+- サラダボウル×おじゃまタイルのスワイプでは、盤上の全おじゃまタイルの耐久値を1減少させる（耐久値0で破壊）
+- サラダボウル×サラダボウルの全消しではアイテムは誘爆せず残留し、その位置に留まる
+- 食器セット×食器セットは周囲3マス（4マスではない）
+- ハサミ(横)のアイコンは、ハサミ(縦)を90度回転させたもの
+- アイテム表示名: scope=スプーン、v_cut=ハサミ(縦)、h_cut=ハサミ(横)、burst=食器セット、flush=サラダボウル
+- アイテム生成は独立コンポーネント（色+位置で連結したマッチ群）ごとに1つ。1操作で複数の独立マッチが成立すれば複数アイテムが生成される
+- コンポーネント内の優先順: サラダボウル > 食器セット > ハサミ = ハサミ > スプーン
+- おじゃまタイルはスワイプで隣接タイルと入れ替え可能（マッチ不成立なら戻る）
+- おじゃまタイルは落下しないが、消滅時に上のタイルは落下する
+- ゲーム終了条件: 全おじゃまタイル除去（クリア） OR 詰み（失敗）。手数の上限はない
+- スプーンでおじゃまタイルを直接タップすると耐久値を1減らせる
+- 落下はすり抜け落下だけ（おじゃまを固定して非おじゃまがすり抜けて下詰め）
+- スコア送信はベスト記録のみ保持（upsert）: クリア優先+最少手数、同手数ならクリアまでの時間が短い方
+- ランキングはシードごとに存在し、クリアした記録だけを手数の少ない順（同手数なら時間の短い順。時間の記録がない行はその手数の最後）に並べる。スコアは表示だけで、順位には使わない。画面と Worker で同じ比較を持つ（`src/ui/lib/bestResult.ts` と `src/worker/lib/ranking-rule.ts`）
+- クリアまでの時間は、seed ごとのその日の累計（リトライをまたぐ。アニメーション中とパズル画面を離れている間は数えない）。クライアントの自己申告で、サーバーでは検証しない
+- コアの Clear の盤面計算（初期配置・落下・補充・連鎖・スコア）を変えると、記録済みのリプレイの再生と検証がずれる
+- デイリーシードのみ。ユーザーによるシード生成・アンロック・お試しプレイは廃止
+- デイリーシードは Worker が `DAILY_SEED_SECRET` の HMAC から作り、当日になってから API で配る（§3.8、#116）。画面と core では計算しない
+- TODO、スタミナ、アイテム持ち込み、Undoは全て廃止
