@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import type { Bindings, Variables } from './types';
 import { getBaseUrl, isLegacyHost } from './lib/env';
 import { authRoutes } from './routes/auth';
@@ -11,6 +12,7 @@ import { pushRoutes } from './routes/push';
 import { shareRoutes } from './routes/share';
 import { legacyClaimRoutes, legacyHandoffRoutes } from './routes/legacy';
 import { authMiddleware } from './middleware/auth';
+import { responseHeaders } from './middleware/headers';
 import { sendDailyPushNotifications } from './lib/push-cron';
 import { purgeExpiredRefreshTokens } from './lib/refresh-tokens';
 import { sweepDeletedAccounts } from './lib/account';
@@ -19,6 +21,21 @@ import { purgeStaleRateLimits } from './lib/rate-limit';
 export { GameService } from './game-service';
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+
+app.use('*', responseHeaders);
+
+// An exception is logged and answered with a code, like the other errors (not Hono's plain-text 500)
+app.onError((error, c) => {
+  // Hono's own refusals (a malformed JSON body is a 400 from the validator)
+  if (error instanceof HTTPException) {
+    return error.status === 400 ? c.json({ error: 'invalid_request' }, 400) : error.getResponse();
+  }
+  console.error(JSON.stringify({
+    event: 'unhandled_error', method: c.req.method, path: new URL(c.req.url).pathname,
+    error: String(error), stack: error instanceof Error ? error.stack : undefined,
+  }));
+  return c.json({ error: 'internal_error' }, 500);
+});
 
 // The old host (vegtab.app) only hands its accounts over (docs/SPEC.md §5.4). Its screen is the same
 // SPA, which shows the moving notice there. Share URLs go to the new host as they are

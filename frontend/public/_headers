@@ -1,0 +1,9 @@
+# Headers for the SPA served by Workers Static Assets (#120). Responses of the Worker's code
+# (/api/*, /s/*) do not get these; backend/src/middleware/headers.ts adds the same ones there.
+/*
+  Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'; form-action 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+https://vegtab-dev.kan-game.app/*
+  X-Robots-Tag: noindex

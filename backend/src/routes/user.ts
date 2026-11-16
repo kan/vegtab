@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { jsonBody } from '../lib/validate';
 import type { Bindings, Variables } from '../types';
 import { idPlatform } from '../lib/id-auth';
 import { registerProfile, getProfileName, nameOutcome } from '../lib/profile';
@@ -23,7 +23,7 @@ userRoutes.get('/profile', async (c) => {
 
 // POST /api/user/profile — registers the kan-game.app name and consents to publishing it.
 // An ID already named (here or in another game) keeps its name: names cannot change
-userRoutes.post('/profile', zValidator('json', registerProfileSchema), async (c) => {
+userRoutes.post('/profile', jsonBody(registerProfileSchema), async (c) => {
   const userId = c.get('userId');
   const { displayName } = c.req.valid('json');
 
@@ -41,8 +41,14 @@ userRoutes.post('/profile', zValidator('json', registerProfileSchema), async (c)
       return c.json({ error: 'invalid_name' }, 400);
     case 'no_id':
       return c.json({ error: 'id_deleted' }, 410);
+    case 'registered':
+    case 'kept':
+      await registerProfile(c.env, userId, outcome.name);
+      return c.json({ displayName: outcome.name });
+    default: {
+      // An outcome added to nameOutcome (lib/profile.ts) fails to compile here
+      const unexpected: never = outcome;
+      throw new Error(`Unexpected name outcome: ${JSON.stringify(unexpected)}`);
+    }
   }
-
-  await registerProfile(c.env, userId, outcome.name);
-  return c.json({ displayName: outcome.name });
 });

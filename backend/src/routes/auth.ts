@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { jsonBody } from '../lib/validate';
 import type { Bindings, Variables } from '../types';
 import { rotateRefreshToken } from '../lib/refresh-tokens';
 
@@ -16,12 +16,12 @@ const refreshSchema = z.object({
 export const authRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // POST /api/auth/refresh - Rotate the refresh token and issue a new access token
-authRoutes.post('/refresh', zValidator('json', refreshSchema), async (c) => {
+authRoutes.post('/refresh', jsonBody(refreshSchema), async (c) => {
   const { refreshToken } = c.req.valid('json');
 
   const tokens = await rotateRefreshToken(c.env.DB, c.env.JWT_SECRET, refreshToken);
   if (!tokens) {
-    return c.json({ error: 'Invalid refresh token' }, 401);
+    return c.json({ error: 'invalid_refresh_token' }, 401);
   }
 
   return c.json(tokens);

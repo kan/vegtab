@@ -19,7 +19,7 @@ async function fetchRanking(
 ) {
   // `mode` is optional and defaults to clear; the removed modes are rejected
   if (mode !== MODE) {
-    return { error: 'Invalid mode' as const };
+    return { error: 'invalid_mode' as const };
   }
 
   // Determine if this seed is a past daily puzzle

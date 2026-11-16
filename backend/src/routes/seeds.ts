@@ -45,7 +45,7 @@ seedRoutes.get('/daily', async (c) => {
 seedRoutes.get('/daily/calendar', async (c) => {
   const userId = c.get('userId');
   const month = c.req.query('month') ?? '';
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return c.json({ error: 'Invalid month' }, 400);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return c.json({ error: 'invalid_month' }, 400);
 
   const [rows, first] = await Promise.all([
     c.env.DB.prepare(
@@ -100,7 +100,7 @@ seedRoutes.get('/:id', async (c) => {
     id: string; seed_value: string; share_code: string;
     is_daily: number; daily_date: string | null;
   }>();
-  if (!seed) return c.json({ error: 'Seed not found' }, 404);
+  if (!seed) return c.json({ error: 'not_found' }, 404);
 
   const best = await c.env.DB.prepare(
     `SELECT ${BEST_COLUMNS} FROM play_scores WHERE user_id = ? AND seed_id = ? AND mode = ?`
@@ -122,7 +122,7 @@ seedRoutes.get('/by-value/:value', async (c) => {
   const seed = await c.env.DB.prepare(
     'SELECT seed_value, daily_date FROM puzzle_seeds WHERE is_daily = 1 AND seed_value = ?'
   ).bind(c.req.param('value')).first<{ seed_value: string; daily_date: string }>();
-  if (!seed) return c.json({ error: 'Seed not found' }, 404);
+  if (!seed) return c.json({ error: 'not_found' }, 404);
 
   return c.json({ seedValue: seed.seed_value, date: seed.daily_date });
 });
@@ -133,7 +133,7 @@ seedRoutes.get('/by-code/:code', async (c) => {
   const seed = await c.env.DB.prepare(
     'SELECT id, seed_value, share_code FROM puzzle_seeds WHERE share_code = ?'
   ).bind(code).first<{ id: string; seed_value: string; share_code: string }>();
-  if (!seed) return c.json({ error: 'Seed not found' }, 404);
+  if (!seed) return c.json({ error: 'not_found' }, 404);
 
   return c.json({ seedId: seed.id, seedValue: seed.seed_value, shareCode: seed.share_code });
 });

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { jsonBody } from '../lib/validate';
 import { BOARD_SIZE, type ReplayAction } from '@vegtab/engine';
 import type { Bindings, Variables } from '../types';
 import { generateId } from '../lib/id';
@@ -57,14 +57,14 @@ export const scoreRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }
 // POST /api/scores - Submit a score
 scoreRoutes.post('/', bodyLimit({
   maxSize: MAX_SCORE_BODY_BYTES,
-  onError: (c) => c.json({ error: 'Payload too large' }, 413),
-}), zValidator('json', submitScoreSchema), async (c) => {
+  onError: (c) => c.json({ error: 'payload_too_large' }, 413),
+}), jsonBody(submitScoreSchema), async (c) => {
   const userId = c.get('userId');
   const data = c.req.valid('json');
 
   // Today (JST) or a past calendar play within 60 days
   if (!isDateNearToday(data.date)) {
-    return c.json({ error: 'Invalid date' }, 400);
+    return c.json({ error: 'invalid_date' }, 400);
   }
 
   // Find or create the daily seed
@@ -85,7 +85,7 @@ scoreRoutes.post('/', bodyLimit({
   // Replay verification: the result is always re-simulated from the replay log
   const verified = verifyReplay(Number(seed.seed_value), data.replayLog);
   if (!verified.valid) {
-    return c.json({ error: 'Invalid replay' }, 400);
+    return c.json({ error: 'invalid_replay' }, 400);
   }
   const {
     score: verifiedScore,
@@ -225,23 +225,23 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
     user_id: string; daily_date: string | null; display_name: string | null;
   }>();
 
-  if (!score) return c.json({ error: 'Not found' }, 404);
+  if (!score) return c.json({ error: 'not_found' }, 404);
 
   // Access control: closed rankings are public, open ones are own-only
   const rankingClosed = score.daily_date != null && isRankingClosed(score.daily_date);
   if (!rankingClosed && score.user_id !== userId) {
-    return c.json({ error: 'Not found' }, 404);
+    return c.json({ error: 'not_found' }, 404);
   }
 
-  if (!score.replay_log_key) return c.json({ error: 'No replay data' }, 404);
+  if (!score.replay_log_key) return c.json({ error: 'no_replay' }, 404);
 
   const obj = await c.env.R2.get(score.replay_log_key);
-  if (!obj) return c.json({ error: 'Replay not found' }, 404);
+  if (!obj) return c.json({ error: 'no_replay' }, 404);
 
   const replayLog = JSON.parse(await obj.text());
 
   if (!Array.isArray(replayLog) || replayLog.length === 0) {
-    return c.json({ error: 'No replay data' }, 404);
+    return c.json({ error: 'no_replay' }, 404);
   }
 
   return c.json({

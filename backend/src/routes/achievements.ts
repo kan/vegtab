@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { jsonBody } from '../lib/validate';
 import type { Bindings, Variables } from '../types';
 import { ACHIEVEMENT_DEFS } from '@vegtab/engine';
 
@@ -12,13 +12,13 @@ const unlockSchema = z.object({
 export const achievementRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // POST /api/achievements/unlock - Unlock a client-triggered achievement
-achievementRoutes.post('/unlock', zValidator('json', unlockSchema), async (c) => {
+achievementRoutes.post('/unlock', jsonBody(unlockSchema), async (c) => {
   const userId = c.get('userId');
   const { type } = c.req.valid('json');
 
   // Defense-in-depth: ensure type exists in defs even if CLIENT_UNLOCKABLE drifts
   const def = ACHIEVEMENT_DEFS.find(d => d.type === type);
-  if (!def) return c.json({ error: 'Unknown achievement' }, 400);
+  if (!def) return c.json({ error: 'unknown_achievement' }, 400);
 
   await c.env.DB.prepare(`
     INSERT INTO achievements (id, user_id, achievement_type, current_value, is_unlocked, unlocked_at)

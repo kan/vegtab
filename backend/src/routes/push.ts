@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { jsonBody } from '../lib/validate';
 import type { Bindings, Variables } from '../types';
 import { generateId } from '../lib/id';
 import { isPushServiceEndpoint } from '../lib/web-push';
@@ -24,7 +24,7 @@ const unsubscribeSchema = z.object({
 export const pushRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // POST /api/push/subscribe — Register or update a push subscription
-pushRoutes.post('/subscribe', zValidator('json', subscribeSchema), async (c) => {
+pushRoutes.post('/subscribe', jsonBody(subscribeSchema), async (c) => {
   const userId = c.get('userId');
   const { endpoint, keys } = c.req.valid('json');
 
@@ -51,7 +51,7 @@ pushRoutes.post('/subscribe', zValidator('json', subscribeSchema), async (c) => 
 });
 
 // DELETE /api/push/unsubscribe — Remove a subscription
-pushRoutes.delete('/unsubscribe', zValidator('json', unsubscribeSchema), async (c) => {
+pushRoutes.delete('/unsubscribe', jsonBody(unsubscribeSchema), async (c) => {
   const userId = c.get('userId');
   const { endpoint } = c.req.valid('json');
 

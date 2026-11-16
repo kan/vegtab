@@ -421,6 +421,13 @@ project/
 - **クリアまでの時間は自己申告:** 時間はクライアントが測って送る値で、リプレイ検証では確かめられない。値を書き換えて送ることも、当日にソルバーで作った操作列を素早く入れることもできる。プレイヤーが少ない今は受け入れている（#91）。
   - 競技性を上げるときは、サーバーがその日の開始時刻を記録する方式を検討する（シードは既にサーバーが当日に配っているので、その日の初回プレイがオンラインであることは前提にできる）。
 
+### 5.5. 応答のヘッダーとエラー（#120）
+
+- **全ての応答:** `Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'; form-action 'self'`（ほかのサイトの iframe に入れさせない）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`。Static Assets の画面は `frontend/public/_headers` が、Worker のコードの応答（`/api/*`、`/s/*`）は `backend/src/middleware/headers.ts` が付ける（`_headers` は Worker の応答に効かないため）。
+- **本番以外:** `X-Robots-Tag: noindex`（開発の `vegtab-dev.kan-game.app` を検索エンジンに載せない）。
+- **API:** 全ての応答（`/api/id/*` の中継を含む）に `Cache-Control: no-store`。ID ごとに違う応答を途中のキャッシュに持たせないため。
+- **エラーの本文:** `{ error: "<コード>" }`（`invalid_request`、`invalid_date`、`invalid_replay`、`not_found`、`rate_limited`、`unauthorized`、`id_deleted` など、英小文字と `_`）。画面は状態コードと、名前の登録の `name_taken` / `invalid_name` だけを読む。本文の形が合わない、または JSON でない要求は `400 invalid_request`。例外は `500 internal_error` にして、ログ（`unhandled_error`）に出す。
+
 ### 5.4. vegtab.app からの移行
 
 `vegtab.app` の旧アカウント（端末に `deviceId` と JWT を置く方式）は、`vegtab.kan-game.app` の ID へ本人が引き継ぐ。同じ Worker と D1 が両方のホストを配信する。
