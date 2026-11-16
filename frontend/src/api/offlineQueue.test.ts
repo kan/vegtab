@@ -56,6 +56,17 @@ describe('offlineQueue', () => {
     expect(await processQueue(refused, asUser(USER))).toEqual({ succeeded: 0, failed: 0, remaining: 1 });
   });
 
+  it('回数の制限（429）の項目は retries を増やさずに残し、残りの項目も送らない', async () => {
+    enqueue('/api/scores', 'POST', '{"a":1}', USER);
+    enqueue('/api/scores', 'POST', '{"b":2}', USER);
+    const limited = vi.fn(async () => new Response('', { status: 429 }));
+    for (let i = 0; i < 5; i++) {
+      expect(await processQueue(limited, asUser(USER))).toEqual({ succeeded: 0, failed: 0, remaining: 2 });
+    }
+    expect(limited).toHaveBeenCalledTimes(5);
+    expect(await processQueue(async () => ok(), asUser(USER))).toEqual({ succeeded: 2, failed: 0, remaining: 0 });
+  });
+
   it('別のアカウントが追加した項目は送らずに取り除く', async () => {
     enqueue('/api/scores', 'POST', '{"a":1}', 'user-old');
     const doFetch = vi.fn(async () => ok());

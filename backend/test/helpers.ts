@@ -50,6 +50,7 @@ export async function resetDb() {
   for (const table of [
     'achievements', 'play_scores', 'puzzle_seeds', 'user_devices', 'push_subscriptions', 'refresh_token_families',
     'transfer_codes', 'users', 'profiles', 'deleted_accounts', 'legacy_handoffs', 'legacy_claims',
+    'rate_limits',
   ]) {
     await env.DB.exec(`DELETE FROM ${table}`);
   }

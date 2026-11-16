@@ -398,7 +398,7 @@ project/
 - **ランキングの API:** `GET /api/rankings/:seedId` と `GET /api/rankings/by-value/:seedValue`（認証必須）→ `{ ranking: [{ rank, displayName, isSelf, score, moveCount, clearTimeMs, isCleared, scoreId? }], userRank }`。ほかの人の ID は返さない。自分の行かは Worker が Cookie の ID と比べて `isSelf` で返す。KV のキャッシュは ID を持つが、応答に変えるときに外す。`scoreId` は締め切り前は自分の行だけ、締め切り後は全員の行に付く。
 - **引き継ぎコード:** kan-game.app の ID 基盤の機能（`/api/id/transfer-codes`、8 文字、10 分、1 回限り）。入力した端末はコードを発行した ID に切り替わり、その端末がそれまで使っていた ID の記録は移らない（統合しない）。
 - **復旧コードと退会:** kan-game.app のポータル（アカウント画面）にだけ置く。HOME のメニューからポータルを開く。
-- **退会:** ID 基盤が `GAME_VEGTAB` の Service Binding で `GameService.deleteAccount(id)`（`backend/src/game-service.ts`）を呼ぶ。`deleted_accounts` に記録し、その ID の記録（`play_scores`、`achievements`、`push_subscriptions`、`profiles`、`legacy_claims`）と R2 のリプレイを消す。何度呼んでも同じ結果になる。退会の途中に書き込まれた行は、毎日の定期実行（`sweepDeletedAccounts`）が消す。
+- **退会:** ID 基盤が `GAME_VEGTAB` の Service Binding で `GameService.deleteAccount(id)`（`backend/src/game-service.ts`）を呼ぶ。`deleted_accounts` に記録し、その ID の記録（`play_scores`、`achievements`、`push_subscriptions`、`profiles`、`legacy_claims`、`rate_limits`）と R2 のリプレイを消す。何度呼んでも同じ結果になる。退会の途中に書き込まれた行は、毎日の定期実行（`sweepDeletedAccounts`）が消す。
 
 ### 5.3. 不正対策
 
@@ -406,7 +406,12 @@ project/
 
 **初期リリース:**
 - **リプレイ検証:** スコア送信時にreplay_log（操作ログ）を送信し、バックエンド側でパズルエンジンを用いてリプレイ検証を行う。シード値の固定とエンジンの決定性により、操作列からスコアを再計算し整合性を確認する。
-- **レートリミット:** APIエンドポイントにレートリミットを設定。
+- **回数の制限（#119）:** ID ごとに D1 の `rate_limits` で数える（固定の時間枠、`backend/src/lib/rate-limit.ts`）。超えたら `429 { error: "rate_limited" }` と `Retry-After` を返す。
+  - `POST /api/scores`: 60 秒に 10 件。リプレイの検証（重い処理）より前に数えるので、断った送信は検証しない。締め切った日の送信は検証せずに答えるので数えない。1 日 1 問で、詰んでからの再挑戦にも数十秒はかかるので、ふつうの遊び方では当たらない
+  - `POST /api/user/profile`: 60 秒に 10 件（ID 基盤の `registerName` を呼ぶため）
+  - 数えないもの: 実績の解除（`POST /api/achievements/unlock`、ホワイトリストの upsert だけ）、通知の登録（軽い D1 の書き込みだけ）、旧 URL の `/api/auth/refresh` と `/api/legacy/handoff`（旧トークンの署名を確かめるだけで重い処理が無く、#109 で外す）
+  - 画面は、送れなかったスコアと同じく 429 の送信をキューに残して後で送り直す（retries は増やさない）
+  - 古い時間枠の行は毎日の定期実行で消す。退会でも消す
 
 **受け入れているリスク:**
 - **当日のうちにソルバーで解ける:** リトライが無制限でベストスコアだけを記録する仕様では、盤面を当日 0 時に初めて知っても、ソルバーで作った操作列をその日のうちに送信できる。リプレイ検証は操作列を再現できるかだけを確かめるので、ソルバーの操作列を区別できない。
@@ -438,6 +443,7 @@ project/
 - **`deleted_accounts`**: `account_id`, `deleted_at` (ミリ秒) — 退会した ID。Cookie は最長 400 日有効なので残し続ける
 - **`legacy_handoffs`**: `token_hash` (SHA-256), `user_id` (旧アカウント), `expires_at` (ミリ秒) — 旧 URL から新しい URL へ渡す 1 回限りのトークン
 - **`legacy_claims`**: `legacy_user_id`, `account_id`, `claimed_at` (ミリ秒) — 引き継いだ旧アカウントと移した先
+- **`rate_limits`**: `account_id`, `action` (`score` / `profile`), `window_start` (ミリ秒), `count` — 書き込みの API の回数の制限（§5.3）
 - **`users`**: `id` (UUID), `display_name` (表示名, 最大 20 文字), `device_id`, `created_at` — `vegtab.app` の旧アカウント。引き継ぐと消える
 - **`user_devices`** / **`transfer_codes`** / **`refresh_token_families`**: 旧アカウントの端末、引き継ぎコード、リフレッシュトークン。旧 URL を閉じたら捨てる
 - **`puzzle_seeds`**: `seed_id`, `seed_value` (ユニーク), `share_code` (ユニーク, 6〜8文字の英数字), `daily_date` (YYYY-MM-DD), `created_at`

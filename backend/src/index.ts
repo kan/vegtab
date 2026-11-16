@@ -14,6 +14,7 @@ import { authMiddleware } from './middleware/auth';
 import { sendDailyPushNotifications } from './lib/push-cron';
 import { purgeExpiredRefreshTokens } from './lib/refresh-tokens';
 import { sweepDeletedAccounts } from './lib/account';
+import { purgeStaleRateLimits } from './lib/rate-limit';
 
 export { GameService } from './game-service';
 
@@ -69,5 +70,6 @@ export default {
     ctx.waitUntil(sendDailyPushNotifications(env));
     ctx.waitUntil(purgeExpiredRefreshTokens(env.DB));
     ctx.waitUntil(sweepDeletedAccounts(env));
+    ctx.waitUntil(purgeStaleRateLimits(env.DB));
   },
 };

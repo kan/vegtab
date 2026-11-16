@@ -87,6 +87,11 @@ export async function processQueue(
       const res = await doFetch(entry.url, entry.method, entry.body);
       if (res.ok || res.status === 409) {
         succeeded++;
+      } else if (res.status === 429) {
+        // 回数の制限（backend の rate_limits）。項目は傷んでいないので retries を増やさずに残し、
+        // 残りも同じ ID の枠を使うので、この回は送るのをやめる
+        processed.set(entry.id, entry);
+        break;
       } else if (res.status === 401 || res.status === 410) {
         // The ID's cookie, not the request, was refused; the ID is asked for again (src/api/id.ts)
         retryOrFail(entry);

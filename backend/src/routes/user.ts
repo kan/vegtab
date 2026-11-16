@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import type { Bindings, Variables } from '../types';
 import { idPlatform } from '../lib/id-auth';
 import { registerProfile, getProfileName, nameOutcome } from '../lib/profile';
+import { takeRateLimitSlot } from '../lib/rate-limit';
 
 const registerProfileSchema = z.object({
   // The rules are the ID platform's (kan/game src/names.ts); this only bounds the input
@@ -25,6 +26,12 @@ userRoutes.get('/profile', async (c) => {
 userRoutes.post('/profile', zValidator('json', registerProfileSchema), async (c) => {
   const userId = c.get('userId');
   const { displayName } = c.req.valid('json');
+
+  const limited = await takeRateLimitSlot(c.env.DB, userId, 'profile');
+  if (limited) {
+    c.header('Retry-After', String(limited.retryAfterSeconds));
+    return c.json({ error: 'rate_limited' }, 429);
+  }
 
   const outcome = nameOutcome(await idPlatform(c.env).registerName(userId, displayName));
   switch (outcome.status) {

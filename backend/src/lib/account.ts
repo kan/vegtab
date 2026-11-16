@@ -9,6 +9,7 @@ const ACCOUNT_TABLES = [
   ['push_subscriptions', 'user_id'],
   ['profiles', 'account_id'],
   ['legacy_claims', 'account_id'],
+  ['rate_limits', 'account_id'],
 ] as const;
 
 /**

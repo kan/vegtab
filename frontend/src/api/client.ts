@@ -66,6 +66,8 @@ export async function api<T = unknown>(
 
   if (!res.ok) {
     if (queueableBody && res.status >= 500) return queue(res.status, 'Server error — queued for retry');
+    // Over the per-ID limit (backend rate_limits): the run is kept and sent again later
+    if (queueableBody && res.status === 429) return queue(res.status, 'Rate limited — queued for retry');
     throw new ApiError(res.status, await res.text());
   }
 

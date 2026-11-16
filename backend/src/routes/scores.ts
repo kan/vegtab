@@ -12,6 +12,7 @@ import { verifyReplay } from '../lib/replay-verify';
 import { MODE } from '../lib/mode';
 import { newReplayKey } from '../lib/replay-key';
 import { invalidateRankings } from '../lib/profile';
+import { takeRateLimitSlot } from '../lib/rate-limit';
 import {
   MAX_CLEAR_TIME_MS, BETTER_THAN_STORED, PUBLIC_NAME, publicNameJoins,
 } from '../lib/ranking-rule';
@@ -72,6 +73,13 @@ scoreRoutes.post('/', bodyLimit({
   // Past dates: allow play but don't record to ranking (yesterday is still recorded shortly after midnight)
   if (isRankingClosed(data.date)) {
     return c.json({ scoreId: null, shareCode: seed.share_code, newAchievements: [], pastDate: true }, 200);
+  }
+
+  // The per-ID limit is taken before the replay is verified (the costly part)
+  const limited = await takeRateLimitSlot(c.env.DB, userId, 'score');
+  if (limited) {
+    c.header('Retry-After', String(limited.retryAfterSeconds));
+    return c.json({ error: 'rate_limited' }, 429);
   }
 
   // Replay verification: the result is always re-simulated from the replay log

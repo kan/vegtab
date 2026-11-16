@@ -4,6 +4,7 @@ import {
   call, resetDb, registerUser, authHeader, testEnv, getTodaySeedId, insertPlayScore, subscribePush,
 } from './helpers';
 import { deleteAccount, sweepDeletedAccounts } from '../src/lib/account';
+import { takeRateLimitSlot } from '../src/lib/rate-limit';
 import { replayKeyPrefix } from '../src/lib/replay-key';
 import { rankingCacheKey } from '../src/lib/ranking-rule';
 
@@ -25,11 +26,14 @@ describe('Withdrawal (GameService.deleteAccount)', () => {
     await insertPlayScore({ userId: other.userId, seedId, moveCount: 9, score: 100, isCleared: true });
     await subscribePush(me.accessToken, 'https://fcm.googleapis.com/fcm/send/me');
     await env.KV.put(rankingCacheKey(seedId), '{"entries":[]}');
+    await takeRateLimitSlot(env.DB, me.userId, 'score');
 
     await deleteAccount(testEnv(), me.userId);
     await deleteAccount(testEnv(), me.userId); // again: same result
 
-    for (const [table, column] of [['play_scores', 'user_id'], ['push_subscriptions', 'user_id'], ['profiles', 'account_id']]) {
+    for (const [table, column] of [
+      ['play_scores', 'user_id'], ['push_subscriptions', 'user_id'], ['profiles', 'account_id'], ['rate_limits', 'account_id'],
+    ]) {
       expect(await count(table, column, me.userId), table).toBe(0);
     }
     expect(await count('play_scores', 'user_id', other.userId)).toBe(1);
