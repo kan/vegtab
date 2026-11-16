@@ -3,6 +3,8 @@ import { useI18n } from 'vue-i18n';
 import { portalUrl } from '@/api/id';
 
 const { t } = useI18n();
+/** package.json's version and the commit of the build (vite.config.ts appVersion) */
+const appVersion = __APP_VERSION__;
 </script>
 
 <template>
@@ -23,6 +25,12 @@ const { t } = useI18n();
           <a :href="portalUrl('/terms')" target="_blank" rel="noopener">{{ t('about.terms') }}</a>
           <a :href="portalUrl('/privacy')" target="_blank" rel="noopener">{{ t('about.privacy') }}</a>
         </div>
+      </section>
+
+      <section class="about-section">
+        <h2>{{ t('about.version') }}</h2>
+        <p class="about-text"><code>{{ appVersion }}</code></p>
+        <p class="about-text">{{ t('about.versionNote') }}</p>
       </section>
 
       <section class="about-section">

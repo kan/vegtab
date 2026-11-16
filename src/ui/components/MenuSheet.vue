@@ -9,6 +9,8 @@ import NameDialog from './NameDialog.vue';
 import SettingsModal from './SettingsModal.vue';
 import VegetableIcon from './VegetableIcon.vue';
 import CloseButton from './CloseButton.vue';
+import InstallSteps from './InstallSteps.vue';
+import { installOffer, promptInstall } from '@/lib/install';
 
 /**
  * The menu, shared by HOME and the puzzle screen: the ≡ button in the screen's header and the
@@ -31,7 +33,7 @@ function close() {
   open.value = false;
 }
 
-type Dialog = 'settings' | 'name' | 'shareCode' | 'transferIssue' | 'transferRedeem' | null;
+type Dialog = 'settings' | 'name' | 'shareCode' | 'transferIssue' | 'transferRedeem' | 'install' | null;
 const dialog = ref<Dialog>(null);
 
 function openDialog(next: Exclude<Dialog, null>) {
@@ -45,6 +47,16 @@ function openDialog(next: Exclude<Dialog, null>) {
 function go(path: string) {
   close();
   router.push(path);
+}
+
+/** The browser's prompt, or the steps on iPhone and iPad (src/ui/lib/install.ts) */
+function installFromMenu() {
+  if (installOffer.value === 'steps') {
+    openDialog('install');
+    return;
+  }
+  close();
+  void promptInstall();
 }
 
 /** Recovery codes and withdrawal are on the kan-game.app portal, shared by its games */
@@ -141,6 +153,14 @@ async function redeem() {
         </nav>
 
         <nav class="menu-list">
+          <button
+            v-if="installOffer"
+            class="row-btn"
+            :aria-haspopup="installOffer === 'steps' ? 'dialog' : undefined"
+            @click="installFromMenu"
+          >
+            {{ t('menu.install') }}
+          </button>
           <button class="row-btn" @click="go('/about')">{{ t('home.about') }}</button>
         </nav>
       </section>
@@ -165,6 +185,16 @@ async function redeem() {
         <div class="modal-actions">
           <button class="modal-btn-primary" :disabled="!shareCodeInput.trim()" @click="submitShareCode">{{ t('common.ok') }}</button>
           <button class="modal-btn-secondary" @click="dialog = null">{{ t('common.cancel') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="dialog === 'install'" class="modal-overlay" @click.self="dialog = null">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="install-title">
+        <h3 id="install-title" class="modal-title">{{ t('install.title') }}</h3>
+        <InstallSteps />
+        <div class="modal-actions">
+          <button class="modal-btn-primary" @click="dialog = null">{{ t('common.ok') }}</button>
         </div>
       </div>
     </div>

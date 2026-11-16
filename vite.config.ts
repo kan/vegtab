@@ -2,11 +2,30 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import {
   licensesPlugin, SERVER_BUNDLED_BY_WRANGLER, SERVER_PACKAGES, SERVICE_WORKER_PACKAGES,
 } from './scripts/licenses-plugin.ts';
 
+/**
+ * The build shown on the about page (#121): package.json's version and the commit, as NYORO-RIN's
+ * vite.config.ts does (`0.0.1+a44dd3f`). Without git (a source archive), the version alone
+ */
+function appVersion(): string {
+  const { version } = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')) as { version: string };
+  try {
+    const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+    return `${version}+${commit}`;
+  } catch {
+    return version;
+  }
+}
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion()),
+  },
   plugins: [
     vue(),
     licensesPlugin({

@@ -57,6 +57,8 @@ export default {
     privacy: 'Privacy Policy',
     credits: 'Credits',
     licenses: 'Open source licences',
+    version: 'Version',
+    versionNote: 'When you report a problem, please include this version.',
   },
   licenses: {
     title: 'Open source licences',
@@ -208,6 +210,15 @@ export default {
   menu: {
     title: 'Menu',
     account: 'Account',
+    install: 'Add to Home Screen',
+  },
+  install: {
+    title: 'Add to Home Screen',
+    intro: 'On iPhone and iPad, you can add Vege-Table to the Home Screen from the share menu of Safari.',
+    step1: 'Tap the share button (a square with an arrow pointing up). If you cannot find it, tap “…” in the address bar, then choose “Share”.',
+    step2: 'Choose “Add to Home Screen” in the list. If it is not there, scroll down the list or tap “Show More”.',
+    step3: 'If “Open as Web App” is shown, leave it on, then tap “Add”.',
+    outro: 'Opened from Vege-Table on the Home Screen, the game has no address bar and can notify you of the daily puzzle.',
   },
   handoff: {
     title: 'Bring over your earlier records?',

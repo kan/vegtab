@@ -345,6 +345,14 @@ API失敗時にリクエストをキューに保存し、オンライン復帰�
 | burst | 食器セット / Dish Set | 🍽️ |
 | flush | サラダボウル / Salad Bowl | 🥗 |
 
+### 3.14. PWA（ホーム画面に追加、新しい版への切り替え、版の表示）
+
+TAKO-SEN と NYORO-RIN にそろえる（#121）。
+
+- **ホーム画面に追加:** メニュー（`MenuSheet.vue`）の「ホーム画面に追加」。ブラウザがインストールの案内（`beforeinstallprompt`、Android の Chrome など）を出すときは、ボタンでそれを開く。iPhone と iPad の Safari には、共有メニューから追加する手順（`InstallSteps.vue`）をダイアログで出す。Safari かは UA で見て、`Safari/` を含むアプリ内ブラウザ（`CriOS`、`FxiOS`、`EdgiOS`、`GSA/`、`YJApp`、`Line/`、`Instagram`、`FBAN` など）は除き、デスクトップ表示の iPad（`MacIntel` でタッチあり）は含める。ホーム画面から開いているとき（`display-mode: standalone`）と、どちらも使えないブラウザでは出さない（`src/ui/lib/install.ts`）
+- **古いチャンクの読み込みの失敗:** 新しい版を出した直後に、開いたままの画面が消えた旧チャンクを読みに行って失敗したら、読み込み直して新しい版で開く。画面の遷移の失敗（`router.onError`）は遷移先を、Vite の `vite:preloadError`（router を通らない動的 import、CSS や依存の preload）は遷移の途中なら遷移先、そうでなければ今の URL を開く。どちらも `src/ui/lib/staleChunk.ts` を通し、タブごとに 60 秒に 1 回まで（`sessionStorage` の `vegtab_stale_chunk_reload`）。オフラインでは読み込み直さない
+- **版の表示:** About に、build の版（`package.json` の version と短縮した commit、`0.0.1+a44dd3f`）を出す。問い合わせのときに遊んだ版を特定するため。`vite.config.ts` の `appVersion()` が `__APP_VERSION__` に入れる。git が無いときは version だけ
+
 ## 4. 技術スタックとアーキテクチャ
 
 Web版と PWA だけで提供する。ネイティブアプリ（iOS/Android）は作らない。

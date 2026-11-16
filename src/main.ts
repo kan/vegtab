@@ -4,8 +4,9 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { i18n } from './ui/i18n';
 import { initSound } from './ui/sound';
 import { initAnim } from './ui/anim';
-import { reloadOnChunkLoadError, clearChunkReloadMark } from './ui/lib/chunkReload';
+import { isChunkLoadError, reloadForStaleChunk } from './ui/lib/staleChunk';
 import { isLegacyHost } from './ui/legacy/handoff';
+import { startInstallOffer } from './ui/lib/install';
 import './ui/theme.css';
 import App from './App.vue';
 import LegacyMovedApp from './ui/legacy/LegacyMovedApp.vue';
@@ -18,6 +19,8 @@ if (isLegacyHost()) {
 }
 
 function startGame() {
+  // Before mounting: the browser's install prompt may come before the screens are up
+  startInstallOffer();
   initSound();
   initAnim();
 
@@ -44,13 +47,18 @@ function startGame() {
     ],
   });
 
-  // 新しいデプロイで旧チャンクが消えていたら、遷移先を読み込み直して新しいバンドルで開く。
-  // オフラインでも同じエラーになるが、そのときは読み込み直してもアプリの状態を失うだけなので何もしない
+  // 新しいデプロイで旧チャンクが消えていたら、読み込み直して新しいバンドルで開く（src/ui/lib/staleChunk.ts）。
+  // 遷移の途中なら遷移先を開く。オフラインのときと、1 分のうちに読み込み直したときは何もしない
+  let navigatingTo: string | null = null;
+  router.beforeEach((to) => { navigatingTo = to.fullPath; });
+  router.afterEach(() => { navigatingTo = null; });
   router.onError((error, to) => {
-    if (!navigator.onLine) return;
-    reloadOnChunkLoadError(error, to.fullPath);
+    if (isChunkLoadError(error)) reloadForStaleChunk(to.fullPath);
   });
-  router.afterEach(clearChunkReloadMark);
+  // router を通らない動的 import と、CSS や依存の preload の失敗。読み込み直すなら、エラーを投げさせない
+  window.addEventListener('vite:preloadError', (event) => {
+    if (reloadForStaleChunk(navigatingTo ?? location.href)) event.preventDefault();
+  });
 
   const app = createApp(App);
   app.use(createPinia());
