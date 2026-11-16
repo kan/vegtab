@@ -52,8 +52,11 @@ npm install
 失敗する。既存の lockfile を残したまま `npm install` / `npm audit fix` /
 `npm i <pkg>@<ver>` で更新する。npm の版によって `libc` の指定が落ちることがあるので、更新したら差分を見る。
 
-`package.json` の `dependencies` には Worker が bundle するパッケージだけを置く。画面のパッケージ（vue など）は
-`devDependencies` に置く（ライセンス一覧が `dependencies` を Worker の分として読むため。`scripts/licenses-plugin.ts`）。
+ライセンス一覧（`/licenses`、`scripts/licenses-plugin.ts`）は、画面のパッケージを build の bundle から、Service Worker と
+Worker のパッケージを `SERVICE_WORKER_PACKAGES` と `SERVER_PACKAGES` から作る。Worker で新しいパッケージを import したら
+`SERVER_PACKAGES` に足す（`tests/ui/licenses-plugin.test.ts` が import と突き合わせる）。workbox の設定を変えて
+`SERVICE_WORKER_PACKAGES` とずれたら、build（`scripts/check-sw-licenses.ts`）が失敗する。
+`package.json` の `dependencies` には Worker が bundle するパッケージを、画面のもの（vue など）は `devDependencies` に置く。
 
 ### 環境とリソース
 環境はローカル（`wrangler.jsonc` の先頭）、開発（`env.dev`、`vegtab-dev.kan-game.app`）、本番（`env.production`、

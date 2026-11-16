@@ -2,11 +2,11 @@
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import type { LicenseEntry } from '../../../scripts/licenses-plugin';
+import type { LicenseEntry } from '@/lib/licenses';
 
 /**
  * The open source packages Vege-Table ships, with their licences. licenses.json is written by the
- * build (licenses.plugin.ts), so the dev server has none
+ * build (scripts/licenses-plugin.ts), so the dev server has none
  */
 const { t, locale } = useI18n();
 const router = useRouter();

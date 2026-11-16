@@ -2,19 +2,17 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
-import { licensesPlugin } from './scripts/licenses-plugin';
+import {
+  licensesPlugin, SERVER_BUNDLED_BY_WRANGLER, SERVER_PACKAGES, SERVICE_WORKER_PACKAGES,
+} from './scripts/licenses-plugin.ts';
 
 export default defineConfig({
   plugins: [
     vue(),
     licensesPlugin({
-      // What generateSW inlines into the service worker: the names in dist/workbox-*.js
-      // ("workbox:<name>:"). Update this when the workbox options below change
-      serviceWorker: ['workbox-core', 'workbox-precaching', 'workbox-routing', 'workbox-strategies'],
-      // Its dependencies are the Worker's (the screen's packages sit in devDependencies)
-      serverPackageJson: path.resolve(__dirname, 'package.json'),
-      // Seen in the Worker's bundle (wrangler deploy --dry-run --metafile)
-      serverBundledByWrangler: ['wrangler', 'unenv', '@cloudflare/unenv-preset'],
+      serviceWorker: SERVICE_WORKER_PACKAGES,
+      server: SERVER_PACKAGES,
+      serverBundledByWrangler: SERVER_BUNDLED_BY_WRANGLER,
     }),
     VitePWA({
       registerType: 'autoUpdate',
