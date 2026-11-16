@@ -52,15 +52,21 @@ function parseEntries(raw: string | null, key: string): QueueEntry[] {
 function loadQueue(): QueueEntry[] {
   const current = parseEntries(getItemSync(QUEUE_KEY), QUEUE_KEY);
   const legacyRaw = getItemSync(LEGACY_QUEUE_KEY);
-  let entries = current;
-  if (legacyRaw !== null) {
-    const known = new Set(current.map(e => e.id));
-    entries = [...current, ...parseEntries(legacyRaw, LEGACY_QUEUE_KEY).filter(e => !known.has(e.id))];
-    if (saveQueue(entries)) removeLocalItem(LEGACY_QUEUE_KEY);
-  }
   const now = Date.now();
   // Remove expired entries and score submissions of removed modes (queued before #102)
-  return entries.filter(e => now - e.createdAt < EXPIRY_MS && !isRemovedModeScoreSubmission(e));
+  const live = (e: QueueEntry) => now - e.createdAt < EXPIRY_MS && !isRemovedModeScoreSubmission(e);
+  if (legacyRaw === null) return current.filter(live);
+  const known = new Set(current.map(e => e.id));
+  const entries = [...current, ...parseEntries(legacyRaw, LEGACY_QUEUE_KEY).filter(e => !known.has(e.id))]
+    .filter(live);
+  if (saveQueue(entries)) removeLocalItem(LEGACY_QUEUE_KEY);
+  return entries;
+}
+
+/** Retry-After（秒）を読む。無いか読めなければ、backend の窓の長さ（60 秒）とみなす */
+export function retryAfterSecondsOf(res: Response): number {
+  const seconds = Number(res.headers.get('Retry-After'));
+  return Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) : 60;
 }
 
 /** 保存できたかを返す。保存できなくても、ローカルの記録が残っていれば次回起動時の再送で回復する */
@@ -99,19 +105,21 @@ export function getQueueSize(): number {
 }
 
 /**
- * Process all queued requests. Returns { succeeded, failed, remaining }.
+ * Process all queued requests. Returns { succeeded, failed, remaining }, and retryAfterSeconds when
+ * the per-ID limit (429) stopped it: the caller sends the rest again after that.
  * Caller should provide a fetch function that handles auth headers.
  */
 export async function processQueue(
   doFetch: (url: string, method: string, body: string) => Promise<Response>,
   getCurrentUserId: () => string | null,
-): Promise<{ succeeded: number; failed: number; remaining: number }> {
+): Promise<{ succeeded: number; failed: number; remaining: number; retryAfterSeconds?: number }> {
   const queue = loadQueue();
   // Without an ID nothing can be sent; the queue waits for one
   if (queue.length === 0 || !getCurrentUserId()) return { succeeded: 0, failed: 0, remaining: queue.length };
 
   let succeeded = 0;
   let failed = 0;
+  let retryAfterSeconds: number | undefined;
   /** 処理した項目の id → 残す項目（null なら取り除く） */
   const processed = new Map<string, QueueEntry | null>();
 
@@ -137,6 +145,7 @@ export async function processQueue(
         // 回数の制限（backend の rate_limits）。項目は傷んでいないので retries を増やさずに残し、
         // 残りも同じ ID の枠を使うので、この回は送るのをやめる
         processed.set(entry.id, entry);
+        retryAfterSeconds = retryAfterSecondsOf(res);
         break;
       } else if (res.status === 401 || res.status === 410) {
         // The ID's cookie, not the request, was refused; the ID is asked for again (src/api/id.ts)
@@ -156,5 +165,8 @@ export async function processQueue(
     .map(e => processed.has(e.id) ? processed.get(e.id) : e)
     .filter((e): e is QueueEntry => e != null);
   saveQueue(remaining);
-  return { succeeded, failed, remaining: remaining.length };
+  return {
+    succeeded, failed, remaining: remaining.length,
+    ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+  };
 }

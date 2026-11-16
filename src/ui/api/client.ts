@@ -1,4 +1,4 @@
-import { enqueue, processQueue, type QueueDedupe } from './offlineQueue';
+import { enqueue, processQueue, retryAfterSecondsOf, type QueueDedupe } from './offlineQueue';
 import { getUserId, recoverId } from './id';
 
 // --- Toast notification system ---
@@ -50,11 +50,11 @@ export async function api<T = unknown>(
   const headers: Record<string, string> = { ...(fetchOptions.headers as Record<string, string> ?? {}) };
   if (fetchOptions.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
 
-  const queue = (status: number, message: string): never => {
+  const queue = (status: number, message: string, savedToast = 'toast.scoreSavedOffline'): never => {
     const dedupe = typeof shouldQueue === 'object' ? shouldQueue : undefined;
     const saved = enqueue(path, fetchOptions.method ?? 'POST', queueableBody!, getUserId(), dedupe);
     // 端末に保存できなければ（容量超過など）、後で送れないかもしれないことを知らせる
-    if (saved) showToast('info', 'toast.scoreSavedOffline');
+    if (saved) showToast('info', savedToast);
     else showToast('error', 'toast.offlineSaveFailed', undefined, 8000);
     throw new ApiError(status, message);
   };
@@ -73,8 +73,12 @@ export async function api<T = unknown>(
 
   if (!res.ok) {
     if (queueableBody && res.status >= 500) return queue(res.status, 'Server error — queued for retry');
-    // Over the per-ID limit (backend rate_limits): the run is kept and sent again later
-    if (queueableBody && res.status === 429) return queue(res.status, 'Rate limited — queued for retry');
+    // Over the per-ID limit (backend rate_limits): the run is kept and sent again when the window
+    // ends. Still online, so the `online` event would not come
+    if (queueableBody && res.status === 429) {
+      scheduleFlush(retryAfterSecondsOf(res));
+      return queue(res.status, 'Rate limited — queued for retry', 'toast.scoreQueuedRateLimited');
+    }
     throw new ApiError(res.status, await res.text());
   }
 
@@ -98,10 +102,26 @@ export async function flushOfflineQueue(): Promise<{ succeeded: number; failed: 
     if (result.failed > 0) {
       showToast('error', 'toast.offlineQueueFailed');
     }
+    if (result.retryAfterSeconds !== undefined) scheduleFlush(result.retryAfterSeconds);
     return result;
   } finally {
     flushing = false;
   }
+}
+
+/** 送り直しの予約は 1 つだけ持つ。先に予約があれば、遅い方に合わせる */
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+let flushAt = 0;
+
+function scheduleFlush(seconds: number) {
+  const at = Date.now() + seconds * 1000;
+  if (flushTimer !== undefined && flushAt >= at) return;
+  clearTimeout(flushTimer);
+  flushAt = at;
+  flushTimer = setTimeout(() => {
+    flushTimer = undefined;
+    void flushOfflineQueue();
+  }, at - Date.now());
 }
 
 // Auto-flush on online event

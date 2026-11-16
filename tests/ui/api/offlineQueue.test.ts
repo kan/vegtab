@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MAX_QUEUE_ENTRIES, enqueue, getQueueSize, processQueue } from '@/api/offlineQueue';
+import { MAX_QUEUE_ENTRIES, enqueue, getQueueSize, processQueue, retryAfterSecondsOf } from '@/api/offlineQueue';
 
 let data = new Map<string, string>();
 
@@ -61,12 +61,19 @@ describe('offlineQueue', () => {
   it('回数の制限（429）の項目は retries を増やさずに残し、残りの項目も送らない', async () => {
     enqueue('/api/scores', 'POST', '{"a":1}', USER);
     enqueue('/api/scores', 'POST', '{"b":2}', USER);
-    const limited = vi.fn(async () => new Response('', { status: 429 }));
+    const limited = vi.fn(async () => new Response('', { status: 429, headers: { 'Retry-After': '42' } }));
     for (let i = 0; i < 5; i++) {
-      expect(await processQueue(limited, asUser(USER))).toEqual({ succeeded: 0, failed: 0, remaining: 2 });
+      expect(await processQueue(limited, asUser(USER)))
+        .toEqual({ succeeded: 0, failed: 0, remaining: 2, retryAfterSeconds: 42 });
     }
     expect(limited).toHaveBeenCalledTimes(5);
     expect(await processQueue(async () => ok(), asUser(USER))).toEqual({ succeeded: 2, failed: 0, remaining: 0 });
+  });
+
+  it('Retry-After が無いか読めなければ 60 秒とみなす', () => {
+    expect(retryAfterSecondsOf(new Response('', { status: 429, headers: { 'Retry-After': '7' } }))).toBe(7);
+    expect(retryAfterSecondsOf(new Response('', { status: 429 }))).toBe(60);
+    expect(retryAfterSecondsOf(new Response('', { status: 429, headers: { 'Retry-After': 'soon' } }))).toBe(60);
   });
 
   it('別のアカウントが追加した項目は送らずに取り除く', async () => {
@@ -150,6 +157,16 @@ describe('offlineQueue', () => {
       enqueue('/api/scores', 'POST', 'new', USER);
       expect(data.has('offline_queue')).toBe(false);
       expect(getQueueSize()).toBe(2);
+    });
+
+    it('旧キーから取り込むとき、期限切れの項目は保存しない', () => {
+      data.set('offline_queue', JSON.stringify([
+        { id: 'old', url: '/api/scores', method: 'POST', body: 'expired', createdAt: Date.now() - 25 * 60 * 60 * 1000, retries: 0, userId: USER },
+        { id: 'new', url: '/api/scores', method: 'POST', body: 'live', createdAt: Date.now(), retries: 0, userId: USER },
+      ]));
+      expect(getQueueSize()).toBe(1);
+      const saved = JSON.parse(data.get('vegtab_offline_queue')!) as { id: string }[];
+      expect(saved.map(e => e.id)).toEqual(['new']);
     });
 
     it('読めないキューは退避して、空から始める', () => {
