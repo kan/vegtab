@@ -3,7 +3,6 @@ import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/client';
-import { getUserId } from '@/api/id';
 import { formatRecordTime } from '@/lib/playTime';
 import { playIcon, trophyIcon } from '@/assets/icons';
 import { rankMedalIcon } from '@/lib/rankMedal';
@@ -43,12 +42,11 @@ async function fetchRanking() {
   const seq = ++fetchSeq;
   loading.value = true;
   try {
-    const userId = getUserId();
     const data = await api<{
       ranking: Array<{
         rank: number;
-        userId: string;
         displayName: string;
+        isSelf: boolean;
         moveCount: number;
         clearTimeMs: number | null;
         scoreId?: string;
@@ -62,7 +60,7 @@ async function fetchRanking() {
       moves: e.moveCount,
       clearTimeMs: e.clearTimeMs,
       playerName: e.displayName,
-      isMe: e.userId === userId,
+      isMe: e.isSelf,
       scoreId: e.scoreId,
     }));
     myRank.value = data.userRank;

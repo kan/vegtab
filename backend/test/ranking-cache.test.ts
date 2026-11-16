@@ -19,7 +19,6 @@ import { rankingCacheKey } from '../src/lib/ranking-rule';
  */
 describe('Ranking cache invalidation', () => {
   let accessToken: string;
-  let userId: string;
   let seedId: string;
   let cacheKey: string;
 
@@ -28,7 +27,6 @@ describe('Ranking cache invalidation', () => {
     useFakeToday(CLEARED_DATE);
     const reg = await registerUser({ name: 'Me' });
     accessToken = reg.accessToken;
-    userId = reg.userId;
     seedId = await getTodaySeedId(accessToken);
     cacheKey = rankingCacheKey(seedId);
   });
@@ -54,7 +52,7 @@ describe('Ranking cache invalidation', () => {
       headers: authHeader(token),
     });
     return res.json() as Promise<{
-      ranking: Array<{ rank: number; moveCount: number; clearTimeMs: number | null; userId: string }>;
+      ranking: Array<{ rank: number; moveCount: number; clearTimeMs: number | null; displayName: string; isSelf: boolean }>;
       userRank: { rank: number; moveCount: number; clearTimeMs: number | null } | null;
     }>;
   }
@@ -78,7 +76,7 @@ describe('Ranking cache invalidation', () => {
 
     // Step 5: Ranking should reflect the new record from DB
     const ranking2 = await fetchRanking(accessToken);
-    expect(ranking2.ranking.map(e => e.userId)).toEqual([userId, other.userId]);
+    expect(ranking2.ranking.map(e => [e.displayName, e.isSelf])).toEqual([['Me', true], [expect.any(String), false]]);
     expect(ranking2.ranking[0].moveCount).toBe(cleared.state.moveCount);
     expect(ranking2.userRank).toEqual({
       rank: 1, score: cleared.state.score, moveCount: cleared.state.moveCount, clearTimeMs: CLEAR_TIME_MS,
@@ -157,6 +155,6 @@ describe('Ranking cache invalidation', () => {
 
     // Ranking should show all 3 users in correct order
     const ranking = await fetchRanking(accessToken);
-    expect(ranking.ranking.map(e => e.userId)).toEqual([userId, reg3.userId, reg2.userId]);
+    expect(ranking.ranking.map(e => e.displayName)).toEqual(['Me', 'Third', 'Second']);
   });
 });

@@ -395,6 +395,7 @@ project/
 
 - **名前:** kan-game.app 全体で 1 つで、重複できず、変更できない。規則（2〜20 文字など）と重複の判定は ID 基盤が持つ。画面が名前と公開への同意を `POST /api/user/profile` に送り、Worker が `registerName` の RPC で登録してから、名前と同意を `profiles` に書く。別のゲームで名前を決めた ID は、名前を聞かずに同意だけを求める。
 - **ランキングへの公開:** 名前と同意（`profiles`）のある ID の記録だけをランキングに載せる。同意していない ID は、自分の順位（名前を決めたら何位か）だけを見られる。
+- **ランキングの API:** `GET /api/rankings/:seedId` と `GET /api/rankings/by-value/:seedValue`（認証必須）→ `{ ranking: [{ rank, displayName, isSelf, score, moveCount, clearTimeMs, isCleared, scoreId? }], userRank }`。ほかの人の ID は返さない。自分の行かは Worker が Cookie の ID と比べて `isSelf` で返す。KV のキャッシュは ID を持つが、応答に変えるときに外す。`scoreId` は締め切り前は自分の行だけ、締め切り後は全員の行に付く。
 - **引き継ぎコード:** kan-game.app の ID 基盤の機能（`/api/id/transfer-codes`、8 文字、10 分、1 回限り）。入力した端末はコードを発行した ID に切り替わり、その端末がそれまで使っていた ID の記録は移らない（統合しない）。
 - **復旧コードと退会:** kan-game.app のポータル（アカウント画面）にだけ置く。HOME のメニューからポータルを開く。
 - **退会:** ID 基盤が `GAME_VEGTAB` の Service Binding で `GameService.deleteAccount(id)`（`backend/src/game-service.ts`）を呼ぶ。`deleted_accounts` に記録し、その ID の記録（`play_scores`、`achievements`、`push_subscriptions`、`profiles`、`legacy_claims`）と R2 のリプレイを消す。何度呼んでも同じ結果になる。退会の途中に書き込まれた行は、毎日の定期実行（`sweepDeletedAccounts`）が消す。

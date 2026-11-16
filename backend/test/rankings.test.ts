@@ -7,21 +7,21 @@ import { rankingCacheKey } from '../src/lib/ranking-rule';
 
 interface RankingResponse {
   ranking: Array<{
-    rank: number; userId: string; displayName: string; moveCount: number; clearTimeMs: number | null;
+    rank: number; displayName: string; isSelf: boolean; moveCount: number; clearTimeMs: number | null;
     isCleared: boolean; scoreId?: string;
   }>;
   userRank: { rank: number; moveCount: number; clearTimeMs: number | null } | null;
 }
 
 describe('Rankings: 同点の順位', () => {
-  const users: Array<{ userId: string; accessToken: string }> = [];
+  const users: Array<{ userId: string; accessToken: string; name: string }> = [];
   let seedId: string;
 
   beforeEach(async () => {
     await resetDb();
     users.length = 0;
     for (let i = 0; i < 4; i++) {
-      users.push(await registerUser({ name: `Player${i}` }));
+      users.push({ ...await registerUser({ name: `Player${i}` }), name: `Player${i}` });
     }
     seedId = await getTodaySeedId(users[0].accessToken);
   });
@@ -31,14 +31,18 @@ describe('Rankings: 同点の順位', () => {
     return res.json() as Promise<RankingResponse>;
   }
 
-  /** 一覧の順位と、各ユーザーの userRank がどちらも expected（userId → 順位）に一致することを確かめる */
+  /**
+   * 一覧の順位と、各ユーザーの userRank がどちらも expected（名前 → 順位）に一致し、
+   * 自分の行だけが isSelf になることを確かめる
+   */
   async function expectRanks(expected: Record<string, number>) {
     for (const u of users) {
-      if (!(u.userId in expected)) continue;
+      if (!(u.name in expected)) continue;
       const data = await fetchRanking(u.accessToken);
-      const listed = Object.fromEntries(data.ranking.map(e => [e.userId, e.rank]));
+      const listed = Object.fromEntries(data.ranking.map(e => [e.displayName, e.rank]));
       expect(listed).toEqual(expected);
-      expect(data.userRank?.rank).toBe(expected[u.userId]);
+      expect(data.userRank?.rank).toBe(expected[u.name]);
+      expect(data.ranking.filter(e => e.isSelf).map(e => e.displayName)).toEqual([u.name]);
     }
   }
 
@@ -49,7 +53,7 @@ describe('Rankings: 同点の順位', () => {
     await insertPlayScore({ userId: b.userId, seedId, moveCount: 10, score: 200, isCleared: true, clearTimeMs: 90_000 });
     await insertPlayScore({ userId: c.userId, seedId, moveCount: 10, score: 100, isCleared: true, clearTimeMs: 60_000 });
     await insertPlayScore({ userId: d.userId, seedId, moveCount: 12, score: 999, isCleared: true, clearTimeMs: 1_000 });
-    return { [c.userId]: 1, [a.userId]: 2, [b.userId]: 2, [d.userId]: 4 };
+    return { [c.name]: 1, [a.name]: 2, [b.name]: 2, [d.name]: 4 };
   }
 
   it('手数が少ない順、同じ手数なら時間が短い順。手数も時間も同じなら同順位（スコアは使わない）', async () => {
@@ -61,7 +65,7 @@ describe('Rankings: 同点の順位', () => {
     await insertPlayScore({ userId: a.userId, seedId, moveCount: 10, score: 999, isCleared: true, clearTimeMs: null });
     await insertPlayScore({ userId: b.userId, seedId, moveCount: 10, score: 100, isCleared: true, clearTimeMs: 600_000 });
     await insertPlayScore({ userId: c.userId, seedId, moveCount: 11, score: 100, isCleared: true, clearTimeMs: 1_000 });
-    await expectRanks({ [b.userId]: 1, [a.userId]: 2, [c.userId]: 3 });
+    await expectRanks({ [b.name]: 1, [a.name]: 2, [c.name]: 3 });
   });
 
   it('キャッシュから返すときも同じ順位になる', async () => {
@@ -80,7 +84,7 @@ describe('Rankings: 同点の順位', () => {
       const data = await fetchRanking(a.accessToken);
       expect(data.ranking, pass).toEqual([
         {
-          rank: 1, userId: a.userId, displayName: 'Player0', score: 200, moveCount: 10, clearTimeMs: 83_000,
+          rank: 1, displayName: 'Player0', isSelf: true, score: 200, moveCount: 10, clearTimeMs: 83_000,
           isCleared: true, scoreId: expect.any(String),
         },
       ]);
@@ -95,7 +99,7 @@ describe('Rankings: 同点の順位', () => {
     await insertPlayScore({ userId: b.userId, seedId, mode: 'sprint', moveCount: 15, score: 5000, isCleared: true });
     await insertPlayScore({ userId: c.userId, seedId, mode: 'cascade', moveCount: 1, score: 5000, isCleared: true, cascadePoints: 99 });
     const data = await fetchRanking(b.accessToken);
-    expect(data.ranking.map(e => e.userId)).toEqual([a.userId]);
+    expect(data.ranking.map(e => e.displayName)).toEqual([a.name]);
     expect(data.userRank).toBeNull();
   });
 
@@ -120,7 +124,7 @@ describe('Rankings: 同点の順位', () => {
     const expected = await insertClearRanks();
     const res = await call(`http://localhost/api/rankings/by-value/${await seedValue()}`, { headers: authHeader(users[0].accessToken) });
     const data = await res.json() as RankingResponse;
-    expect(Object.fromEntries(data.ranking.map(e => [e.userId, e.rank]))).toEqual(expected);
+    expect(Object.fromEntries(data.ranking.map(e => [e.displayName, e.rank]))).toEqual(expected);
   });
 
   it('名前と同意のない ID は一覧に出ず順位も取らないが、本人には名前を決めたときの順位を返す', async () => {
@@ -131,10 +135,37 @@ describe('Rankings: 同点の順位', () => {
     await insertPlayScore({ userId: b.userId, seedId, moveCount: 11, score: 100, isCleared: true });
 
     const seenByA = await fetchRanking(a.accessToken);
-    expect(seenByA.ranking.map(e => [e.userId, e.rank])).toEqual([[a.userId, 1], [b.userId, 2]]);
+    expect(seenByA.ranking.map(e => [e.displayName, e.rank, e.isSelf])).toEqual([[a.name, 1, true], [b.name, 2, false]]);
     const seenByUnnamed = await fetchRanking(unnamed.accessToken);
-    expect(seenByUnnamed.ranking.map(e => e.userId)).toEqual([a.userId, b.userId]);
+    expect(seenByUnnamed.ranking.map(e => [e.displayName, e.isSelf])).toEqual([[a.name, false], [b.name, false]]);
     expect(seenByUnnamed.userRank).toEqual({ rank: 1, score: 100, moveCount: 8, clearTimeMs: null });
+  });
+
+  it('どの応答にもほかの人の ID が入らない（一覧、キャッシュ、by-value、締め切った日）', async () => {
+    const expected = await insertClearRanks();
+    const legacy = await createLegacyUser('Old');
+    await insertPlayScore({ userId: legacy.userId, seedId, moveCount: 30, score: 100, isCleared: true });
+    const ids = [...users.map(u => u.userId), legacy.userId];
+    const viewer = users[0];
+    const others = ids.filter(id => id !== viewer.userId);
+    const paths = [`/api/rankings/${seedId}`, `/api/rankings/${seedId}`, `/api/rankings/by-value/${await seedValue()}`];
+
+    const check = async (label: string) => {
+      for (const path of paths) {
+        const body = await (await call(`http://localhost${path}`, { headers: authHeader(viewer.accessToken) })).text();
+        for (const id of ids) expect(body, `${label} ${path}`).not.toContain(id);
+        const data = JSON.parse(body) as RankingResponse;
+        expect(data.ranking.length, label).toBe(Object.keys(expected).length + 1);
+        for (const e of data.ranking) expect(Object.keys(e), label).not.toContain('userId');
+      }
+    };
+    await check('open');
+    expect(others.length).toBeGreaterThan(0);
+
+    // 締め切った日（全員の scoreId を見せる日）でも ID は出さない
+    await env.DB.prepare("UPDATE puzzle_seeds SET daily_date = '2020-01-01' WHERE id = ?").bind(seedId).run();
+    await env.KV.delete(rankingCacheKey(seedId));
+    await check('closed');
   });
 
   it('引き継がれていない旧アカウントの記録は、旧 URL の名前（未設定なら NO NAME）で載る', async () => {

@@ -34,7 +34,7 @@ async function fetchRanking(
   const cached = await kv.get(cacheKey, 'json') as RankingData | null;
   if (cached) {
     // Once the ranking is closed, expose scoreId on all entries
-    const entries = cached.entries.map(e => toPublicEntry(e, rankingClosed || e.userId === userId));
+    const entries = cached.entries.map(e => toPublicEntry(e, userId, rankingClosed));
     const cachedEntry = cached.entries.find(e => e.userId === userId);
     const userRank = cachedEntry
       ? { rank: cachedEntry.rank, score: cachedEntry.score, moveCount: cachedEntry.moveCount, clearTimeMs: cachedEntry.clearTimeMs }
@@ -53,7 +53,7 @@ async function fetchRanking(
   });
 
   return {
-    ranking: rankingEntries.map(e => toPublicEntry(e, rankingClosed || e.userId === userId)),
+    ranking: rankingEntries.map(e => toPublicEntry(e, userId, rankingClosed)),
     userRank,
   };
 }
@@ -81,10 +81,15 @@ rankingRoutes.get('/:seedId', async (c) => {
   return c.json(result);
 });
 
+/**
+ * 応答の 1 行。ほかの人の ID は返さない（kan-game.app のプライバシーポリシーは ID を公開しないと書いている）。
+ * 自分の行かどうかはサーバーで判定して isSelf で返す
+ */
 interface RankingEntry {
   rank: number;
-  userId: string;
   displayName: string;
+  /** Cookie の ID の行なら true */
+  isSelf: boolean;
   /**
    * 順位には使わない。今の SPA は読まないが、service worker がキャッシュした古い SPA が `score.toLocaleString()` を
    * 呼ぶので、古い SPA が残っている間は返し続ける
@@ -98,8 +103,12 @@ interface RankingEntry {
   scoreId?: string;
 }
 
-/** Cached form: always holds the score id, resolved to scoreId per visibility rules */
-interface CachedRankingEntry extends Omit<RankingEntry, 'scoreId' | 'isCleared'> {
+/**
+ * キャッシュの形。score id と ID を持ち、応答に変えるときに見せる範囲を決める（toPublicEntry）。
+ * ID はキャッシュの中にだけ置き、応答には出さない
+ */
+interface CachedRankingEntry extends Omit<RankingEntry, 'scoreId' | 'isCleared' | 'isSelf'> {
+  userId: string;
   _scoreId: string;
 }
 
@@ -107,9 +116,11 @@ interface RankingData {
   entries: CachedRankingEntry[];
 }
 
-function toPublicEntry(e: CachedRankingEntry, showScoreId: boolean): RankingEntry {
-  const { _scoreId, ...rest } = e;
-  return { ...rest, isCleared: true, scoreId: showScoreId ? _scoreId : undefined };
+/** 締め切った日は全員の score id を、締め切る前は自分の行の score id だけを見せる */
+function toPublicEntry(e: CachedRankingEntry, viewerId: string, rankingClosed: boolean): RankingEntry {
+  const { _scoreId, userId, ...rest } = e;
+  const isSelf = userId === viewerId;
+  return { ...rest, isSelf, isCleared: true, scoreId: rankingClosed || isSelf ? _scoreId : undefined };
 }
 
 interface RankedRow {
