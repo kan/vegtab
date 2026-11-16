@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { enqueue, getQueueSize, processQueue } from './offlineQueue';
+import { MAX_QUEUE_ENTRIES, enqueue, getQueueSize, processQueue } from './offlineQueue';
+
+let data = new Map<string, string>();
 
 function stubLocalStorage(opts: { throwOnSet?: boolean } = {}) {
-  const data = new Map<string, string>();
+  data = new Map<string, string>();
   vi.stubGlobal('localStorage', {
     getItem: (k: string) => data.get(k) ?? null,
     setItem: (k: string, v: string) => {
@@ -95,8 +97,68 @@ describe('offlineQueue', () => {
     expect(await processQueue(doFetch, asUser(USER))).toEqual({ succeeded: 1, failed: 0, remaining: 0 });
   });
 
-  it('localStorage への保存が例外を投げても enqueue は例外を投げない', () => {
+  it('localStorage への保存が例外を投げても enqueue は例外を投げず、保存できなかったことを返す', () => {
+    expect(enqueue('/api/scores', 'POST', '{}', USER)).toBe(true);
     stubLocalStorage({ throwOnSet: true });
-    expect(() => enqueue('/api/scores', 'POST', '{}', USER)).not.toThrow();
+    let saved: boolean | undefined;
+    expect(() => { saved = enqueue('/api/scores', 'POST', '{}', USER); }).not.toThrow();
+    expect(saved).toBe(false);
+  });
+
+  describe('件数の上限とまとめ（#123）', () => {
+    const cleared = (moves: number, timeMs: number | null = 60_000) => ({ isCleared: true, moves, timeMs });
+    const bodies = async () => {
+      const sent: string[] = [];
+      await processQueue(async (_u, _m, body) => { sent.push(body); return ok(); }, asUser(USER));
+      return sent;
+    };
+
+    it('上限を超えたら古いものから捨てる', async () => {
+      for (let i = 0; i < MAX_QUEUE_ENTRIES + 5; i++) enqueue('/api/scores', 'POST', `{"n":${i}}`, USER);
+      expect(getQueueSize()).toBe(MAX_QUEUE_ENTRIES);
+      const sent = await bodies();
+      expect(sent[0]).toBe('{"n":5}');
+      expect(sent.at(-1)).toBe(`{"n":${MAX_QUEUE_ENTRIES + 4}}`);
+    });
+
+    it('同じ ID・同じ日の項目は良い方だけを残す', async () => {
+      enqueue('/api/scores', 'POST', 'fail', USER, { key: '2026-11-16', summary: { isCleared: false, moves: 30, timeMs: null } });
+      enqueue('/api/scores', 'POST', 'clear12', USER, { key: '2026-11-16', summary: cleared(12) });
+      enqueue('/api/scores', 'POST', 'clear15', USER, { key: '2026-11-16', summary: cleared(15) }); // 悪い: 積まない
+      enqueue('/api/scores', 'POST', 'clear12-same', USER, { key: '2026-11-16', summary: cleared(12) }); // 同じ: 前を残す
+      enqueue('/api/scores', 'POST', 'clear12-faster', USER, { key: '2026-11-16', summary: cleared(12, 30_000) });
+      enqueue('/api/scores', 'POST', 'other-day', USER, { key: '2026-11-15', summary: cleared(20) });
+      enqueue('/api/scores', 'POST', 'other-id', 'user-b', { key: '2026-11-16', summary: cleared(40) });
+      expect(getQueueSize()).toBe(3);
+      // user-b の項目は USER では送らずに捨てる
+      expect(await bodies()).toEqual(['clear12-faster', 'other-day']);
+    });
+
+    it('summary の無い項目（前の版で積んだもの）は新しい記録で置き換える', async () => {
+      enqueue('/api/scores', 'POST', 'old', USER);
+      data.set('vegtab_offline_queue', data.get('vegtab_offline_queue')!.replace('}]', ',"dedupeKey":"2026-11-16"}]'));
+      enqueue('/api/scores', 'POST', 'new', USER, { key: '2026-11-16', summary: cleared(20) });
+      expect(await bodies()).toEqual(['new']);
+    });
+  });
+
+  describe('保存のキー', () => {
+    it('旧キー（offline_queue）の項目を取り込み、旧キーを消す', async () => {
+      data.set('offline_queue', JSON.stringify([
+        { id: 'a', url: '/api/scores', method: 'POST', body: 'legacy', createdAt: Date.now(), retries: 0, userId: USER },
+      ]));
+      enqueue('/api/scores', 'POST', 'new', USER);
+      expect(data.has('offline_queue')).toBe(false);
+      expect(getQueueSize()).toBe(2);
+    });
+
+    it('読めないキューは退避して、空から始める', () => {
+      data.set('vegtab_offline_queue', '{broken');
+      expect(getQueueSize()).toBe(0);
+      expect(data.get('vegtab_offline_queue.corrupt')).toBe('{broken');
+      enqueue('/api/scores', 'POST', 'new', USER);
+      expect(getQueueSize()).toBe(1);
+      expect(data.get('vegtab_offline_queue.corrupt')).toBe('{broken');
+    });
   });
 });

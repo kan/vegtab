@@ -1,4 +1,4 @@
-import { enqueue, processQueue } from './offlineQueue';
+import { enqueue, processQueue, type QueueDedupe } from './offlineQueue';
 import { getUserId, recoverId } from './id';
 
 // --- Toast notification system ---
@@ -39,7 +39,11 @@ async function idFetch(path: string, init: RequestInit): Promise<Response> {
 // --- API call ---
 export async function api<T = unknown>(
   path: string,
-  options: RequestInit & { offlineQueue?: boolean } = {},
+  /**
+   * offlineQueue: 送れなかったら（通信の失敗、5xx、429）キューに積んで後で送り直す。
+   * QueueDedupe を渡すと、同じ ID・同じ key の項目は良い方の記録だけを残す
+   */
+  options: RequestInit & { offlineQueue?: boolean | QueueDedupe } = {},
 ): Promise<T> {
   const { offlineQueue: shouldQueue, ...fetchOptions } = options;
   const queueableBody = shouldQueue && typeof fetchOptions.body === 'string' ? fetchOptions.body : null;
@@ -47,8 +51,11 @@ export async function api<T = unknown>(
   if (fetchOptions.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
 
   const queue = (status: number, message: string): never => {
-    enqueue(path, fetchOptions.method ?? 'POST', queueableBody!, getUserId());
-    showToast('info', 'toast.scoreSavedOffline');
+    const dedupe = typeof shouldQueue === 'object' ? shouldQueue : undefined;
+    const saved = enqueue(path, fetchOptions.method ?? 'POST', queueableBody!, getUserId(), dedupe);
+    // 端末に保存できなければ（容量超過など）、後で送れないかもしれないことを知らせる
+    if (saved) showToast('info', 'toast.scoreSavedOffline');
+    else showToast('error', 'toast.offlineSaveFailed', undefined, 8000);
     throw new ApiError(status, message);
   };
 

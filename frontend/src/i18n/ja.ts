@@ -125,6 +125,7 @@ export default {
     networkError: 'サーバーに接続できません。オフラインモードで動作中です。',
     offlineQueueSent: 'オフラインデータを同期しました！',
     offlineQueueFailed: '一部のオフラインデータを同期できませんでした。',
+    offlineSaveFailed: '通信できず、端末にも保存できませんでした。この記録は送れないかもしれません。',
     pastDateNoRanking: '過去のパズルのスコアはランキングに記録されません',
     scoreSubmitFailed: 'スコアの送信に失敗しました。',
     rankingFetchFailed: 'ランキングを取得できませんでした。',

@@ -125,6 +125,7 @@ export default {
     networkError: 'Could not connect to the server. Playing in offline mode.',
     offlineQueueSent: 'Offline data synced successfully!',
     offlineQueueFailed: 'Some offline data could not be synced.',
+    offlineSaveFailed: 'Could not connect or save on this device. This score may not be sent.',
     pastDateNoRanking: 'Scores for past puzzles are not recorded in the ranking',
     scoreSubmitFailed: 'Failed to submit score.',
     rankingFetchFailed: 'Could not load ranking.',

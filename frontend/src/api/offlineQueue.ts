@@ -1,9 +1,19 @@
-import { setLocalItem } from '@/lib/storage';
+import { getItemSync, removeLocalItem, setLocalItem } from '@/lib/storage';
 import { isRemovedModeScoreSubmission } from '@/lib/legacyData';
+import { isBetterResult, type ResultSummary } from '@/lib/bestResult';
 
-const QUEUE_KEY = 'offline_queue';
+const QUEUE_KEY = 'vegtab_offline_queue';
+/** #123 より前のキー（接頭辞が無い）。古い画面が書いた分も読むので、見つけるたびに取り込む */
+const LEGACY_QUEUE_KEY = 'offline_queue';
+/** 読めなかったキューの退避先。直すときのために、捨てずに 1 つだけ残す */
+const CORRUPT_KEY = `${QUEUE_KEY}.corrupt`;
 const MAX_RETRIES = 3;
 const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+/**
+ * 件数の上限。超えたら古いものから捨てる。項目は操作列（最大 1000 手）を持つので、ローカルの保存の容量を
+ * 食い尽くさないようにする。同じ日の記録は 1 件にまとめるので、ふつうは数件しか溜まらない
+ */
+export const MAX_QUEUE_ENTRIES = 20;
 
 export interface QueueEntry {
   id: string;
@@ -14,28 +24,63 @@ export interface QueueEntry {
   retries: number;
   /** 追加したときの ID。送信時の Cookie の ID で送られるので、別の ID に切り替わっていたら送らない */
   userId?: string | null;
+  /** 同じ ID でこの値が同じ項目は、summary の良い方だけを残す（スコアの送信では日付） */
+  dedupeKey?: string;
+  summary?: ResultSummary;
 }
 
-function loadQueue(): QueueEntry[] {
+/** 同じ ID・同じ dedupeKey の項目をまとめる手がかり */
+export interface QueueDedupe {
+  key: string;
+  summary: ResultSummary;
+}
+
+function parseEntries(raw: string | null, key: string): QueueEntry[] {
+  if (!raw) return [];
   try {
-    const raw = localStorage.getItem(QUEUE_KEY);
-    if (!raw) return [];
-    const entries: QueueEntry[] = JSON.parse(raw);
-    const now = Date.now();
-    // Remove expired entries and score submissions of removed modes (queued before #102)
-    return entries.filter(e => now - e.createdAt < EXPIRY_MS && !isRemovedModeScoreSubmission(e));
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error('not an array');
+    return parsed as QueueEntry[];
   } catch {
+    // 読めないキューは退避して、次の保存で上書きされないようにする
+    setLocalItem(CORRUPT_KEY, raw);
+    removeLocalItem(key);
     return [];
   }
 }
 
-/** 保存できなくても、ローカルの記録が残っていれば次回起動時の再送で回復する */
-function saveQueue(queue: QueueEntry[]) {
-  setLocalItem(QUEUE_KEY, JSON.stringify(queue));
+function loadQueue(): QueueEntry[] {
+  const current = parseEntries(getItemSync(QUEUE_KEY), QUEUE_KEY);
+  const legacyRaw = getItemSync(LEGACY_QUEUE_KEY);
+  let entries = current;
+  if (legacyRaw !== null) {
+    const known = new Set(current.map(e => e.id));
+    entries = [...current, ...parseEntries(legacyRaw, LEGACY_QUEUE_KEY).filter(e => !known.has(e.id))];
+    if (saveQueue(entries)) removeLocalItem(LEGACY_QUEUE_KEY);
+  }
+  const now = Date.now();
+  // Remove expired entries and score submissions of removed modes (queued before #102)
+  return entries.filter(e => now - e.createdAt < EXPIRY_MS && !isRemovedModeScoreSubmission(e));
 }
 
-export function enqueue(url: string, method: string, body: string, userId: string | null) {
-  const queue = loadQueue();
+/** 保存できたかを返す。保存できなくても、ローカルの記録が残っていれば次回起動時の再送で回復する */
+function saveQueue(queue: QueueEntry[]): boolean {
+  return setLocalItem(QUEUE_KEY, JSON.stringify(queue));
+}
+
+/**
+ * 項目を積む。同じ ID・同じ dedupeKey の項目があれば、良い方の記録だけを残す（新しい方が良くなければ積まない）。
+ * 上限を超えたら古いものから捨てる。保存できたか（新しい方を捨てた場合も true）を返す
+ */
+export function enqueue(url: string, method: string, body: string, userId: string | null, dedupe?: QueueDedupe): boolean {
+  let queue = loadQueue();
+  if (dedupe) {
+    const same = (e: QueueEntry) => e.dedupeKey === dedupe.key && (e.userId ?? null) === userId && e.url === url;
+    const kept = queue.filter(same);
+    // 前の項目が良いか同じなら、それを残す（summary が無い項目は比べられないので置き換える）
+    if (kept.some(e => e.summary && !isBetterResult(dedupe.summary, e.summary))) return true;
+    queue = queue.filter(e => !same(e));
+  }
   queue.push({
     id: crypto.randomUUID(),
     url,
@@ -44,8 +89,9 @@ export function enqueue(url: string, method: string, body: string, userId: strin
     createdAt: Date.now(),
     retries: 0,
     userId,
+    ...(dedupe ? { dedupeKey: dedupe.key, summary: dedupe.summary } : {}),
   });
-  saveQueue(queue);
+  return saveQueue(queue.slice(-MAX_QUEUE_ENTRIES));
 }
 
 export function getQueueSize(): number {

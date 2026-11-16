@@ -350,7 +350,8 @@ export const useGameStore = defineStore('game', () => {
       const res = await api<{ scoreId: string | null; shareCode: string; newAchievements: string[]; pastDate?: boolean; verifiedScore?: number; verifiedMoveCount?: number }>('/api/scores', {
         method: 'POST',
         body: JSON.stringify(buildScorePayload(record, date)),
-        offlineQueue: true,
+        // 同じ日の記録は、キューに良い方だけを残す（サーバーもベストだけを持つ）
+        offlineQueue: { key: date, summary: toSummary(record) },
       });
       handleScoreResponse(res, record.seed);
       // サーバーが受け付けた記録は再送しないので、容量を食う replayLog を落とす
