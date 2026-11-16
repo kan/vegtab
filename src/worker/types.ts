@@ -1,5 +1,3 @@
-import type { Context } from 'hono';
-
 /** Bindings and vars come from wrangler.jsonc (`npm run cf-typegen`); secrets are not in it, so they are added here */
 export type Bindings = Env & {
   /** Signs the old vegtab.app accounts' tokens (routes/auth.ts, routes/legacy.ts) */
@@ -8,9 +6,3 @@ export type Bindings = Env & {
   DAILY_SEED_SECRET: string;
   VAPID_PRIVATE_KEY: string;
 };
-
-export type Variables = {
-  userId: string;
-};
-
-export type AppContext = Context<{ Bindings: Bindings; Variables: Variables }>;

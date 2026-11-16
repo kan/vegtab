@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, provide, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter } from '@/routes';
 import { useI18n } from 'vue-i18n';
 import { countObstacles } from '../../core';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';

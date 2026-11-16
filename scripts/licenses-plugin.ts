@@ -28,7 +28,7 @@ export const SERVICE_WORKER_PACKAGES = [
  * What src/worker imports from node_modules, taken with their dependencies.
  * tests/ui/licenses-plugin.test.ts checks it against the imports
  */
-export const SERVER_PACKAGES = ['@block65/webcrypto-web-push', '@hono/zod-validator', 'hono', 'jose', 'zod'];
+export const SERVER_PACKAGES = ['@block65/webcrypto-web-push', 'jose'];
 
 /**
  * What wrangler adds to the Worker's bundle itself (its templates, the nodejs_compat polyfills), as

@@ -1,5 +1,5 @@
-import { Hono } from 'hono';
-import type { Bindings, Variables } from '../types';
+import type { Route, RouteRequest } from '../router';
+import { html, redirect, text } from '../lib/http';
 import { generateOgpSvg } from '../lib/qr';
 import { getBaseUrl } from '../lib/env';
 import { MODE } from '../lib/mode';
@@ -36,39 +36,37 @@ function buildDescription(fewestClearedMoves: number | null): string {
   return fewestClearedMoves != null ? `Clear: ${fewestClearedMoves} moves` : 'Try this puzzle!';
 }
 
-export const shareRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
-
 // GET /s/:seedId/ogp.svg - Dynamic OGP image with QR code
-shareRoutes.get('/:seedId/ogp.svg', async (c) => {
-  const seedId = c.req.param('seedId');
-  const result = await lookupSeedWithTopScore(c.env.DB, seedId);
+async function getOgpImage({ env, params }: RouteRequest): Promise<Response> {
+  const result = await lookupSeedWithTopScore(env.DB, params.seedId);
 
   if (!result) {
-    return c.text('Not found', 404);
+    return text('Not found', 404);
   }
 
   const { seed, fewestClearedMoves } = result;
   const description = buildDescription(fewestClearedMoves);
 
-  const baseUrl = getBaseUrl(c.env);
+  const baseUrl = getBaseUrl(env);
   const shareUrl = `${baseUrl}/s/${seed.share_code}`;
   const svg = generateOgpSvg(seed.share_code, shareUrl, description);
 
-  return c.body(svg, 200, {
-    'Content-Type': 'image/svg+xml',
-    'Cache-Control': 'public, max-age=3600',
+  return new Response(svg, {
+    headers: {
+      'Content-Type': 'image/svg+xml',
+      'Cache-Control': 'public, max-age=3600',
+    },
   });
-});
+}
 
 // GET /s/:seedId - Share URL endpoint
-shareRoutes.get('/:seedId', async (c) => {
-  const seedId = c.req.param('seedId');
-  const ua = c.req.header('User-Agent') ?? '';
+async function getSharePage({ request, env, params }: RouteRequest): Promise<Response> {
+  const ua = request.headers.get('User-Agent') ?? '';
 
-  const result = await lookupSeedWithTopScore(c.env.DB, seedId);
+  const result = await lookupSeedWithTopScore(env.DB, params.seedId);
 
   if (!result) {
-    return c.html('<html><body><h1>Seed not found</h1></body></html>', 404);
+    return html('<html><body><h1>Seed not found</h1></body></html>', 404);
   }
 
   const { seed, fewestClearedMoves } = result;
@@ -81,13 +79,13 @@ shareRoutes.get('/:seedId', async (c) => {
   );
   const shareCode = seed.share_code;
   const safeShareCode = escapeHtml(shareCode);
-  const baseUrl = getBaseUrl(c.env);
+  const baseUrl = getBaseUrl(env);
   const ogpImageUrl = `${baseUrl}/s/${encodeURIComponent(shareCode)}/ogp.svg`;
 
   const isCrawler = /bot|crawl|spider|facebook|twitter|slack|discord|telegram|Line\/|whatsapp/i.test(ua);
 
   if (isCrawler) {
-    return c.html(`<!DOCTYPE html>
+    return html(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -107,5 +105,11 @@ shareRoutes.get('/:seedId', async (c) => {
   }
 
   // For browsers: redirect to puzzle page on frontend origin
-  return c.redirect(`${baseUrl}/puzzle/${encodeURIComponent(seed.seed_value)}`, 302);
-});
+  return redirect(`${baseUrl}/puzzle/${encodeURIComponent(seed.seed_value)}`, 302);
+}
+
+/** Open to anyone: share links and their preview images */
+export const shareRoutes: Route[] = [
+  { method: 'GET', path: '/s/:seedId/ogp.svg', handler: getOgpImage },
+  { method: 'GET', path: '/s/:seedId', handler: getSharePage },
+];

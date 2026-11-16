@@ -1,9 +1,7 @@
-import { Hono } from 'hono';
-import { bodyLimit } from 'hono/body-limit';
-import { z } from 'zod';
-import { jsonBody } from '../lib/validate';
-import { BOARD_SIZE, type ReplayAction } from '../../core';
-import type { Bindings, Variables } from '../types';
+import { BOARD_SIZE, type Direction, type Position, type ReplayAction } from '../../core';
+import type { AccountRequest, Route } from '../router';
+import { json, readJsonBody } from '../lib/http';
+import { isIntegerIn, isRecord, isStringOfLength, parseArray } from '../lib/validate';
 import { generateId } from '../lib/id';
 import { isDateNearToday, isRankingClosed } from '../lib/date';
 import { findOrCreateDailySeed } from '../lib/seed';
@@ -12,7 +10,7 @@ import { verifyReplay } from '../lib/replay-verify';
 import { MODE } from '../lib/mode';
 import { newReplayKey } from '../lib/replay-key';
 import { invalidateRankings } from '../lib/profile';
-import { takeRateLimitSlot } from '../lib/rate-limit';
+import { rateLimited, takeRateLimitSlot } from '../lib/rate-limit';
 import {
   MAX_CLEAR_TIME_MS, BETTER_THAN_STORED, PUBLIC_NAME, publicNameJoins,
 } from '../lib/ranking-rule';
@@ -24,68 +22,113 @@ import {
 const MAX_REPLAY_ACTIONS = 1000;
 const MAX_SCORE_BODY_BYTES = 256 * 1024;
 
-const positionSchema = z.object({
-  row: z.number().int().min(0).max(BOARD_SIZE - 1),
-  col: z.number().int().min(0).max(BOARD_SIZE - 1),
-});
-const directionSchema = z.enum(['up', 'down', 'left', 'right']);
-const targetCellsSchema = z.array(positionSchema).max(3);
+const DIRECTIONS: readonly unknown[] = ['up', 'down', 'left', 'right'] satisfies Direction[];
 
-const replayActionSchema: z.ZodType<ReplayAction> = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('swap'), pos: positionSchema, dir: directionSchema }),
-  z.object({ type: z.literal('tap'), pos: positionSchema }),
-  z.object({ type: z.literal('scope'), pos: positionSchema, targetCells: targetCellsSchema }),
-  z.object({ type: z.literal('scope_synthesis'), pos1: positionSchema, pos2: positionSchema, targetCells: targetCellsSchema }),
-  z.object({ type: z.literal('scope_swap'), pos: positionSchema, dir: directionSchema, targetCells: targetCellsSchema }),
-]);
+function parsePosition(value: unknown): Position | undefined {
+  if (!isRecord(value)) return undefined;
+  const { row, col } = value;
+  if (!isIntegerIn(row, 0, BOARD_SIZE - 1) || !isIntegerIn(col, 0, BOARD_SIZE - 1)) return undefined;
+  return { row, col };
+}
 
-// Client-reported score/moveCount/etc. are intentionally not part of the schema:
-// every result is re-simulated from the replay log. The clear time is the one exception: it cannot
-// be verified from the replay and is accepted as reported (SPEC §5.3)
-const submitScoreSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  mode: z.literal(MODE),
+function parseDirection(value: unknown): Direction | undefined {
+  return DIRECTIONS.includes(value) ? value as Direction : undefined;
+}
+
+/** A replay action rebuilt from the fields of its type: the stored log holds nothing else */
+function parseReplayAction(value: unknown): ReplayAction | undefined {
+  if (!isRecord(value)) return undefined;
+  const targetCells = () => parseArray(value.targetCells, 0, 3, parsePosition);
+  switch (value.type) {
+    case 'swap': {
+      const pos = parsePosition(value.pos);
+      const dir = parseDirection(value.dir);
+      return pos && dir ? { type: 'swap', pos, dir } : undefined;
+    }
+    case 'tap': {
+      const pos = parsePosition(value.pos);
+      return pos ? { type: 'tap', pos } : undefined;
+    }
+    case 'scope': {
+      const pos = parsePosition(value.pos);
+      const cells = targetCells();
+      return pos && cells ? { type: 'scope', pos, targetCells: cells } : undefined;
+    }
+    case 'scope_synthesis': {
+      const pos1 = parsePosition(value.pos1);
+      const pos2 = parsePosition(value.pos2);
+      const cells = targetCells();
+      return pos1 && pos2 && cells ? { type: 'scope_synthesis', pos1, pos2, targetCells: cells } : undefined;
+    }
+    case 'scope_swap': {
+      const pos = parsePosition(value.pos);
+      const dir = parseDirection(value.dir);
+      const cells = targetCells();
+      return pos && dir && cells ? { type: 'scope_swap', pos, dir, targetCells: cells } : undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+interface ScoreSubmission {
+  date: string;
+  /** null: no time, including a time over MAX_CLEAR_TIME_MS */
+  clearTimeMs: number | null;
+  generatedItemTypes: string[];
+  replayLog: ReplayAction[];
+}
+
+/**
+ * The body of POST /api/scores. Client-reported score/moveCount/etc. are intentionally not read:
+ * every result is re-simulated from the replay log. The clear time is the one exception: it cannot
+ * be verified from the replay and is accepted as reported (docs/DATA_CONTRACT.md「POST /api/scores」)
+ */
+function parseScoreSubmission(body: unknown): ScoreSubmission | undefined {
+  if (!isRecord(body)) return undefined;
+  const { date, mode, clearTimeMs } = body;
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) || mode !== MODE) return undefined;
   // Over the cap is stored as "no time" instead of rejecting the run (a late-day or past-day run must not fail)
-  clearTimeMs: z.number().int().min(0).nullable().optional()
-    .transform(v => (v == null || v > MAX_CLEAR_TIME_MS ? null : v)),
-  generatedItemTypes: z.array(z.string().max(20)).max(10).optional().default([]),
-  replayLog: z.array(replayActionSchema).min(1).max(MAX_REPLAY_ACTIONS),
-});
-
-export const scoreRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+  if (clearTimeMs != null && !isIntegerIn(clearTimeMs, 0, Number.MAX_SAFE_INTEGER)) return undefined;
+  const generatedItemTypes = body.generatedItemTypes === undefined
+    ? []
+    : parseArray(body.generatedItemTypes, 0, 10, (v) => isStringOfLength(v, 0, 20) ? v : undefined);
+  const replayLog = parseArray(body.replayLog, 1, MAX_REPLAY_ACTIONS, parseReplayAction);
+  if (!generatedItemTypes || !replayLog) return undefined;
+  return {
+    date,
+    clearTimeMs: clearTimeMs == null || clearTimeMs > MAX_CLEAR_TIME_MS ? null : clearTimeMs,
+    generatedItemTypes,
+    replayLog,
+  };
+}
 
 // POST /api/scores - Submit a score
-scoreRoutes.post('/', bodyLimit({
-  maxSize: MAX_SCORE_BODY_BYTES,
-  onError: (c) => c.json({ error: 'payload_too_large' }, 413),
-}), jsonBody(submitScoreSchema), async (c) => {
-  const userId = c.get('userId');
-  const data = c.req.valid('json');
+async function postScore({ request, env, accountId: userId }: AccountRequest): Promise<Response> {
+  const data = await readJsonBody(request, parseScoreSubmission, MAX_SCORE_BODY_BYTES);
+  if (data instanceof Response) return data;
 
   // Today (JST) or a past calendar play within 60 days
   if (!isDateNearToday(data.date)) {
-    return c.json({ error: 'invalid_date' }, 400);
+    return json({ error: 'invalid_date' }, 400);
   }
 
   // Find or create the daily seed
-  const seed = await findOrCreateDailySeed(c.env.DB, c.env.DAILY_SEED_SECRET, data.date);
+  const seed = await findOrCreateDailySeed(env.DB, env.DAILY_SEED_SECRET, data.date);
 
   // Past dates: allow play but don't record to ranking (yesterday is still recorded shortly after midnight)
   if (isRankingClosed(data.date)) {
-    return c.json({ scoreId: null, shareCode: seed.share_code, newAchievements: [], pastDate: true }, 200);
+    return json({ scoreId: null, shareCode: seed.share_code, newAchievements: [], pastDate: true }, 200);
   }
 
   // The per-ID limit is taken before the replay is verified (the costly part)
-  const limited = await takeRateLimitSlot(c.env.DB, userId, 'score');
-  if (limited) {
-    c.header('Retry-After', String(limited.retryAfterSeconds));
-    return c.json({ error: 'rate_limited' }, 429);
-  }
+  const limited = await takeRateLimitSlot(env.DB, userId, 'score');
+  if (limited) return rateLimited(limited);
 
   // Replay verification: the result is always re-simulated from the replay log
   const verified = verifyReplay(Number(seed.seed_value), data.replayLog);
   if (!verified.valid) {
-    return c.json({ error: 'invalid_replay' }, 400);
+    return json({ error: 'invalid_replay' }, 400);
   }
   const {
     score: verifiedScore,
@@ -99,7 +142,7 @@ scoreRoutes.post('/', bodyLimit({
   const clearTimeMs = verifiedIsCleared ? data.clearTimeMs : null;
 
   // Most submissions do not beat the stored best; those are answered without touching R2
-  const stored = await c.env.DB.prepare(
+  const stored = await env.DB.prepare(
     `SELECT play_scores.id, play_scores.replay_log_key, (${BETTER_THAN_STORED}) AS better
      FROM play_scores, (SELECT ? AS move_count, ? AS is_cleared, ? AS clear_time_ms) AS excluded
      WHERE play_scores.user_id = ? AND play_scores.seed_id = ? AND play_scores.mode = ?`
@@ -113,12 +156,12 @@ scoreRoutes.post('/', bodyLimit({
   } else {
     // Write the replay log first so a stored row never points at a missing object
     const replayLogKey = newReplayKey(userId, seed.id);
-    await c.env.R2.put(replayLogKey, JSON.stringify(data.replayLog));
+    await env.R2.put(replayLogKey, JSON.stringify(data.replayLog));
 
     // One statement keeps concurrent first submissions from creating duplicate rows:
     // insert, or replace the stored best only when the new result is still better.
     // move_limit and cascade_points (removed modes) are left to their column defaults
-    const upserted = await c.env.DB.prepare(
+    const upserted = await env.DB.prepare(
       `INSERT INTO play_scores (id, user_id, seed_id, mode, move_count, score, is_cleared, clear_time_ms, max_chain, replay_log_key)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id, seed_id, mode) DO UPDATE SET
@@ -131,7 +174,7 @@ scoreRoutes.post('/', bodyLimit({
       generateId(), userId, seed.id, MODE,
       verifiedMoveCount, verifiedScore, isCleared, clearTimeMs, verifiedMaxChain, replayLogKey
     ).first<{ id: string }>().catch(async (e) => {
-      await c.env.R2.delete(replayLogKey);
+      await env.R2.delete(replayLogKey);
       throw e;
     });
 
@@ -139,14 +182,14 @@ scoreRoutes.post('/', bodyLimit({
       scoreId = upserted.id;
       await Promise.all([
         // Invalidate the ranking cache only after the DB write has committed
-        invalidateRankings(c.env, [seed.id]),
+        invalidateRankings(env, [seed.id]),
         // The row now points at the new object, so the replaced best's replay is unreferenced
-        stored?.replay_log_key ? c.env.R2.delete(stored.replay_log_key) : undefined,
+        stored?.replay_log_key ? env.R2.delete(stored.replay_log_key) : undefined,
       ]);
     } else {
       // A concurrent submission stored a better result in between: keep it and drop ours
-      await c.env.R2.delete(replayLogKey);
-      const current = await c.env.DB.prepare(
+      await env.R2.delete(replayLogKey);
+      const current = await env.DB.prepare(
         'SELECT id FROM play_scores WHERE user_id = ? AND seed_id = ? AND mode = ?'
       ).bind(userId, seed.id, MODE).first<{ id: string }>();
       scoreId = current!.id;
@@ -156,7 +199,7 @@ scoreRoutes.post('/', bodyLimit({
   // Evaluate achievements separately so failure doesn't affect cache invalidation
   let newAchievements: string[] = [];
   try {
-    newAchievements = await evaluateAchievements(c.env.DB, userId, {
+    newAchievements = await evaluateAchievements(env.DB, userId, {
       moveCount: verifiedMoveCount,
       isCleared: verifiedIsCleared,
       maxChain: verifiedMaxChain,
@@ -166,13 +209,12 @@ scoreRoutes.post('/', bodyLimit({
     // Achievement evaluation failure should not break score submission
   }
 
-  return c.json({ scoreId, shareCode: seed.share_code, newAchievements, verifiedScore, verifiedMoveCount }, 201);
-});
+  return json({ scoreId, shareCode: seed.share_code, newAchievements, verifiedScore, verifiedMoveCount }, 201);
+}
 
 // GET /api/scores/my - Get user's play history
-scoreRoutes.get('/my', async (c) => {
-  const userId = c.get('userId');
-  const seedId = c.req.query('seedId');
+async function getMyScores({ env, url, accountId: userId }: AccountRequest): Promise<Response> {
+  const seedId = url.searchParams.get('seedId');
 
   let query = `SELECT ps.id, ps.seed_id, s.seed_value, ps.mode, ps.move_count, ps.score, ps.is_cleared, ps.clear_time_ms, ps.created_at
     FROM play_scores ps
@@ -186,13 +228,13 @@ scoreRoutes.get('/my', async (c) => {
   }
   query += ' ORDER BY ps.created_at DESC LIMIT 200';
 
-  const scores = await c.env.DB.prepare(query).bind(...params).all<{
+  const scores = await env.DB.prepare(query).bind(...params).all<{
     id: string; seed_id: string; seed_value: string; mode: string;
     move_count: number; score: number;
     is_cleared: number; clear_time_ms: number | null; created_at: string;
   }>();
 
-  return c.json({
+  return json({
     scores: (scores.results ?? []).map((s) => ({
       id: s.id,
       seedId: s.seed_id,
@@ -205,15 +247,14 @@ scoreRoutes.get('/my', async (c) => {
       createdAt: s.created_at,
     })),
   });
-});
+}
 
 // GET /api/scores/:scoreId/replay - Get replay data for a score
 // Daily puzzles whose ranking is closed: public (any user can view). Open rankings: own scores only.
-scoreRoutes.get('/:scoreId/replay', async (c) => {
-  const userId = c.get('userId');
-  const scoreId = c.req.param('scoreId');
+async function getReplay({ env, params, accountId: userId }: AccountRequest): Promise<Response> {
+  const { scoreId } = params;
 
-  const score = await c.env.DB.prepare(
+  const score = await env.DB.prepare(
     `SELECT ps.replay_log_key, ps.score as final_score,
             ps.user_id, s.seed_value, s.daily_date, ${PUBLIC_NAME} AS display_name
      FROM play_scores ps
@@ -225,29 +266,35 @@ scoreRoutes.get('/:scoreId/replay', async (c) => {
     user_id: string; daily_date: string | null; display_name: string | null;
   }>();
 
-  if (!score) return c.json({ error: 'not_found' }, 404);
+  if (!score) return json({ error: 'not_found' }, 404);
 
   // Access control: closed rankings are public, open ones are own-only
   const rankingClosed = score.daily_date != null && isRankingClosed(score.daily_date);
   if (!rankingClosed && score.user_id !== userId) {
-    return c.json({ error: 'not_found' }, 404);
+    return json({ error: 'not_found' }, 404);
   }
 
-  if (!score.replay_log_key) return c.json({ error: 'no_replay' }, 404);
+  if (!score.replay_log_key) return json({ error: 'no_replay' }, 404);
 
-  const obj = await c.env.R2.get(score.replay_log_key);
-  if (!obj) return c.json({ error: 'no_replay' }, 404);
+  const obj = await env.R2.get(score.replay_log_key);
+  if (!obj) return json({ error: 'no_replay' }, 404);
 
   const replayLog = JSON.parse(await obj.text());
 
   if (!Array.isArray(replayLog) || replayLog.length === 0) {
-    return c.json({ error: 'no_replay' }, 404);
+    return json({ error: 'no_replay' }, 404);
   }
 
-  return c.json({
+  return json({
     replayLog,
     seed: Number(score.seed_value),
     finalScore: score.final_score,
     displayName: score.display_name ?? 'NO NAME',
   });
-});
+}
+
+export const scoreRoutes: Route<AccountRequest>[] = [
+  { method: 'POST', path: '/api/scores', handler: postScore },
+  { method: 'GET', path: '/api/scores/my', handler: getMyScores },
+  { method: 'GET', path: '/api/scores/:scoreId/replay', handler: getReplay },
+];

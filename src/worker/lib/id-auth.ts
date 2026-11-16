@@ -1,6 +1,8 @@
 import { importVerificationKeys, verifyIdCookie, type IdKey } from './id-token';
 import type { IdRpc } from './id-rpc';
 import type { Bindings } from '../types';
+import { getAllowedOrigins } from './env';
+import { json } from './http';
 
 /**
  * The account of a request is the kan-game.app ID in its cookie (kan/game docs/ID_DESIGN.md
@@ -43,6 +45,26 @@ export async function authenticate(request: Request, env: Bindings): Promise<Aut
   const deleted = await env.DB.prepare('SELECT 1 FROM deleted_accounts WHERE account_id = ?')
     .bind(claims.sub).first();
   return deleted ? { status: 'deleted' } : { status: 'ok', accountId: claims.sub };
+}
+
+/**
+ * The ID of a request to an account route, or the response that refuses it.
+ *
+ * The cookie goes with any request to kan-game.app, so a request that writes must name an allowed
+ * origin; browsers always send Origin with those. A same-origin GET may omit it, so GETs cannot
+ * require it, and no GET writes.
+ */
+export async function requireAccount(request: Request, env: Bindings): Promise<{ accountId: string } | Response> {
+  const origin = request.headers.get('Origin');
+  if (origin ? !getAllowedOrigins(env).includes(origin) : request.method !== 'GET') {
+    return json({ error: 'forbidden_origin' }, 403);
+  }
+
+  const auth = await authenticate(request, env);
+  if (auth.status === 'unauthorized') return json({ error: 'unauthorized' }, 401);
+  // The client asks the ID platform for a new ID after this
+  if (auth.status === 'deleted') return json({ error: 'id_deleted' }, 410);
+  return { accountId: auth.accountId };
 }
 
 /**

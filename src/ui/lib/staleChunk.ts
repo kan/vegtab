@@ -3,7 +3,7 @@
  * （新しい Service Worker が旧 precache を消し、サーバーは存在しない /assets/* に index.html を返す。#86）。
  * そのときは読み込み直して、新しいバンドルで開き直す。
  *
- * 失敗は 2 つの経路で届く。画面の遷移の遅延 import の失敗（router.onError）と、Vite の
+ * 失敗は 2 つの経路で届く。画面の遷移の遅延 import の失敗（src/ui/routes.ts の router）と、Vite の
  * vite:preloadError（router を通らない動的 import と、CSS や依存の preload の失敗）。同じ失敗で両方が
  * 届くことがあるので、どちらも reloadForStaleChunk を通し、60 秒に 1 回までにする（TAKO-SEN の
  * src/ui/stale-chunk.ts と同じ。#121）

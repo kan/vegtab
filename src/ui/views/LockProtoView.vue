@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, provide } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter } from '@/routes';
 import { initializeGame, countLocks, countLockLayers } from '../../core';
 import PuzzleBoard from '@/components/PuzzleBoard.vue';
 import { useLockProtoPuzzleStore, PUZZLE_STORE_KEY } from '@/stores/puzzle';

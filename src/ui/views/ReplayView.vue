@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter } from '@/routes';
 import { useI18n } from 'vue-i18n';
 import { api } from '@/api/client';
 import { useReplayPlayer } from '@/composables/useReplayPlayer';

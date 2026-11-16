@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter } from '@/routes';
 import { useI18n } from 'vue-i18n';
 import { useGameStore } from '@/stores/game';
 import { showToast } from '@/api/client';

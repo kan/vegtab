@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute, useRouter } from '@/routes';
 import { useI18n } from 'vue-i18n';
 import { usePuzzleStore } from '@/stores/puzzle';
 import { useGameStore } from '@/stores/game';
@@ -99,7 +99,7 @@ function beginGame(seed: number) {
 // --- Back navigation guard ---
 // プレイ中のエッジスワイプ（戻る操作）によるページ遷移を抑止
 function pushGuardState() {
-  history.pushState({ puzzle: true }, '');
+  router.pushSameEntry();
 }
 
 function onPopState(_e: PopStateEvent) {

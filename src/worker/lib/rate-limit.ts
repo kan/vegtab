@@ -1,5 +1,7 @@
+import { json } from './http';
+
 /**
- * Per-ID limits for the write APIs (#119, SPEC §5.3), counted in D1 in fixed windows.
+ * Per-ID limits for the write APIs (#119, docs/DATA_CONTRACT.md「回数の制限」), counted in D1 in fixed windows.
  * Taken before the costly part of the request (replay verification, the ID platform's RPC), so a
  * refused request costs one D1 write.
  */
@@ -40,6 +42,11 @@ export async function takeRateLimitSlot(
     return { retryAfterSeconds: Math.max(1, Math.ceil((windowStart + windowMs - now) / 1000)) };
   }
   return null;
+}
+
+/** The answer to a request over the limit: 429 with Retry-After */
+export function rateLimited({ retryAfterSeconds }: { retryAfterSeconds: number }): Response {
+  return json({ error: 'rate_limited' }, 429, { 'Retry-After': String(retryAfterSeconds) });
 }
 
 /** The daily scheduled run: drops the rows of windows long past */

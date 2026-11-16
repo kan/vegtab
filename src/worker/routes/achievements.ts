@@ -1,63 +1,67 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
-import { jsonBody } from '../lib/validate';
-import type { Bindings, Variables } from '../types';
+import type { AccountRequest, Route } from '../router';
+import { json, readJsonBody } from '../lib/http';
+import { isRecord } from '../lib/validate';
 import { ACHIEVEMENT_DEFS } from '../../core';
 
-const unlockSchema = z.object({
-  /** Client-unlockable achievement types (not tied to score submission) */
-  type: z.enum(['tutorial_complete']),
-});
+/** Client-unlockable achievement types (not tied to score submission) */
+const CLIENT_UNLOCKABLE: readonly string[] = ['tutorial_complete'];
 
-export const achievementRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+export const achievementRoutes: Route<AccountRequest>[] = [
+  // POST /api/achievements/unlock - Unlock a client-triggered achievement
+  {
+    method: 'POST',
+    path: '/api/achievements/unlock',
+    async handler({ request, env, accountId }) {
+      const type = await readJsonBody(request, (body) =>
+        isRecord(body) && typeof body.type === 'string' && CLIENT_UNLOCKABLE.includes(body.type) ? body.type : undefined);
+      if (type instanceof Response) return type;
 
-// POST /api/achievements/unlock - Unlock a client-triggered achievement
-achievementRoutes.post('/unlock', jsonBody(unlockSchema), async (c) => {
-  const userId = c.get('userId');
-  const { type } = c.req.valid('json');
+      // Defense-in-depth: ensure type exists in defs even if CLIENT_UNLOCKABLE drifts
+      const def = ACHIEVEMENT_DEFS.find(d => d.type === type);
+      if (!def) return json({ error: 'unknown_achievement' }, 400);
 
-  // Defense-in-depth: ensure type exists in defs even if CLIENT_UNLOCKABLE drifts
-  const def = ACHIEVEMENT_DEFS.find(d => d.type === type);
-  if (!def) return c.json({ error: 'unknown_achievement' }, 400);
+      await env.DB.prepare(`
+        INSERT INTO achievements (id, user_id, achievement_type, current_value, is_unlocked, unlocked_at)
+        VALUES (?, ?, ?, ?, 1, datetime('now'))
+        ON CONFLICT (user_id, achievement_type) DO UPDATE SET
+          is_unlocked = 1,
+          unlocked_at = COALESCE(achievements.unlocked_at, datetime('now'))
+      `).bind(crypto.randomUUID(), accountId, type, def.threshold).run();
 
-  await c.env.DB.prepare(`
-    INSERT INTO achievements (id, user_id, achievement_type, current_value, is_unlocked, unlocked_at)
-    VALUES (?, ?, ?, ?, 1, datetime('now'))
-    ON CONFLICT (user_id, achievement_type) DO UPDATE SET
-      is_unlocked = 1,
-      unlocked_at = COALESCE(achievements.unlocked_at, datetime('now'))
-  `).bind(crypto.randomUUID(), userId, type, def.threshold).run();
+      return json({ ok: true });
+    },
+  },
 
-  return c.json({ ok: true });
-});
+  // GET /api/achievements - Get user's achievements
+  {
+    method: 'GET',
+    path: '/api/achievements',
+    async handler({ env, accountId }) {
+      const rows = await env.DB.prepare(
+        'SELECT achievement_type, current_value, is_unlocked, unlocked_at FROM achievements WHERE user_id = ?'
+      ).bind(accountId).all<{
+        achievement_type: string;
+        current_value: number;
+        is_unlocked: number;
+        unlocked_at: string | null;
+      }>();
 
-// GET /api/achievements - Get user's achievements
-achievementRoutes.get('/', async (c) => {
-  const userId = c.get('userId');
+      const rowMap = new Map(
+        (rows.results ?? []).map(r => [r.achievement_type, r])
+      );
 
-  const rows = await c.env.DB.prepare(
-    'SELECT achievement_type, current_value, is_unlocked, unlocked_at FROM achievements WHERE user_id = ?'
-  ).bind(userId).all<{
-    achievement_type: string;
-    current_value: number;
-    is_unlocked: number;
-    unlocked_at: string | null;
-  }>();
+      // Return all defined achievements, filling in defaults for missing ones
+      const achievements = ACHIEVEMENT_DEFS.map(def => {
+        const row = rowMap.get(def.type);
+        return {
+          type: def.type,
+          currentValue: row?.current_value ?? 0,
+          isUnlocked: row?.is_unlocked === 1,
+          unlockedAt: row?.unlocked_at ?? null,
+        };
+      });
 
-  const rowMap = new Map(
-    (rows.results ?? []).map(r => [r.achievement_type, r])
-  );
-
-  // Return all defined achievements, filling in defaults for missing ones
-  const achievements = ACHIEVEMENT_DEFS.map(def => {
-    const row = rowMap.get(def.type);
-    return {
-      type: def.type,
-      currentValue: row?.current_value ?? 0,
-      isUnlocked: row?.is_unlocked === 1,
-      unlockedAt: row?.unlocked_at ?? null,
-    };
-  });
-
-  return c.json({ achievements });
-});
+      return json({ achievements });
+    },
+  },
+];

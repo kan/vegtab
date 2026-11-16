@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 import { portalUrl } from '@/api/id';
+import { useRouter } from '@/routes';
 
 const { t } = useI18n();
+const router = useRouter();
 /** package.json's version and the commit of the build (vite.config.ts appVersion) */
 const appVersion = __APP_VERSION__;
 </script>
@@ -35,7 +37,7 @@ const appVersion = __APP_VERSION__;
 
       <section class="about-section">
         <h2>{{ t('about.credits') }}</h2>
-        <router-link to="/licenses" class="row-btn licenses-link">{{ t('about.licenses') }}</router-link>
+        <a href="/licenses" class="row-btn licenses-link" @click.prevent="router.push('/licenses')">{{ t('about.licenses') }}</a>
       </section>
     </div>
   </div>

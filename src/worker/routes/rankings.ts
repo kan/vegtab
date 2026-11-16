@@ -1,5 +1,5 @@
-import { Hono } from 'hono';
-import type { Bindings, Variables } from '../types';
+import type { AccountRequest, Route } from '../router';
+import { json } from '../lib/http';
 import { isRankingClosed } from '../lib/date';
 import { MODE } from '../lib/mode';
 import {
@@ -10,8 +10,6 @@ const DEFAULT_DISPLAY_NAME = 'NO NAME';
 
 const RANKING_CACHE_TTL = 300; // 5 minutes
 const RANKING_LIMIT = 100;
-
-export const rankingRoutes = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 // Shared ranking logic for both endpoints
 async function fetchRanking(
@@ -58,28 +56,34 @@ async function fetchRanking(
   };
 }
 
-// GET /api/rankings/by-value/:seedValue?mode=clear
-rankingRoutes.get('/by-value/:seedValue', async (c) => {
-  const seed = await c.env.DB.prepare(
-    'SELECT id FROM puzzle_seeds WHERE seed_value = ?'
-  ).bind(c.req.param('seedValue')).first<{ id: string }>();
-  if (!seed) return c.json({ ranking: [], userRank: null });
+/** The ranking of a seed, answered as the screen reads it */
+async function rankingResponse({ env, url, accountId }: AccountRequest, seedId: string): Promise<Response> {
+  const result = await fetchRanking(env.DB, env.KV, accountId, seedId, url.searchParams.get('mode') ?? MODE);
+  if ('error' in result) return json({ error: result.error }, 400);
+  return json(result);
+}
 
-  const result = await fetchRanking(
-    c.env.DB, c.env.KV, c.get('userId'), seed.id, c.req.query('mode') ?? MODE,
-  );
-  if ('error' in result) return c.json({ error: result.error }, 400);
-  return c.json(result);
-});
+export const rankingRoutes: Route<AccountRequest>[] = [
+  // GET /api/rankings/by-value/:seedValue?mode=clear
+  {
+    method: 'GET',
+    path: '/api/rankings/by-value/:seedValue',
+    async handler(req) {
+      const seed = await req.env.DB.prepare(
+        'SELECT id FROM puzzle_seeds WHERE seed_value = ?'
+      ).bind(req.params.seedValue).first<{ id: string }>();
+      if (!seed) return json({ ranking: [], userRank: null });
+      return rankingResponse(req, seed.id);
+    },
+  },
 
-// GET /api/rankings/:seedId?mode=clear
-rankingRoutes.get('/:seedId', async (c) => {
-  const result = await fetchRanking(
-    c.env.DB, c.env.KV, c.get('userId'), c.req.param('seedId'), c.req.query('mode') ?? MODE,
-  );
-  if ('error' in result) return c.json({ error: result.error }, 400);
-  return c.json(result);
-});
+  // GET /api/rankings/:seedId?mode=clear
+  {
+    method: 'GET',
+    path: '/api/rankings/:seedId',
+    handler: (req) => rankingResponse(req, req.params.seedId),
+  },
+];
 
 /**
  * 応答の 1 行。ほかの人の ID は返さない（kan-game.app のプライバシーポリシーは ID を公開しないと書いている）。
