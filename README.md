@@ -101,6 +101,11 @@ npm run deploy                 # = npm run deploy:production
 npm run deploy:dev
 ```
 
+本番の `npm run deploy` は、出し終えたら `production` タグを今のコミット（HEAD）へ動かし、出した日時のタグ
+`production-<UTC の日時>` も足して push する（`tag:production`）。kan/dotfiles の `gh-blog-diff` が、本番に出た変更を
+これらのタグから拾うため。コミットしてから出す。
+タグの push だけが失敗したときは、出したコミットで `npm run tag:production` を実行し直す。
+
 未適用の D1 マイグレーションは Worker のデプロイより先に適用される。
 そのため、マイグレーションは「先に適用しても、デプロイ前の Worker が壊れないもの」（テーブル・カラムの追加など）にすること。
 カラムの削除や名前の変更が必要な場合は、コードの対応をデプロイしてから別のマイグレーションで行う。
