@@ -59,6 +59,13 @@ const NODE_MODULES = '/node_modules/';
 /** LICENSE, LICENCE.md, LICENSE-MIT, COPYING.txt and the like */
 const LICENSE_FILE = /^(licen[cs]e|copying)([.-].*)?$/i;
 
+/**
+ * Packages that are our own code, not third-party open source: kan-game is the kan-game.app ID
+ * platform's contract (kan/game), which has no licence file. Left out of the licenses page, and of
+ * SERVER_PACKAGES
+ */
+export const OWN_PACKAGES = ['kan-game'];
+
 /** The package directory a bundled module comes from, or null for our own code */
 export function packageDirOf(id: string): string | null {
   const file = id.replace(/^\0/, '').split('?')[0].replaceAll('\\', '/');
@@ -66,6 +73,7 @@ export function packageDirOf(id: string): string | null {
   if (at < 0) return null;
   const parts = file.slice(at + NODE_MODULES.length).split('/');
   const name = parts[0].startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
+  if (OWN_PACKAGES.includes(name)) return null;
   return file.slice(0, at + NODE_MODULES.length) + name;
 }
 

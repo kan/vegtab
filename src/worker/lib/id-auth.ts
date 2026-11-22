@@ -1,5 +1,5 @@
-import { importVerificationKeys, verifyIdCookie, type IdKey } from './id-token';
-import type { IdRpc } from './id-rpc';
+import { importVerificationKeys, verifyIdCookie, type IdKey } from 'kan-game/token';
+import type { IdRpc } from 'kan-game/rpc';
 import type { Bindings } from '../types';
 import { getAllowedOrigins } from './env';
 import { json } from './http';

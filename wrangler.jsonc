@@ -44,7 +44,7 @@
   "kv_namespaces": [{ "binding": "KV", "id": "vegtab-local" }],
   "r2_buckets": [{ "binding": "R2", "bucket_name": "vegtab-local-replays" }],
   // The kan-game.app ID platform (kan/game). /api/id/* is passed to it, and names are registered
-  // through its RPC (src/lib/id-rpc.ts). Locally it is kan/game's `wrangler dev` (the dev registry)
+  // through its RPC (kan-game/rpc). Locally it is kan/game's `wrangler dev` (the dev registry)
   "services": [{ "binding": "ID", "service": "kan-game-local" }],
   "triggers": { "crons": ["5 15 * * *"] },
 

@@ -83,7 +83,7 @@ sessionStorage は 2 つ。`vegtab_puzzle_state` はプレイ中の盤面とリ�
 全て `/api/` の下で、画面と同じオリジン（`vegtab.kan-game.app`）から呼ぶ。Worker のルートは `src/worker/main.ts` の表と `src/worker/routes/` にある。
 
 - **認証:** ID 基盤が発行する、`Domain=kan-game.app` の `HttpOnly` Cookie（ES256 で署名した JWT、400 日）。画面はトークンを持たず、同じオリジンの `/api/*` に Cookie が付く
-  - Worker は ID 基盤の公開鍵（`ID_PUBLIC_KEYS`）で Cookie を検証し、`sub` を ID として使う。API ごとに ID 基盤へ問い合わせない。検証のコード（`src/worker/lib/id-token.ts`）と RPC の型（`id-rpc.ts`）は kan/game の `src/token.ts` と `src/rpc.ts` の写しで、書き換えない。テストベクター（`tests/worker/kan-game/`）と一緒に写し直す
+  - Worker は ID 基盤の公開鍵（`ID_PUBLIC_KEYS`）で Cookie を検証し、`sub` を ID として使う。API ごとに ID 基盤へ問い合わせない。検証のコード（`kan-game/token`）と RPC の型（`kan-game/rpc`）は、kan/game が配るパッケージ `kan-game` から import する
   - Cookie が無いか無効なら `401 unauthorized`。退会した ID の Cookie は `410 id_deleted`（`deleted_accounts` で判定）。画面は `410` で ID を捨てて新しい ID を受け取り、`401` で ID を取り直してから、要求をもう一度送る
   - 環境ごとに Cookie の名前、`iss`、公開鍵が違う（`wrangler.jsonc`）。ローカルは `localhost` で kan/game の `wrangler dev`、開発は `vegtab-dev.kan-game.app` で `dev.kan-game.app`、本番は `vegtab.kan-game.app` で `kan-game.app`
 - **Origin:** 状態を変える要求は、`Origin` が `ALLOWED_ORIGINS` に含まれることを必須にする（Cookie は他サイトからの要求にも付くため）。違えば `403 forbidden_origin`。同じオリジンの `GET` は `Origin` を省けるので、`GET` では求めない

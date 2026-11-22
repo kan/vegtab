@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
 import { call, resetDb, registerUser, authHeader, idIssuer, ORIGIN } from './helpers';
-import { createTestIdIssuer } from './kan-game/test-id-cookie';
+import { createTestIdIssuer } from 'kan-game/testing/test-id-cookie';
 import type { Bindings } from '../../src/worker/types';
 
 describe('kan-game.app ID cookie', () => {

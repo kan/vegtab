@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0",
-    "jose": "^6.2.16"
+    "jose": "^6.2.16",
+    "kan-game": "github:kan/game#semver:^1.0.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.6.0",

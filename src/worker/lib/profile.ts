@@ -1,5 +1,5 @@
 import type { Bindings } from '../types';
-import type { RegisterNameResult } from './id-rpc';
+import type { RegisterNameResult } from 'kan-game/rpc';
 import { rankingCacheKey } from './ranking-rule';
 import { todayJST } from './date';
 

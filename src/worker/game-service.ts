@@ -1,5 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import type { GameService as GameServiceContract } from './lib/id-rpc';
+import type { GameService as GameServiceContract } from 'kan-game/rpc';
 import type { Bindings } from './types';
 import { deleteAccount } from './lib/account';
 

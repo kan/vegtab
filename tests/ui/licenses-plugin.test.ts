@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   licenseText,
   mergeCopies,
+  OWN_PACKAGES,
   ownLicense,
   packageDirOf,
   repositoryUrl,
@@ -63,9 +64,26 @@ function packagesImportedFrom(entry: string): Set<string> {
 
 describe("licenses plugin", () => {
   it("lists every package the Worker imports", () => {
-    expect([...packagesImportedFrom("../../src/worker/main.ts")].sort()).toEqual(
-      [...SERVER_PACKAGES].sort(),
-    );
+    const imported = packagesImportedFrom("../../src/worker/main.ts");
+    // The Worker does import our own packages (kan-game), which are not listed
+    for (const own of OWN_PACKAGES) expect(imported).toContain(own);
+    expect(
+      [...imported].filter((name) => !OWN_PACKAGES.includes(name)).sort(),
+    ).toEqual([...SERVER_PACKAGES].sort());
+  });
+
+  // Our own packages are left out with what they depend on: a dependency they
+  // add would reach the Worker's bundle without a line on the licenses page.
+  it("keeps our own packages free of dependencies", () => {
+    for (const own of OWN_PACKAGES) {
+      const pkg = JSON.parse(
+        fs.readFileSync(
+          path.join(import.meta.dirname, "../../node_modules", own, "package.json"),
+          "utf8",
+        ),
+      ) as { dependencies?: Record<string, string> };
+      expect(Object.keys(pkg.dependencies ?? {})).toEqual([]);
+    }
   });
 
   // The service worker's own script (public/push-sw.js) is not bundled: it
@@ -92,6 +110,10 @@ describe("licenses plugin", () => {
       packageDirOf("C:\\repo\\node_modules\\a\\node_modules\\b\\i.js"),
     ).toBe("C:/repo/node_modules/a/node_modules/b");
     expect(packageDirOf("/repo/src/App.vue")).toBeNull();
+    // Our own packages are our own code, not open source to list.
+    expect(
+      packageDirOf("/repo/node_modules/kan-game/src/name-rules.ts"),
+    ).toBeNull();
   });
 
   it("turns the repository field into a page to link to", () => {

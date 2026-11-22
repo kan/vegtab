@@ -55,7 +55,8 @@ npm install
 
 ライセンス一覧（`/licenses`、`scripts/licenses-plugin.ts`）は、画面のパッケージを build の bundle から、Service Worker と
 Worker のパッケージを `SERVICE_WORKER_PACKAGES` と `SERVER_PACKAGES` から作る。Worker で新しいパッケージを import したら
-`SERVER_PACKAGES` に足す（`tests/ui/licenses-plugin.test.ts` が import と突き合わせる）。workbox の設定を変えて
+`SERVER_PACKAGES` に足す（`tests/ui/licenses-plugin.test.ts` が import と突き合わせる）。ただし `kan-game`（kan/game の
+ID の契約）は自前のコードなので、`OWN_PACKAGES` に置き、`SERVER_PACKAGES` にもライセンス一覧にも入れない。workbox の設定を変えて
 `SERVICE_WORKER_PACKAGES` とずれたら、build（`scripts/check-sw-licenses.ts`）が失敗する。
 `package.json` の `dependencies` には Worker が bundle するパッケージを、画面のもの（vue など）は `devDependencies` に置く。
 
@@ -158,7 +159,11 @@ CI（`.github/workflows/ci.yml`）は型検査、テスト、build を回す。
   2 つの表にまとめる。パスの照合は `src/core/path.ts`（画面の router と同じ規則）
 - 認証: ID の要るルートは、`src/worker/main.ts` がルートを引く前に `src/worker/lib/id-auth.ts` の `requireAccount` で
   Cookie を検証し、ハンドラーに `accountId` を渡す。`/api/id/*` は ID 基盤へそのまま中継する
-  - **`src/worker/lib/id-token.ts`、`src/worker/lib/id-rpc.ts`、`tests/worker/kan-game/` のファイルは書き換えない。** kan/game の `src/token.ts`、`src/rpc.ts`、`testing/`、`test-vectors/id-token.json` の写しで、kan/game が更新したら写し直す（今の写しは kan/game の `258c299`）
+  - Cookie の検証（`kan-game/token`）、RPC の型（`kan-game/rpc`）、テスト用の偽物と Cookie（`kan-game/testing/*`）は、
+    kan/game が配るパッケージ `kan-game` から import する（#129、kan/game の `docs/GAME_GUIDE.md`「依存として入れる」）。
+    **同じコードを vegtab に写して持たない。** 版は kan/game の tag を semver で指す（`package.json` の
+    `github:kan/game#semver:^<版>`）。kan/game が新しい版を出したら `npm install "kan-game@github:kan/game#semver:^<版>"`
+    で上げる（Dependabot がこの依存の PR を出すかは未確認）
   - 状態を変える API は `Origin` が `ALLOWED_ORIGINS` に含まれることを必須にする（`requireAccount` が確かめる）
   - 名前は ID 基盤の `registerName`（RPC）で登録し、`profiles` に写す。名前の規則を vegtab で持たない
   - 記録を持つテーブルを足したら、退会（`src/worker/lib/account.ts` の `ACCOUNT_TABLES`）にも足す

@@ -6,8 +6,8 @@ import type { Bindings } from '../../src/worker/types';
 import { todayJST } from '../../src/worker/lib/date';
 import { deriveDailySeed } from '../../src/worker/lib/seed';
 import { issueTokens } from '../../src/worker/lib/refresh-tokens';
-import { createTestIdIssuer } from './kan-game/test-id-cookie';
-import { createFakeIdPlatform, type FakeIdPlatform } from './kan-game/fake-id-platform';
+import { createTestIdIssuer } from 'kan-game/testing/test-id-cookie';
+import { createFakeIdPlatform, type FakeIdPlatform } from 'kan-game/testing/fake-id-platform';
 
 /** Signs the test cookies; its key is the only one in ID_PUBLIC_KEYS (see call) */
 export const idIssuer = await createTestIdIssuer({ issuer: 'test.kan-game.app', cookieName: '__Secure-kgtest_id' });

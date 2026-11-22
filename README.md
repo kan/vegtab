@@ -74,7 +74,7 @@ ID 基盤（kan/game の `wrangler dev`）、Worker（`wrangler dev`）、画面
 ```bash
 npm test                       # 全部（core、ui、worker の 3 つの project）
 npx vitest run --project core  # パズルのコアだけ
-npx vitest run --project worker  # Worker だけ（ID 基盤は tests/worker/kan-game/ の偽物を使う）
+npx vitest run --project worker  # Worker だけ（ID 基盤は kan-game/testing の偽物を使う）
 npx vitest run --project ui    # 画面だけ
 npm run typecheck              # 型検査（画面と core、wrangler types --check、Worker）
 ```
